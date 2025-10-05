@@ -87,7 +87,7 @@ class BenchmarkReportGenerator:
             display_name = attack_name.replace("Attack", "").strip()
             display_name = ''.join([' ' + c if c.isupper() and i > 0 else c for i, c in enumerate(display_name)]).strip()
             
-            acc_percent = accuracy * 100
+            acc_percent = accuracy
             table_rows.append(f"    {display_name} & {acc_percent:.2f}\\% \\\\")
         
         table_code = """\\begin{table}[h!]
@@ -98,7 +98,7 @@ class BenchmarkReportGenerator:
             \\toprule
             Attack Type & Accuracy \\\\
             \\midrule
-        """ + "\n".join(table_rows) + """
+            """ + "\n".join(table_rows) + """
             \\bottomrule
         \\end{tabular}
         \\end{table}"""
