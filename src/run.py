@@ -5,6 +5,7 @@ import os
 import logging
 
 from benchmark import Benchmark
+from report_generator import generate_benchmark_report
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -104,6 +105,19 @@ def main():
         json.dump(benchmark.compute_mean_accuracy(results), fp, indent=4)
 
     logger.info("Benchmark statistics saved to benchmark_stats.json")
+
+    try:
+        logger.info("Generating benchmark report...")
+        latex_path, chart_path = generate_benchmark_report(
+            stats_file="benchmark_stats.json",
+            model_name=args.wm_model,
+            report_dir="report"
+        )
+        logger.info(f"Benchmark report generated: {latex_path}")
+        logger.info(f"Chart saved: {chart_path}")
+    except Exception as e:
+        logger.error(f"Failed to generate benchmark report: {e}")
+        logger.info("Benchmark data is still available in JSON files")
 
 
 

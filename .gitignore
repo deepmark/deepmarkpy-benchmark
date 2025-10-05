@@ -21,6 +21,7 @@ benchmark*.json
 
 # Data
 data/
+report/
 
 # Distribution / packaging
 .Python
