@@ -5,7 +5,7 @@ import os
 import logging
 
 from benchmark import Benchmark
-from report_generator import generate_benchmark_report
+from utils.report_generator import generate_benchmark_report
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
