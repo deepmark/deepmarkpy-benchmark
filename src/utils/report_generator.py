@@ -159,7 +159,7 @@ class BenchmarkReportGenerator:
         {table_code}
 
         \\vspace{{1em}}
-        \\noindent\\textbf{{Overall Mean Accuracy:}} {mean_accuracy*100:.2f}\\%
+        \\noindent\\textbf{{Overall Mean Accuracy:}} {mean_accuracy:.2f}\\%
 
         \\vspace{{1em}}
         \\noindent\\Cref{{fig:benchmark_chart}} complements the table by visualizing the same results, enabling quicker inspection of relative differences and overall trends across attacks.
@@ -229,12 +229,6 @@ class BenchmarkReportGenerator:
             
             logger.info(f"LaTeX report saved to {latex_path}")
             
-            try:
-                self.compile_pdf(latex_path)
-            except Exception as e:
-                logger.warning(f"Could not compile PDF: {e}")
-                logger.info("LaTeX source is available for manual compilation")
-            
             return latex_path, chart_path
             
         except FileNotFoundError:
@@ -244,45 +238,7 @@ class BenchmarkReportGenerator:
             logger.error(f"Error generating report: {e}")
             raise
     
-    def compile_pdf(self, latex_path: str):
-        """
-        Compile LaTeX document to PDF.
-        
-        Args:
-            latex_path: Path to the LaTeX file
-        """
-        try:
-            original_dir = os.getcwd()
-            os.chdir(self.report_dir)
-            
-            for i in range(2):
-                result = subprocess.run(
-                    ['pdflatex', '-interaction=nonstopmode', os.path.basename(latex_path)],
-                    capture_output=True,
-                    text=True,
-                    timeout=60
-                )
-                
-                if result.returncode != 0:
-                    logger.warning(f"pdflatex run {i+1} had warnings/errors")
-                    logger.debug(f"pdflatex output: {result.stdout}")
-                    logger.debug(f"pdflatex errors: {result.stderr}")
-            
-            pdf_path = latex_path.replace('.tex', '.pdf')
-            if os.path.exists(os.path.basename(pdf_path)):
-                logger.info(f"PDF report compiled successfully: {pdf_path}")
-            else:
-                logger.warning("PDF compilation may have failed")
-            
-        except subprocess.TimeoutExpired:
-            logger.error("PDF compilation timed out")
-        except FileNotFoundError:
-            logger.warning("pdflatex not found - PDF compilation skipped")
-        except Exception as e:
-            logger.error(f"Error during PDF compilation: {e}")
-        finally:
-            os.chdir(original_dir)
-
+   
 
 def generate_benchmark_report(stats_file: str = "benchmark_stats.json", 
                             model_name: str = "DeepMark",
