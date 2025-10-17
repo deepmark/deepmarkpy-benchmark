@@ -144,7 +144,7 @@ class Benchmark:
             # If no user-supplied watermark, pick a random message size
             if watermark_data is None:
                 watermark_data = model_instance.generate_watermark()
-                attack_kwargs["watermark_data"] = model_instance.generate_watermark()
+            attack_kwargs["watermark_data"] = watermark_data
 
             # Load audio
             audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
