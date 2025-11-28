@@ -34,8 +34,8 @@ class AudioSealModel(BaseModel):
         response_data = self._make_request(endpoint="/embed", json_data=payload, method="POST")
         
         if "watermarked_audio" not in response_data:
-             logger.error("'/embed' response did not contain 'watermarked_audio' key.")
-             raise KeyError("Missing 'watermarked_audio' in response from /embed")
+            logger.error("'/embed' response did not contain 'watermarked_audio' key.")
+            raise KeyError("Missing 'watermarked_audio' in response from /embed")
         
         return np.array(response_data["watermarked_audio"])
 
@@ -46,8 +46,8 @@ class AudioSealModel(BaseModel):
         response_data = self._make_request(endpoint="/detect", json_data=payload, method="POST")
 
         if "watermark" not in response_data:
-             logger.error("'/detect' response did not contain 'watermark' key.")
-             raise KeyError("Missing 'watermark' in response from /detect")
+            logger.error("'/detect' response did not contain 'watermark' key.")
+            raise KeyError("Missing 'watermark' in response from /detect")
         
         return np.array(response_data["watermark"])
         

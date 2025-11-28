@@ -64,7 +64,8 @@ class BaseModel(abc.ABC):
 
 
         try:
-            logger.info(f"Making {method} request to {url} with data: {json_data}")
+            #logger.info(f"Making {method} request to {url} with data: {json_data}")
+            logger.info("Making {method} request to {url} with data: [REDACTED]")
             response = requests.request(method, url, json=json_data, timeout=timeout)
             response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
             return response.json()

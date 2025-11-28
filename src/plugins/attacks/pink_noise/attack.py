@@ -34,3 +34,5 @@ class PinkNoiseAttack(BaseAttack):
         noisy_audio=audio+pink
        
         return noisy_audio
+
+

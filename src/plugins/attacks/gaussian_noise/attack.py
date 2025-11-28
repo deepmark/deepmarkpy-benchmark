@@ -30,3 +30,4 @@ class GaussianNoiseAttack(BaseAttack):
         #print(f"Target SNR: {snr_db} dB, Achieved SNR: {actual_snr:.2f} dB")
 
         return audio_noisy
+

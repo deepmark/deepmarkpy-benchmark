@@ -1,4 +1,4 @@
 {
-    "model_name": "teticio/audio-diffusion-256",   
-    "diffusion_steps": 5
+    "model_name": "teticio/audio-diffusion-256",
+    "diffusion_steps": 1
 }

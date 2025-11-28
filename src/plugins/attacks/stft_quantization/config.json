@@ -1,6 +1,5 @@
 {
-    "n_fft" : 1024,
-    "hop_length" : 512,
-    "quantization_levels" : 256
+    "n_fft": 1024,
+    "hop_length": 512,
+    "quantization_levels": 512
 }
-

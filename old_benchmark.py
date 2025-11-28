@@ -1,17 +1,15 @@
 import inspect
 import logging
-import os
 
 import numpy as np
+import os
 import soundfile as sf
 
 from plugin_manager import PluginManager
-from utils.utils import load_audio, snr
-from utils.metrics import pesq_wrapper, psnr, stoi_wrapper, si_sdr
+from utils.utils import load_audio, snr, pesq_wrapper, psnr, stoi_wrapper, si_sdr
 
 
 logger = logging.getLogger(__name__)
-
 
 class Benchmark:
     """
@@ -97,8 +95,6 @@ class Benchmark:
         attack_types=None,
         sampling_rate=None,
         verbose=False,
-        save_audio=True,
-        output_dir="audio_processed",
         **kwargs,
     ):
         """
@@ -111,8 +107,6 @@ class Benchmark:
             attack_types (list, optional): A list of attack types to perform. Defaults to all available attacks.
             sampling_rate (int, optional): Target sampling rate for loading audio. Defaults to None.
             verbose (bool, optional): Print verbose info. Defaults to True.
-            save_audio (bool, optional): Whether to save processed audio files. Defaults to True.
-            output_dir (str, optional): Directory to save processed audio. Defaults to "audio_processed".
             **kwargs: Additional parameters for specific attacks.
 
         Returns:
@@ -120,11 +114,6 @@ class Benchmark:
         """
         if isinstance(filepaths, str):
             filepaths = [filepaths]
-
-        # Create output directory if it doesn't exist
-        if save_audio:
-            os.makedirs(output_dir, exist_ok=True)
-            logger.info(f"Audio will be saved to: {output_dir}")
 
         # If user doesn't specify attacks, use them all
         attack_types = attack_types or list(self.attacks.keys())
@@ -154,9 +143,6 @@ class Benchmark:
                 logger.info(f"\nProcessing file: {filepath}")
             results[filepath] = {}
 
-            # Get base filename without extension
-            base_filename = os.path.splitext(os.path.basename(filepath))[0]
-
             # If no user-supplied watermark, pick a random message size
             if watermark_data is None:
                 watermark_data = model_instance.generate_watermark()
@@ -170,14 +156,6 @@ class Benchmark:
             watermarked_audio = model_instance.embed(
                 audio=audio, watermark_data=watermark_data, sampling_rate=sampling_rate
             )
-
-            # Save watermarked audio
-            if save_audio:
-                watermarked_filename = f"{base_filename}_watermarked.wav"
-                watermarked_path = os.path.join(output_dir, watermarked_filename)
-                sf.write(watermarked_path, watermarked_audio, sampling_rate)
-                if verbose:
-                    logger.info(f"  Saved watermarked audio: {watermarked_filename}")
 
             # Apply each attack and compute metrics
             for attack_name in attack_types:
@@ -197,18 +175,6 @@ class Benchmark:
                 attacked_audio = attack_instance.apply(
                     watermarked_audio, **attack_kwargs
                 )
-
-                attacked_audio_metrics = attack_instance.apply(
-                    audio, **attack_kwargs
-                )
-                
-                # Save attacked audio
-                if save_audio:
-                    attacked_filename = f"{base_filename}_{attack_name}.wav"
-                    attacked_path = os.path.join(output_dir, attacked_filename)
-                    sf.write(attacked_path, attacked_audio, sampling_rate)
-                    if verbose:
-                        logger.info(f"    Saved attacked audio: {attacked_filename}")
                 
                 detected_message = model_instance.detect(attacked_audio, sampling_rate)
                 print("detected message is ", detected_message, type(detected_message))
@@ -223,10 +189,10 @@ class Benchmark:
                 print("sampling rate is ", sampling_rate)
                 sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
                 print("sr scalar is ", sr_scalar)
-                psnr_val = psnr(audio, attacked_audio_metrics)
-                stoi_val = stoi_wrapper(audio, attacked_audio_metrics, sr_scalar)
-                si_sdr_val = si_sdr(audio, attacked_audio_metrics)
-                pesq_val = pesq_wrapper(audio, attacked_audio_metrics, sr_scalar, 'wb')
+                psnr_val = psnr(watermarked_audio, attacked_audio)
+                stoi_val = stoi_wrapper(audio, attacked_audio, sr_scalar)
+                si_sdr_val = si_sdr(audio, attacked_audio)
+                pesq_val = pesq_wrapper(audio, attacked_audio, sr_scalar, 'wb')
 
 
                 if (wm_model=="PerthModel"):
@@ -241,7 +207,7 @@ class Benchmark:
                     
                 results[filepath][attack_name] = {
                     "accuracy": accuracy,
-                    # "snr": snr_val,
+                    "snr": snr_val,
                     "psnr": psnr_val,
                     "stoi": stoi_val,
                     "si_sdr": si_sdr_val,

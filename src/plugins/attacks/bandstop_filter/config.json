@@ -1,4 +1,7 @@
 {
     "order": 4,
-    "freq_range": [350,500]
+    "freq_range": [
+        200,
+        300
+    ]
 }
