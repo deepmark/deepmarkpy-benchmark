@@ -97,7 +97,7 @@ class Benchmark:
         attack_types=None,
         sampling_rate=None,
         verbose=False,
-        save_audio=True,
+        save_audio= False,
         output_dir="audio_processed",
         **kwargs,
     ):
@@ -140,6 +140,7 @@ class Benchmark:
 
         if sampling_rate is None:
             sampling_rate = self.models[wm_model]["config"]["sampling_rate"]
+            logger.info(f"Using default sampling rate {sampling_rate} for model {wm_model}")
 
         attack_kwargs = {
             **kwargs,
@@ -164,6 +165,7 @@ class Benchmark:
 
             # Load audio
             audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
+            logger.info(f"Sampling rate is: {sampling_rate}")
             attack_kwargs["orig_audio"] = audio
 
             # Embed watermark
@@ -200,7 +202,6 @@ class Benchmark:
                     attacked_audio, different_watermark = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-
                     attacked_audio_metrics, _ = attack_instance.apply(
                         audio, **attack_kwargs
                     )
@@ -213,7 +214,6 @@ class Benchmark:
                     attacked_audio = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-
                     attacked_audio_metrics = attack_instance.apply(
                         audio, **attack_kwargs
                     )
@@ -222,7 +222,6 @@ class Benchmark:
                     attacked_audio = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-
                     attacked_audio_metrics = attack_instance.apply(
                         audio, **attack_kwargs
                     )
@@ -236,84 +235,91 @@ class Benchmark:
                         attacked_audio = np.expand_dims(attacked_audio, axis=1)
                     attacked_filename = f"{base_filename}_{attack_name}.wav"
                     attacked_path = os.path.join(output_dir, attacked_filename)
-                    sf.write(attacked_path, attacked_audio, 24000)
+                    sf.write(attacked_path, attacked_audio, 16000)
                     if verbose:
-                        logger.info(f"    Saved attacked audio: {attacked_filename}")
+                        logger.info(f"Saved attacked audio: {attacked_filename}")
                 
-                logger.info(f"type of message for detector: {type(attacked_audio)}")
-                logger.info(f"first 10 numbers of audio: {attacked_audio}")
-                #logger.info(f"Audio shape1: {attacked_audio.shape}")
-                #attacked_audio = np.squeeze(attacked_audio)
-                #logger.info(f"first 10 numbers of audio: {attacked_audio[:10]}")
-                #logger.info(f"Audio shape2: {attacked_audio.shape}")
-                logger.info(f"Shape of attacked audio: {attacked_audio.shape}")
                 if isinstance(attacked_audio, np.ndarray):
                     attacked_audio = attacked_audio.squeeze()   # (N,1) -> (N,)
                     #attacked_audio = attacked_audio.tolist()
                 detected_message = model_instance.detect(attacked_audio, sampling_rate)
-                print("detected message is ", detected_message, type(detected_message))
-                print(np.any(detected_message == None))
-                print(detected_message, "this is the detected message")
+
+                if (attack_name =="CrossModelAttack"):
+                    different_detected_message = different_model_instance.detect(attacked_audio, sampling_rate)
+                    if (different_model_name=="PerthModel"):
+                        if isinstance(different_detected_message, np.ndarray):
+                            different_accuracy = different_detected_message.tolist()
+                        else:
+                            different_accuracy = different_detected_message
+                    else:
+                        different_accuracy = self.compare_watermarks(different_watermark, different_detected_message)
+                
 
                 if abs(len(audio) - len(attacked_audio)) > 1:
                     snr_val = "N/A"
                 else:
                     snr_val = snr(audio, attacked_audio)
                 
-                print("sampling rate is ", sampling_rate)
+
                 sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
-                print("sr scalar is ", sr_scalar)
-                #psnr_val = psnr(audio, attacked_audio_metrics)
                 stoi_val = stoi_wrapper(audio, attacked_audio_metrics, sr_scalar)
-                #si_sdr_val = si_sdr(audio, attacked_audio_metrics)
                 pesq_val = pesq_wrapper(audio, attacked_audio_metrics, sr_scalar, 'wb')
 
 
                 if (wm_model=="PerthModel"):
-                    #print("accuracy is ", detected_message)
                     if isinstance(detected_message, np.ndarray):
                         accuracy = detected_message.tolist()
                     else:
                        accuracy = detected_message
-                
                 else:             
                     accuracy = self.compare_watermarks(watermark_data, detected_message)
                     
                 results[filepath][attack_name] = {
                     "accuracy": accuracy,
-                    # "snr": snr_val,
-                    "psnr": psnr_val,
                     "stoi": stoi_val,
-                    "si_sdr": si_sdr_val,
                     "pesq": pesq_val
                     }
+
+                if attack_name == "CrossModelAttack":
+                    results[filepath][attack_name]["accuracy_second"] = different_accuracy
 
         return results
 
     def compute_mean_accuracy(self, results):
-        """
-        Compute the mean accuracy for each attack across all files.
 
-        Args:
-            results (dict): Dictionary where each key is a filepath, and the value is another dictionary
-                            containing attack results with accuracy and other metrics.
-
-        Returns:
-            dict: A dictionary with attacks as keys and their mean accuracy as values.
-        """
         attack_accuracies = {}
 
         for _, attack_dict in results.items():
             for attack_name, metrics in attack_dict.items():
                 if attack_name not in attack_accuracies:
-                    attack_accuracies[attack_name] = []
-                attack_accuracies[attack_name].append(metrics["accuracy"])
+                    attack_accuracies[attack_name] = {
+                        "accuracy": [],
+                        "accuracy_second": []
+                    }
 
-        mean_accuracies = {
-            attack_name: np.mean([a for a in accuracies if a is not None])
-            for attack_name, accuracies in attack_accuracies.items()
-        }
+                attack_accuracies[attack_name]["accuracy"].append(metrics["accuracy"])
+
+                if "accuracy_second" in metrics:
+                    attack_accuracies[attack_name]["accuracy_second"].append(
+                        metrics["accuracy_second"]
+                    )
+
+        mean_accuracies = {}
+
+        for attack_name, acc in attack_accuracies.items():
+            mean_accuracies[attack_name] = {}
+
+            mean_accuracies[attack_name]["accuracy_mean"] = float(
+                np.mean([a for a in acc["accuracy"] if a is not None])
+            )
+
+            if acc["accuracy_second"]:
+                mean_accuracies[attack_name]["accuracy_second_mean"] = float(
+                    np.mean([a for a in acc["accuracy_second"] if a is not None])
+                )
+
         return mean_accuracies
+
 
     def compare_watermarks(self, original, detected):
         """
@@ -327,7 +333,7 @@ class Benchmark:
             float: The accuracy of the detected watermark (percentage).
         """
         if (detected is None) or (np.any(detected == np.array(None))):
-            logger.info("detected is none!!!")
-            return 50.0
+            logger.info("Detected watermark is none!")
+            return 50.00
         matches = np.sum(original == detected)
         return (matches / len(original)) * 100

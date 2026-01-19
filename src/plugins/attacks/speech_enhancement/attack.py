@@ -23,7 +23,7 @@ class SpeechEnhancementAttack(BaseAttack):
         logging.info(f"SpeechEnhancementAttack initialized. Target API: {self.endpoint}")
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
-        sampling_rate = kwargs.get("sampling_rate", None)
+        sampling_rate = kwargs.get("sampling_rate_se", None)
         noise_strength = kwargs.get("noise_strength", self.config.get("noise_strength"))
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")

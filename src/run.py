@@ -91,7 +91,7 @@ def main():
         filepaths = [
             os.path.join(args.wav_files_dir, f)
             for f in all_files
-            if f.lower().endswith(".wav")
+            if f.lower().endswith(".wav") or f.lower().endswith(".mp3")
         ]
         if not filepaths:
             logger.error(f"No .wav files found in directory: {args.wav_files_dir}")

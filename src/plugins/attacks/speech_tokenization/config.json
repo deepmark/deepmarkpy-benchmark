@@ -1,4 +1,4 @@
 {
     "model_name": "HKUST-Audio/xcodec2",
-    "sampling_rate": 16000
+    "sampling_rate_st": 16000
 }

@@ -21,6 +21,15 @@ benchmark*.json
 
 # Data
 data/
+Test_samples/
+Test_sample1/
+MOS_audio_testing/
+MOS_audio/
+metrics_testing_samples/
+checkpoints/
+audio_processed/
+
+
 
 # Distribution / packaging
 .Python

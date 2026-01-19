@@ -23,7 +23,7 @@ class SpeechTokenizationAttack(BaseAttack):
         logging.info(f"SpeechTokenizationAttack initialized. Target API: {self.endpoint}")
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
-        sampling_rate = kwargs.get("sampling_rate", None)
+        sampling_rate = kwargs.get("sampling_rate_st", None)
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
 

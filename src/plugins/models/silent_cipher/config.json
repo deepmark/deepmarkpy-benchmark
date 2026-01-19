@@ -2,7 +2,7 @@
     "name": "SilentCipher",
     "type": "model",
     "variant": "docker",
-    "sampling_rate": 44100,
+    "sampling_rate": 16000,
     "watermark_size": 40,
     "phase_shift_decoding": false
 }
