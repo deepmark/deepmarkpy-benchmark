@@ -30,6 +30,7 @@ checkpoints/
 audio_processed/
 
 
+report/
 
 # Distribution / packaging
 .Python
