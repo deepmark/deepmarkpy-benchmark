@@ -190,26 +190,66 @@ class Benchmark:
 
                 attack_instance = self.attacks[attack_name]["class"]()
 
+                if (attack_name =="CrossModelAttack"):
+                    
+                    different_model_name = kwargs.get("different_model_name")
+                    logger.info(f"Different model is chosen and it's {different_model_name}")
+                    different_model_cls = self.models[different_model_name]["class"]
+                    different_model_instance = different_model_cls()
+
+                    attacked_audio, different_watermark = attack_instance.apply(
+                        watermarked_audio, **attack_kwargs
+                    )
+
+                    attacked_audio_metrics, _ = attack_instance.apply(
+                        audio, **attack_kwargs
+                    )
+
+
                 #in case of the collusion mod attack
-                if (attack_name == "ZeroBitCollusionAttack"):
+                elif (attack_name == "ZeroBitCollusionAttack"):
                     attack_kwargs["original_audio_collusion"] = audio
 
-                attacked_audio = attack_instance.apply(
-                    watermarked_audio, **attack_kwargs
-                )
+                    attacked_audio = attack_instance.apply(
+                        watermarked_audio, **attack_kwargs
+                    )
 
-                attacked_audio_metrics = attack_instance.apply(
-                    audio, **attack_kwargs
-                )
-                
+                    attacked_audio_metrics = attack_instance.apply(
+                        audio, **attack_kwargs
+                    )
+
+                else:
+                    attacked_audio = attack_instance.apply(
+                        watermarked_audio, **attack_kwargs
+                    )
+
+                    attacked_audio_metrics = attack_instance.apply(
+                        audio, **attack_kwargs
+                    )
+
+                #attacked_audio_metrics=np.squeeze(attacked_audio_metrics)
                 # Save attacked audio
                 if save_audio:
+                    logger.info(attacked_audio.shape)
+                    logger.info(type(attacked_audio))
+                    if attacked_audio.ndim == 1:
+                        attacked_audio = np.expand_dims(attacked_audio, axis=1)
                     attacked_filename = f"{base_filename}_{attack_name}.wav"
                     attacked_path = os.path.join(output_dir, attacked_filename)
-                    sf.write(attacked_path, attacked_audio, sampling_rate)
+                    sf.write(attacked_path, attacked_audio, 24000)
                     if verbose:
                         logger.info(f"    Saved attacked audio: {attacked_filename}")
                 
+                logger.info(f"type of message for detector: {type(attacked_audio)}")
+                logger.info(f"first 10 numbers of audio: {attacked_audio}")
+                #logger.info(f"Audio shape1: {attacked_audio.shape}")
+                #attacked_audio = np.squeeze(attacked_audio)
+                #logger.info(f"first 10 numbers of audio: {attacked_audio[:10]}")
+                #logger.info(f"Audio shape2: {attacked_audio.shape}")
+                logger.info(f"Shape of attacked audio: {attacked_audio.shape}")
+                if isinstance(attacked_audio, np.ndarray):
+                    attacked_audio = attacked_audio.squeeze()   # (N,1) -> (N,)
+                    #attacked_audio = attacked_audio.tolist()
                 detected_message = model_instance.detect(attacked_audio, sampling_rate)
                 print("detected message is ", detected_message, type(detected_message))
                 print(np.any(detected_message == None))
@@ -223,9 +263,9 @@ class Benchmark:
                 print("sampling rate is ", sampling_rate)
                 sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
                 print("sr scalar is ", sr_scalar)
-                psnr_val = psnr(audio, attacked_audio_metrics)
+                #psnr_val = psnr(audio, attacked_audio_metrics)
                 stoi_val = stoi_wrapper(audio, attacked_audio_metrics, sr_scalar)
-                si_sdr_val = si_sdr(audio, attacked_audio_metrics)
+                #si_sdr_val = si_sdr(audio, attacked_audio_metrics)
                 pesq_val = pesq_wrapper(audio, attacked_audio_metrics, sr_scalar, 'wb')
 
 
