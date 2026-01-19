@@ -99,6 +99,7 @@ class Benchmark:
         verbose=False,
         save_audio= False,
         output_dir="audio_processed",
+        calculate_quality_metrics=False,
         **kwargs,
     ):
         """
@@ -202,9 +203,10 @@ class Benchmark:
                     attacked_audio, different_watermark = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    attacked_audio_metrics, _ = attack_instance.apply(
-                        audio, **attack_kwargs
-                    )
+                    if calculate_quality_metrics:
+                        attacked_audio_metrics, _ = attack_instance.apply(
+                            audio, **attack_kwargs
+                        )
 
 
                 #in case of the collusion mod attack
@@ -214,17 +216,19 @@ class Benchmark:
                     attacked_audio = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    attacked_audio_metrics = attack_instance.apply(
-                        audio, **attack_kwargs
-                    )
+                    if calculate_quality_metrics:
+                        attacked_audio_metrics = attack_instance.apply(
+                            audio, **attack_kwargs
+                        )
 
                 else:
                     attacked_audio = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    attacked_audio_metrics = attack_instance.apply(
-                        audio, **attack_kwargs
-                    )
+                    if calculate_quality_metrics:
+                        attacked_audio_metrics = attack_instance.apply(
+                            audio, **attack_kwargs
+                        )
 
                 #attacked_audio_metrics=np.squeeze(attacked_audio_metrics)
                 # Save attacked audio
@@ -262,8 +266,11 @@ class Benchmark:
                 
 
                 sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
-                stoi_val = stoi_wrapper(audio, attacked_audio_metrics, sr_scalar)
-                pesq_val = pesq_wrapper(audio, attacked_audio_metrics, sr_scalar, 'wb')
+                stoi_val = "N/A"
+                pesq_val = "N/A"
+                if calculate_quality_metrics:
+                    stoi_val = stoi_wrapper(audio, attacked_audio_metrics, sr_scalar)
+                    pesq_val = pesq_wrapper(audio, attacked_audio_metrics, sr_scalar, 'wb')
 
 
                 if (wm_model=="PerthModel"):
