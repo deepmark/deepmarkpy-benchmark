@@ -179,8 +179,7 @@ class Benchmark:
                 watermarked_filename = f"{base_filename}_watermarked.wav"
                 watermarked_path = os.path.join(output_dir, watermarked_filename)
                 sf.write(watermarked_path, watermarked_audio, sampling_rate)
-                if verbose:
-                    logger.info(f"  Saved watermarked audio: {watermarked_filename}")
+
 
             # Apply each attack and compute metrics
             for attack_name in attack_types:
@@ -268,7 +267,7 @@ class Benchmark:
                 sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
                 stoi_val = "N/A"
                 pesq_val = "N/A"
-                if calculate_quality_metrics:
+                if calculate_quality_metrics and sampling_rate in [8000,16000]:
                     stoi_val = stoi_wrapper(audio, attacked_audio_metrics, sr_scalar)
                     pesq_val = pesq_wrapper(audio, attacked_audio_metrics, sr_scalar, 'wb')
 
@@ -288,7 +287,7 @@ class Benchmark:
                     }
 
                 if attack_name == "CrossModelAttack":
-                    results[filepath][attack_name]["accuracy_second"] = different_accuracy
+                    results[filepath][attack_name]["accuracy_cross_model"] = different_accuracy
 
         return results
 
@@ -301,14 +300,14 @@ class Benchmark:
                 if attack_name not in attack_accuracies:
                     attack_accuracies[attack_name] = {
                         "accuracy": [],
-                        "accuracy_second": []
+                        "accuracy_cross_model": []
                     }
 
                 attack_accuracies[attack_name]["accuracy"].append(metrics["accuracy"])
 
-                if "accuracy_second" in metrics:
-                    attack_accuracies[attack_name]["accuracy_second"].append(
-                        metrics["accuracy_second"]
+                if "accuracy_cross_model" in metrics:
+                    attack_accuracies[attack_name]["accuracy_cross_model"].append(
+                        metrics["accuracy_cross_model"]
                     )
 
         mean_accuracies = {}
@@ -320,9 +319,9 @@ class Benchmark:
                 np.mean([a for a in acc["accuracy"] if a is not None])
             )
 
-            if acc["accuracy_second"]:
-                mean_accuracies[attack_name]["accuracy_second_mean"] = float(
-                    np.mean([a for a in acc["accuracy_second"] if a is not None])
+            if acc["accuracy_cross_model"]:
+                mean_accuracies[attack_name]["accuracy_cross_model_mean"] = float(
+                    np.mean([a for a in acc["accuracy_cross_model"] if a is not None])
                 )
 
         return mean_accuracies
@@ -340,7 +339,7 @@ class Benchmark:
             float: The accuracy of the detected watermark (percentage).
         """
         if (detected is None) or (np.any(detected == np.array(None))):
-            logger.info("Detected watermark is none!")
+            logger.info("Watermark detection returned None.")
             return 50.00
         matches = np.sum(original == detected)
         return (matches / len(original)) * 100
