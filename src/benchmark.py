@@ -4,6 +4,7 @@ import os
 
 import numpy as np
 import soundfile as sf
+import librosa
 
 from plugin_manager import PluginManager
 from utils.utils import load_audio, snr
@@ -267,9 +268,14 @@ class Benchmark:
                 sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
                 stoi_val = "N/A"
                 pesq_val = "N/A"
-                if calculate_quality_metrics and sampling_rate in [8000,16000]:
-                    stoi_val = stoi_wrapper(audio, attacked_audio_metrics, sr_scalar)
-                    pesq_val = pesq_wrapper(audio, attacked_audio_metrics, sr_scalar, 'wb')
+                if calculate_quality_metrics:
+                    # Resample to 16kHz if needed (PESQ/STOI only support 8kHz/16kHz)
+                    metrics_sr = 16000 if sr_scalar not in [8000, 16000] else sr_scalar
+                    ref = librosa.resample(audio, orig_sr=sr_scalar, target_sr=metrics_sr) if metrics_sr != sr_scalar else audio
+                    deg = librosa.resample(attacked_audio_metrics, orig_sr=sr_scalar, target_sr=metrics_sr) if metrics_sr != sr_scalar else attacked_audio_metrics
+
+                    stoi_val = stoi_wrapper(ref, deg, metrics_sr)
+                    pesq_val = pesq_wrapper(ref, deg, metrics_sr, 'wb')
 
 
                 if (wm_model=="PerthModel"):
