@@ -13,6 +13,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+import numpy as np
+def convert_numpy(obj):
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+    
 def main():
     benchmark = Benchmark()
 
@@ -81,7 +92,7 @@ def main():
         filepaths = [
             os.path.join(args.wav_files_dir, f)
             for f in all_files
-            if f.lower().endswith(".wav")
+            if f.lower().endswith(".wav") or f.lower().endswith(".mp3")
         ]
         if not filepaths:
             logger.error(f"No .wav files found in directory: {args.wav_files_dir}")
@@ -97,7 +108,7 @@ def main():
     results = benchmark.run(filepaths=filepaths, **args_dict)
 
     with open("benchmark_results.json", "w") as fp:
-        json.dump(results, fp, indent=4)
+        json.dump(results, fp, indent=4, default=convert_numpy)
 
     logger.info("Benchmark completed. Results saved to benchmark_results.json")
 

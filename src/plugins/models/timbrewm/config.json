@@ -2,6 +2,6 @@
     "name": "TimbreWM",
     "type": "model",
     "variant": "docker",
-    "sampling_rate": 44100,
+    "sampling_rate": 22050,
     "watermark_size": 10
 }

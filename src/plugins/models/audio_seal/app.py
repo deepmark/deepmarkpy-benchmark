@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from typing import List
+import sys
 
 import numpy as np
 import torch
@@ -36,6 +37,7 @@ class DetectRequest(BaseModel):
     audio: List[float]
     sampling_rate: int
 
+    
 @app.post("/embed")
 async def embed(request: EmbedRequest):
     """Embed a watermark in an audio file."""
@@ -48,10 +50,12 @@ async def embed(request: EmbedRequest):
     generator = model["generator"]
     wav = torch.tensor(audio, dtype=torch.float32)
     wav = wav.unsqueeze(0).unsqueeze(0)
-    msg = torch.from_numpy(watermark_data).unsqueeze(0)
+    msg = torch.from_numpy(watermark_data).unsqueeze(0)  
+
     watermark = generator.get_watermark(
         wav, message=msg, sample_rate=config["sampling_rate"]
     )
+
     watermarked_audio = wav + watermark
     watermarked_audio = watermarked_audio.detach().numpy()
     watermarked_audio = np.squeeze(watermarked_audio)
@@ -73,7 +77,10 @@ async def detect(request: DetectRequest):
     detector = model["detector"]
     watermarked_audio = np.expand_dims(audio, axis=[0, 1])
     watermarked_audio = torch.tensor(watermarked_audio, dtype=torch.float32)
+
     _, message = detector.detect_watermark(watermarked_audio, sampling_rate)
+    
+
     message = message.squeeze().cpu().numpy()
     return {"watermark": message if message is None else message.tolist()}
 
