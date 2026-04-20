@@ -117,18 +117,75 @@ You can check the status of the services using `docker-compose ps`. The first bu
 ### 2. Run the CLI
 Ensure the Docker services are running (`docker-compose up -d`) if you are using containerized plugins. Then, execute the main benchmark script from your activated virtual environment (if used) or directly:
 
+**Single model:**
 ```bash
-python src/run.py --wav_files_dir /path/to/your/audio/files/dir/ \
+python src/run.py --wav_files_dir /path/to/audio \
                   --wm_model AudioSealModel \
-                  --attack_types VAEAttack SpeechEnhancementAttack \
-                  # Add any other specific attack parameters like --zero_cross_pause_length 25
+                  --attack_types GaussianNoiseAttack LowpassFilterAttack
 ```
 
-### 3. View Results
+**Multiple models (comparative report):**
+```bash
+python src/run.py --wav_files_dir /path/to/audio \
+                  --wm_models AudioSealModel AwareModel PerthModel \
+                  --attack_types GaussianNoiseAttack LowpassFilterAttack
+```
 
-The benchmark will generate:
-- benchmark_results.json – Stores detailed attack results.
-- benchmark_stats.json – Summary of attack effectiveness.
+When using `--wm_models` with two or more models, the benchmark runs each model individually and generates a comparative report with accuracy tables, radar chart, and per-metric comparisons. If only one model is provided via `--wm_models`, it behaves the same as `--wm_model`.
+
+**Using attack groups:**
+```bash
+python src/run.py --wav_files_dir /path/to/audio \
+                  --wm_model AudioSealModel \
+                  --attack_group audio_distortion desynchronization
+```
+
+Available attack groups: `process_disruption`, `audio_editing`, `audio_distortion`, `desynchronization`, `ai_attacks`, `transmission`. Groups can be combined with `--attack_types` to add individual attacks.
+
+### 3. Quality Metrics (Optional)
+
+Use `--calculate_quality_metrics` to compute audio quality metrics and generate a detailed report:
+
+```bash
+python src/run.py --wav_files_dir /path/to/audio --wm_model AudioSealModel \
+                  --attack_types GaussianNoiseAttack LowpassFilterAttack \
+                  --calculate_quality_metrics
+```
+
+**Audio Quality Metrics:**
+
+| Metric | Description | Range |
+|--------|-------------|-------|
+| PESQ | Perceptual Evaluation of Speech Quality | 1.0 - 4.5 |
+| PSNR | Peak Signal-to-Noise Ratio | dB (higher = better) |
+| SI-SDR | Scale-Invariant Signal-to-Distortion Ratio | dB (higher = better) |
+| MCD | Mel Cepstral Distortion | dB (lower = better) |
+| ViSQOL | Virtual Speech Quality Objective Listener | 1.0 - 5.0 (MOS) |
+
+**Speech Intelligibility Measures:**
+
+| Metric | Description | Range |
+|--------|-------------|-------|
+| STOI | Short-Time Objective Intelligibility | 0 - 1 (higher = better) |
+| SII | Speech Intelligibility Index (ANSI S3.5-1997) | 0 - 1 (higher = better) |
+| NCM | Normalized Covariance Metric | 0 - 1 (higher = better) |
+
+### 4. View Results
+
+The benchmark generates the following outputs in the `report/` directory:
+
+**Single model (`--wm_model`):**
+- `benchmark_results.json` – Detailed per-file, per-attack results
+- `benchmark_stats.json` – Mean accuracy per attack
+- `benchmark_report.tex/.pdf` – Accuracy table, bar chart, and performance analysis
+- `detailed_report.tex/.pdf` – Full report with attacks grouped by category and per-group quality/intelligibility metrics (only with `--calculate_quality_metrics`)
+
+**Multiple models (`--wm_models`):**
+- `report/<ModelName>/` – Individual model reports (same as single model)
+- `report/comparison/` – Comparative report with:
+  - Accuracy comparison table with rank-based coloring
+  - Radar chart comparing all models
+  - Per-metric comparison tables filtered to relevant attacks (only with `--calculate_quality_metrics`)
 
 ## Adding a New Plugin
 
@@ -180,7 +237,7 @@ class NewAttack(BaseAttack):
 
 5.	Run the Benchmark
 ```bash 
-python src/run.py --wav_files_dir path/to/audio --wm_model AudioSealModel --attack_types NewAttack
+python src/run.py --wav_files_dir /path/to/audio --wm_model AudioSealModel --attack_types NewAttack
 ```
 
 ### Adding a New Watermarking Model
@@ -216,7 +273,7 @@ class NewModel(BaseModel):
 
 4.	Run the Benchmark with the New Model
 ```Shell
-python src/run.py --wav_files_dir path/to/audio --wm_model NewModel --attack_types CutSamplesAttack
+python src/run.py --wav_files_dir /path/to/audio --wm_model NewModel --attack_types CutSamplesAttack
 ```
 
 ### Docker Integration

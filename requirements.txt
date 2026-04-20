@@ -69,6 +69,7 @@ urllib3==2.5.0
 uvicorn==0.35.0
 pystoi==0.4.1
 pesq==0.0.4
+visqol==0.0.4
 encodec==0.1.1
 descript-audio-codec==1.0.0
 audiocomplib==0.2.0

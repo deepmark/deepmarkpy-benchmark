@@ -8,7 +8,7 @@ import librosa
 
 from plugin_manager import PluginManager
 from utils.utils import load_audio, snr
-from utils.metrics import pesq_wrapper, psnr, stoi_wrapper, si_sdr
+from utils.metrics import compute_metrics
 
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ class Benchmark:
         attack_types=None,
         sampling_rate=None,
         verbose=False,
-        save_audio= False,
+        save_audio=False,
         output_dir="audio_processed",
         calculate_quality_metrics=False,
         **kwargs,
@@ -186,7 +186,15 @@ class Benchmark:
             if save_audio:
                 watermarked_filename = f"{base_filename}_watermarked.wav"
                 watermarked_path = os.path.join(output_dir, watermarked_filename)
-                sf.write(watermarked_path, watermarked_audio, sampling_rate) 
+                sf.write(watermarked_path, watermarked_audio, sampling_rate)
+
+            sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
+
+            # Quality metrics: impact of watermark embedding (before any attack)
+            watermarked_audio_quality = None
+            if calculate_quality_metrics:
+                watermarked_audio_quality = compute_metrics(audio, watermarked_audio, sr_scalar)
+
             # Apply each attack and compute metrics
             for attack_name in attack_types:
                 if attack_name not in self.attacks:
@@ -208,11 +216,6 @@ class Benchmark:
                     attacked_audio, different_watermark = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    if calculate_quality_metrics:
-                        attacked_audio_metrics, _ = attack_instance.apply(
-                            audio, **attack_kwargs
-                        )
-
 
                 #in case of the collusion mod attack
                 elif (attack_name == "ZeroBitCollusionAttack"):
@@ -221,25 +224,15 @@ class Benchmark:
                     attacked_audio = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    if calculate_quality_metrics:
-                        attacked_audio_metrics = attack_instance.apply(
-                            audio, **attack_kwargs
-                        )
 
                 else:
                     attacked_audio = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    if calculate_quality_metrics:
-                        attacked_audio_metrics = attack_instance.apply(
-                            audio, **attack_kwargs
-                        )
 
                 # Ensure consistent shape for all attacks
                 if isinstance(attacked_audio, np.ndarray):
                     attacked_audio = np.squeeze(attacked_audio)
-                if calculate_quality_metrics and isinstance(attacked_audio_metrics, np.ndarray):
-                    attacked_audio_metrics = np.squeeze(attacked_audio_metrics)
 
                 # Save attacked audio
                 if save_audio:
@@ -274,21 +267,10 @@ class Benchmark:
                         different_accuracy = self.compare_watermarks(different_watermark, different_detected_message)
                 
 
-                snr_val = snr(audio, attacked_audio)
-                
-
-                sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
-                stoi_val = "N/A"
-                pesq_val = "N/A"
+                attacked_audio_quality_wm = None
                 if calculate_quality_metrics:
-                    # Resample to 16kHz if needed (PESQ/STOI only support 8kHz/16kHz)
-                    metrics_sr = 16000 if sr_scalar not in [8000, 16000] else sr_scalar
-                    ref = librosa.resample(audio, orig_sr=sr_scalar, target_sr=metrics_sr) if metrics_sr != sr_scalar else audio
-                    deg = librosa.resample(attacked_audio_metrics, orig_sr=sr_scalar, target_sr=metrics_sr) if metrics_sr != sr_scalar else attacked_audio_metrics
-
-                    stoi_val = stoi_wrapper(ref, deg, metrics_sr)
-                    pesq_val = pesq_wrapper(ref, deg, metrics_sr, 'wb')
-
+                    # Quality metrics: original vs attacked watermarked audio
+                    attacked_audio_quality_wm = compute_metrics(audio, attacked_audio, sr_scalar)
 
                 if is_zero_bit:
                     if isinstance(detected_message, np.ndarray):
@@ -300,9 +282,9 @@ class Benchmark:
                     
                 results[filepath][attack_name] = {
                     "accuracy": accuracy,
-                    "stoi": stoi_val,
-                    "pesq": pesq_val
-                    }
+                    "watermarked_audio_quality": watermarked_audio_quality,
+                    "attacked_audio_quality_wm": attacked_audio_quality_wm,
+                }
 
                 # Add confidence for models that return it
                 if confidence is not None:
