@@ -296,17 +296,19 @@ We welcome contributions! Feel free to:
 
 ## Citation
 
-If you use DeepMarkPy Benchmark in your research, please cite our paper:
+If you use DeepMark Benchmark in your research, please cite our paper:
 
 ```
-@inproceedings{
-kovacevic2025deepmark,
-title={DeepMark Benchmark: Redefining Audio Watermarking Robustness},
-author={Slavko Kova{\v{c}}evi{\'c} and Murilo Z. Silvestre and Kosta Pavlovi{\'c} and Petar Nedi{\'c} and Igor Djurovi{\'c}},
-booktitle={The 1st Workshop on GenAI Watermarking},
-year={2025},
-url={https://openreview.net/forum?id=56ZC5dqvJO}
-}
+@ARTICLE{11488564,
+  author={Kovačević, Slavko and Nešović, Elena and Pavlović, Kosta and Nedić, Petar and Djurović, Igor},
+  journal={IEEE Access}, 
+  title={DeepMark Benchmark: Redefining Audio Watermarking Robustness}, 
+  year={2026},
+  volume={},
+  number={},
+  pages={1-1},
+  keywords={Digital audio players;Digital audio broadcasting;Radio broadcasting;Frequency modulation;Filtering;Filters;Equalizers;Low-pass filters;Notch filters;Circuits and systems;Audio watermarking;benchmarking;deep learning;generative AI;robustness evaluation;watermark removal},
+  doi={10.1109/ACCESS.2026.3685903}}
 ```
 
 ## License
