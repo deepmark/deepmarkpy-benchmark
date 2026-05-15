@@ -1,13 +1,104 @@
+import functools
 import logging
+from typing import Dict, Iterable, Optional
 
 import librosa
 import numpy as np
 from pystoi import stoi
 from pesq import pesq
 
-from visqol import VisqolApi
-
 logger = logging.getLogger(__name__)
+
+
+def _safe_metric(name: str):
+    """Decorator for metric functions added in this branch.
+
+    Applies the shared trim + narrow-exception pattern so each new
+    wrapper can focus on the actual computation. Wrappers that existed
+    before this branch keep their inline try/except so the change is
+    scoped to new code only.
+    """
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(reference, degraded, *args, **kwargs):
+            reference, degraded = trim_audio_to_match(reference, degraded)
+            try:
+                return fn(reference, degraded, *args, **kwargs)
+            except (RuntimeError, ValueError, IndexError) as e:
+                logger.warning(f"{name} calculation failed: {e}")
+                return None
+        return wrapper
+    return deco
+
+
+# ANSI S3.5-1997 Table B.2: 1/3-octave band center frequencies (Hz) and
+# corresponding band importance weights for average speech. SII and NCM
+# share this band set so their frequency resolution is identical.
+_ANSI_BAND_CENTERS_HZ = np.array([
+    160.0, 200.0, 250.0, 315.0, 400.0, 500.0, 630.0, 800.0,
+    1000.0, 1250.0, 1600.0, 2000.0, 2500.0, 3150.0, 4000.0,
+    5000.0, 6300.0, 8000.0,
+])
+_ANSI_BAND_IMPORTANCE = np.array([
+    0.0083, 0.0095, 0.0150, 0.0289, 0.0440, 0.0578, 0.0653, 0.0711,
+    0.0818, 0.0844, 0.0882, 0.0898, 0.0868, 0.0844, 0.0771,
+    0.0527, 0.0364, 0.0185,
+])
+
+# 1/3-octave factor: edges at center * 2^(±1/6)
+_THIRD_OCTAVE_FACTOR = 2.0 ** (1.0 / 6.0)
+
+# STFT parameters shared by SII and NCM. 2048 gives ~4 Hz resolution at
+# 8 kHz which is enough to isolate 1/3-octave bands at the low end.
+_SPECTRAL_N_FFT = 2048
+_SPECTRAL_HOP_LENGTH = _SPECTRAL_N_FFT // 2
+
+# SII audibility mapping per ANSI S3.5-1997 maps a -15..+15 dB SNR range
+# linearly to the [0, 1] audibility range (30 dB dynamic range).
+_SII_SNR_CLAMP_DB = 15.0
+_SII_DYNAMIC_RANGE_DB = 2.0 * _SII_SNR_CLAMP_DB  # 30 dB
+
+# Small numerical floor to prevent log10(0) and divide-by-zero.
+_EPSILON = 1e-12
+
+# Minimum audio duration (in seconds) required by pystoi/pesq. Shorter
+# clips cause the underlying C libraries to raise; we bail out early.
+_MIN_METRIC_DURATION_S = 0.25
+
+
+def _check_min_length(reference: np.ndarray, degraded: np.ndarray,
+                      fs: int, metric_name: str) -> bool:
+    """Return True if both signals meet the minimum-length requirement.
+
+    Logs a warning and returns False otherwise so callers can skip the
+    computation instead of crashing inside the underlying C extension.
+    """
+    min_samples = int(fs * _MIN_METRIC_DURATION_S)
+    if len(reference) < min_samples or len(degraded) < min_samples:
+        logger.warning(
+            f"{metric_name}: Audio too short ({len(reference)} samples), skipping"
+        )
+        return False
+    return True
+
+
+def _ansi_bands(fs: int):
+    """Return ANSI 1/3-octave band edges, centers, and importance weights
+    that fit within the Nyquist limit for the given sampling rate.
+
+    Bands whose upper edge exceeds fs/2 are dropped; importance weights
+    are renormalized over the surviving bands so they sum to 1.
+    """
+    nyquist = fs / 2.0
+    lower = _ANSI_BAND_CENTERS_HZ / _THIRD_OCTAVE_FACTOR
+    upper = _ANSI_BAND_CENTERS_HZ * _THIRD_OCTAVE_FACTOR
+    valid = upper <= nyquist
+    centers = _ANSI_BAND_CENTERS_HZ[valid]
+    weights = _ANSI_BAND_IMPORTANCE[valid]
+    if weights.size == 0:
+        return None, None, None, None
+    weights = weights / weights.sum()
+    return lower[valid], upper[valid], centers, weights
 
 
 def trim_audio_to_match(audio1: np.ndarray, audio2: np.ndarray) -> tuple:
@@ -56,68 +147,68 @@ def psnr(original: np.ndarray, watermarked: np.ndarray, max_value: float = 1.0) 
     return 10 * np.log10((max_value ** 2) / mse)
 
 
+# SI-SDR uses a larger epsilon than the shared _EPSILON because its
+# denominator is a squared L2-norm of the reference/noise. 1e-8 matches
+# the convention from the original SI-SDR paper (Le Roux et al., 2019).
+_SI_SDR_EPSILON = 1e-8
+
+
 def si_sdr(reference: np.ndarray, estimate: np.ndarray) -> float:
     """
     Calculate Scale-Invariant Signal-to-Distortion Ratio (SI-SDR).
-        
+
     Args:
         reference: Reference (original) signal
         estimate: Estimated (watermarked) signal
-        
+
     Returns:
         SI-SDR value in dB
     """
-    # Ensure signals are 1D
-    reference, estimate = trim_audio_to_match(reference, estimate) 
+    reference, estimate = trim_audio_to_match(reference, estimate)
     reference = reference.flatten()
     estimate = estimate.flatten()
-        
+
     # Zero-mean normalization
     reference = reference - np.mean(reference)
     estimate = estimate - np.mean(estimate)
-        
-    # Calculate SI-SDR
-    alpha = np.dot(estimate, reference) / (np.linalg.norm(reference) ** 2 + 1e-8)
+
+    alpha = np.dot(estimate, reference) / (np.linalg.norm(reference) ** 2 + _SI_SDR_EPSILON)
     projection = alpha * reference
     noise = estimate - projection
-        
-    si_sdr_value = 10 * np.log10(
-        (np.linalg.norm(projection) ** 2) / (np.linalg.norm(noise) ** 2 + 1e-8)
+
+    return 10 * np.log10(
+        (np.linalg.norm(projection) ** 2) / (np.linalg.norm(noise) ** 2 + _SI_SDR_EPSILON)
     )
-        
-    return si_sdr_value
     
 
 def stoi_wrapper(reference: np.ndarray, degraded: np.ndarray,
-                    fs: int = 16000) -> float:
-        """
-        Simplified Short-Time Objective Intelligibility (STOI) implementation.
-        Args:
-            reference: Clean reference signal
-            degraded: Degraded signal
-            fs: Sampling frequency (Hz)
+                 fs: int = 16000) -> float:
+    """
+    Short-Time Objective Intelligibility (STOI) wrapper.
 
-        Returns:
-            STOI score (0-1, higher is better), or None if calculation fails
-        """
-        reference, degraded = trim_audio_to_match(reference, degraded)
+    Args:
+        reference: Clean reference signal
+        degraded: Degraded signal
+        fs: Sampling frequency (Hz)
 
-        # STOI requires minimum audio length
-        min_samples = fs // 4
-        if len(reference) < min_samples or len(degraded) < min_samples:
-            logger.warning(f"STOI: Audio too short ({len(reference)} samples), skipping")
-            return None
+    Returns:
+        STOI score (0-1, higher is better), or None if calculation fails
+    """
+    reference, degraded = trim_audio_to_match(reference, degraded)
 
-        try:
-            return stoi(reference, degraded, fs)
-        except Exception as e:
-            logger.warning(f"STOI calculation failed: {e}")
-            return None
+    if not _check_min_length(reference, degraded, fs, "STOI"):
+        return None
+
+    try:
+        return stoi(reference, degraded, fs)
+    except (RuntimeError, ValueError, IndexError) as e:
+        logger.warning(f"STOI calculation failed: {e}")
+        return None
 
 
 
 def pesq_wrapper(reference: np.ndarray, degraded: np.ndarray,
-                     fs: int = 16000, mode: str = 'wb') -> float:
+                 fs: int = 16000, mode: str = 'wb') -> float:
     """
     PESQ - Perceptual Evaluation of Speech Quality.
 
@@ -130,24 +221,57 @@ def pesq_wrapper(reference: np.ndarray, degraded: np.ndarray,
     Returns:
         PESQ score (narrowband: 0.5-4.5, wideband: 1.0-4.5), or None if calculation fails
     """
-    if fs not in [8000, 16000]:
+    if fs not in (8000, 16000):
+        logger.warning(f"PESQ: Unsupported sampling rate ({fs} Hz), skipping")
         return None
     reference, degraded = trim_audio_to_match(reference, degraded)
 
-    # PESQ requires minimum audio length (roughly 0.25 seconds)
-    min_samples = fs // 4
-    if len(reference) < min_samples or len(degraded) < min_samples:
-        logger.warning(f"PESQ: Audio too short ({len(reference)} samples), skipping")
+    if not _check_min_length(reference, degraded, fs, "PESQ"):
         return None
 
     try:
         return pesq(fs, reference, degraded, mode)
-    except Exception as e:
+    except (RuntimeError, ValueError, IndexError) as e:
         logger.warning(f"PESQ calculation failed: {e}")
         return None
 
+_visqol_cache = {}
+_visqol_unavailable = False
+
+
+def _get_visqol_api(mode: str):
+    """Return a cached VisqolApi instance for the given mode.
+
+    The ``visqol`` package is imported lazily so benchmarks and other
+    metrics keep working even when ViSQOL is not installed. Returns
+    ``None`` when the package is unavailable.
+    """
+    global _visqol_unavailable
+
+    if _visqol_unavailable:
+        return None
+    if mode in _visqol_cache:
+        return _visqol_cache[mode]
+
+    try:
+        from visqol import VisqolApi
+    except ImportError:
+        logger.info(
+            "visqol package not installed; ViSQOL scores will be skipped. "
+            "Install it to enable this metric."
+        )
+        _visqol_unavailable = True
+        return None
+
+    api = VisqolApi()
+    api.create(mode=mode)
+    _visqol_cache[mode] = api
+    return api
+
+
+@_safe_metric("ViSQOL")
 def visqol_wrapper(reference: np.ndarray, degraded: np.ndarray,
-                   fs: int = 16000) -> float:
+                   fs: int = 16000) -> Optional[float]:
     """
     ViSQOL - Virtual Speech Quality Objective Listener.
 
@@ -157,91 +281,87 @@ def visqol_wrapper(reference: np.ndarray, degraded: np.ndarray,
         fs: Sampling rate
 
     Returns:
-        ViSQOL MOS score (1.0-5.0), or None if calculation fails
+        ViSQOL MOS score (1.0-5.0), ``None`` if the calculation fails
+        or if the optional ``visqol`` package is not installed.
     """
-    reference, degraded = trim_audio_to_match(reference, degraded)
-
-    try:
-        api = VisqolApi()
-        if fs >= 48000:
-            api.create(mode="audio")
-        else:
-            api.create(mode="speech")
-        result = api.measure_from_arrays(reference, degraded, fs)
-        return result.moslqo
-    except Exception as e:
-        logger.warning(f"ViSQOL calculation failed: {e}")
+    mode = "audio" if fs >= 48000 else "speech"
+    api = _get_visqol_api(mode)
+    if api is None:
         return None
+    return api.measure_from_arrays(reference, degraded, fs).moslqo
 
 
+@_safe_metric("SII")
 def sii(reference: np.ndarray, degraded: np.ndarray,
-        fs: int = 16000, n_bands: int = 20) -> float:
+        fs: int = 16000) -> Optional[float]:
     """
-    Speech Intelligibility Index (SII) based on ANSI S3.5-1997.
+    Speech Intelligibility Index (SII) following ANSI S3.5-1997.
 
-    Estimates speech intelligibility by computing band-level SNR
-    weighted by perceptual importance.
+    Uses the standard 1/3-octave band set (160 Hz-8 kHz) with the ANSI
+    Table B.2 band importance function for average speech. The per-band
+    SNR is mapped to audibility via the ANSI 30 dB dynamic range
+    (-15 dB .. +15 dB), and the weighted sum gives the final index.
 
     Args:
         reference: Reference (clean) signal
         degraded: Degraded signal
         fs: Sampling rate
-        n_bands: Number of frequency bands
 
     Returns:
         SII score (0.0-1.0, higher is better), or None if calculation fails
     """
-    reference, degraded = trim_audio_to_match(reference, degraded)
-
-    try:
-        n_fft = 2048
-        ref_spec = np.abs(np.fft.rfft(reference, n=n_fft)) ** 2
-        deg_spec = np.abs(np.fft.rfft(degraded, n=n_fft)) ** 2
-
-        freqs = np.fft.rfftfreq(n_fft, d=1.0 / fs)
-
-        # Critical band center frequencies (ANSI S3.5 simplified)
-        min_freq = 150.0
-        max_freq = min(fs / 2.0, 8500.0)
-        if max_freq <= min_freq:
-            logger.warning(f"SII: Sampling rate too low ({fs} Hz), skipping")
-            return None
-
-        band_centers = np.logspace(
-            np.log10(min_freq), np.log10(max_freq), n_bands
-        )
-        band_edges = np.sqrt(band_centers[:-1] * band_centers[1:])
-        band_edges = np.concatenate([[min_freq], band_edges, [max_freq]])
-
-        # Importance weights (approximate equal weighting, normalized)
-        weights = np.ones(n_bands) / n_bands
-
-        sii_val = 0.0
-        for i in range(n_bands):
-            mask = (freqs >= band_edges[i]) & (freqs < band_edges[i + 1])
-            if not np.any(mask):
-                continue
-
-            signal_power = np.mean(ref_spec[mask])
-            noise = deg_spec[mask] - ref_spec[mask]
-            noise_power = np.mean(np.maximum(noise, 0) + 1e-12)
-
-            band_snr = 10.0 * np.log10(signal_power / (noise_power + 1e-12))
-            band_snr_clamped = np.clip(band_snr, -15.0, 15.0)
-            audibility = (band_snr_clamped + 15.0) / 30.0
-
-            sii_val += weights[i] * audibility
-
-        return float(np.clip(sii_val, 0.0, 1.0))
-    except Exception as e:
-        logger.warning(f"SII calculation failed: {e}")
+    lower, upper, _, weights = _ansi_bands(fs)
+    if weights is None:
+        logger.warning(f"SII: Sampling rate too low ({fs} Hz), skipping")
         return None
 
+    ref_stft = librosa.stft(reference, n_fft=_SPECTRAL_N_FFT,
+                            hop_length=_SPECTRAL_HOP_LENGTH)
+    ref_power = np.mean(np.abs(ref_stft) ** 2, axis=1)
 
+    noise_signal = degraded - reference
+    noise_stft = librosa.stft(noise_signal, n_fft=_SPECTRAL_N_FFT,
+                              hop_length=_SPECTRAL_HOP_LENGTH)
+    noise_power_spec = np.mean(np.abs(noise_stft) ** 2, axis=1)
+
+    freqs = librosa.fft_frequencies(sr=fs, n_fft=_SPECTRAL_N_FFT)
+
+    sii_val = 0.0
+    for lo, hi, w in zip(lower, upper, weights):
+        mask = (freqs >= lo) & (freqs < hi)
+        if not np.any(mask):
+            continue
+
+        signal_power = np.mean(ref_power[mask])
+        noise_power = np.mean(noise_power_spec[mask]) + _EPSILON
+
+        band_snr = 10.0 * np.log10(signal_power / noise_power)
+        band_snr_clamped = np.clip(band_snr,
+                                   -_SII_SNR_CLAMP_DB, _SII_SNR_CLAMP_DB)
+        audibility = (band_snr_clamped + _SII_SNR_CLAMP_DB) / _SII_DYNAMIC_RANGE_DB
+
+        sii_val += w * audibility
+
+    return float(np.clip(sii_val, 0.0, 1.0))
+
+
+_MCD_FACTOR = 10.0 / np.log(10.0) * np.sqrt(2.0)  # ≈ 6.1413 (ANSI standard)
+
+
+@_safe_metric("MCD")
 def mcd(reference: np.ndarray, degraded: np.ndarray,
-        sr: int = 16000, n_mfcc: int = 13) -> float:
+        sr: int = 16000, n_mfcc: int = 13) -> Optional[float]:
     """
     Mel Cepstral Distortion (MCD) between reference and degraded audio.
+
+    Uses the standard MCD scaling factor 10/ln(10) * sqrt(2) ≈ 6.1413,
+    so values are directly comparable to published results. The DC
+    coefficient (MFCC[0]) is excluded, following common MCD practice.
+
+    Uses fixed index-wise alignment (no DTW), so MCD becomes unreliable
+    for attacks that alter timing -- time-stretching, pitch-shifting or
+    anything that inserts/removes samples -- because frames at the same
+    index no longer represent the same phoneme.
 
     Args:
         reference: Reference signal
@@ -252,123 +372,148 @@ def mcd(reference: np.ndarray, degraded: np.ndarray,
     Returns:
         MCD value in dB (lower is better), or None if calculation fails
     """
-    reference, degraded = trim_audio_to_match(reference, degraded)
-
-    try:
-        mfcc_ref = librosa.feature.mfcc(y=reference, sr=sr, n_mfcc=n_mfcc)
-        mfcc_deg = librosa.feature.mfcc(y=degraded, sr=sr, n_mfcc=n_mfcc)
-        min_len = min(mfcc_ref.shape[1], mfcc_deg.shape[1])
-        diff = mfcc_ref[:, :min_len] - mfcc_deg[:, :min_len]
-        return float(np.mean(np.sqrt(np.sum(diff ** 2, axis=0))))
-    except Exception as e:
-        logger.warning(f"MCD calculation failed: {e}")
-        return None
+    mfcc_ref = librosa.feature.mfcc(y=reference, sr=sr, n_mfcc=n_mfcc)[1:, :]
+    mfcc_deg = librosa.feature.mfcc(y=degraded, sr=sr, n_mfcc=n_mfcc)[1:, :]
+    min_len = min(mfcc_ref.shape[1], mfcc_deg.shape[1])
+    diff = mfcc_ref[:, :min_len] - mfcc_deg[:, :min_len]
+    return float(_MCD_FACTOR * np.mean(np.sqrt(np.sum(diff ** 2, axis=0))))
 
 
+@_safe_metric("NCM")
 def ncm(reference: np.ndarray, degraded: np.ndarray,
-        fs: int = 16000, n_bands: int = 20) -> float:
+        fs: int = 16000) -> Optional[float]:
     """
     Normalized Covariance Metric (NCM) for speech intelligibility.
 
-    Evaluates intelligibility by computing the normalized covariance
-    between clean and processed speech in frequency bands, weighted
-    by band importance.
+    Uses the same ANSI S3.5-1997 1/3-octave band set as SII, together
+    with the ANSI band importance weights. Per band, the absolute value
+    of the normalized covariance between the envelopes of the clean and
+    processed magnitude spectra is weighted by importance; `|r|` scores
+    sign-inverted envelopes as preserved (matching Loizou's formulation).
 
     Args:
         reference: Reference (clean) signal
         degraded: Degraded signal
         fs: Sampling rate
-        n_bands: Number of frequency bands
 
     Returns:
         NCM score (0.0-1.0, higher is better), or None if calculation fails
     """
-    reference, degraded = trim_audio_to_match(reference, degraded)
-
-    try:
-        n_fft = 2048
-        hop_length = n_fft // 2
-
-        ref_stft = librosa.stft(reference, n_fft=n_fft, hop_length=hop_length)
-        deg_stft = librosa.stft(degraded, n_fft=n_fft, hop_length=hop_length)
-
-        freqs = librosa.fft_frequencies(sr=fs, n_fft=n_fft)
-
-        min_freq = 100.0
-        max_freq = min(fs / 2.0, 8000.0)
-        if max_freq <= min_freq:
-            logger.warning(f"NCM: Sampling rate too low ({fs} Hz), skipping")
-            return None
-
-        band_edges = np.logspace(
-            np.log10(min_freq), np.log10(max_freq), n_bands + 1
-        )
-
-        weights = np.ones(n_bands) / n_bands
-        ncm_val = 0.0
-
-        for i in range(n_bands):
-            mask = (freqs >= band_edges[i]) & (freqs < band_edges[i + 1])
-            if not np.any(mask):
-                continue
-
-            ref_band = np.abs(ref_stft[mask, :]).flatten()
-            deg_band = np.abs(deg_stft[mask, :]).flatten()
-
-            ref_std = np.std(ref_band)
-            deg_std = np.std(deg_band)
-
-            if ref_std < 1e-12 or deg_std < 1e-12:
-                continue
-
-            cov = np.mean((ref_band - np.mean(ref_band)) * (deg_band - np.mean(deg_band)))
-            norm_cov = cov / (ref_std * deg_std)
-            norm_cov = np.clip(norm_cov, 0.0, 1.0)
-
-            ncm_val += weights[i] * norm_cov
-
-        return float(np.clip(ncm_val, 0.0, 1.0))
-    except Exception as e:
-        logger.warning(f"NCM calculation failed: {e}")
+    lower, upper, _, weights = _ansi_bands(fs)
+    if weights is None:
+        logger.warning(f"NCM: Sampling rate too low ({fs} Hz), skipping")
         return None
 
+    ref_stft = librosa.stft(reference, n_fft=_SPECTRAL_N_FFT,
+                            hop_length=_SPECTRAL_HOP_LENGTH)
+    deg_stft = librosa.stft(degraded, n_fft=_SPECTRAL_N_FFT,
+                            hop_length=_SPECTRAL_HOP_LENGTH)
 
-def compute_metrics(reference, degraded, sr):
+    freqs = librosa.fft_frequencies(sr=fs, n_fft=_SPECTRAL_N_FFT)
+
+    ncm_val = 0.0
+    for lo, hi, w in zip(lower, upper, weights):
+        mask = (freqs >= lo) & (freqs < hi)
+        if not np.any(mask):
+            continue
+
+        ref_band = np.abs(ref_stft[mask, :]).flatten()
+        deg_band = np.abs(deg_stft[mask, :]).flatten()
+
+        ref_std = np.std(ref_band)
+        deg_std = np.std(deg_band)
+
+        if ref_std < _EPSILON or deg_std < _EPSILON:
+            continue
+
+        cov = np.mean((ref_band - np.mean(ref_band)) * (deg_band - np.mean(deg_band)))
+        norm_cov = np.clip(np.abs(cov / (ref_std * deg_std)), 0.0, 1.0)
+
+        ncm_val += w * norm_cov
+
+    return float(np.clip(ncm_val, 0.0, 1.0))
+
+
+QUALITY_METRICS = ["pesq", "psnr", "si_sdr", "mcd", "visqol"]
+INTELLIGIBILITY_METRICS = ["stoi", "sii", "ncm"]
+ALL_METRICS = QUALITY_METRICS + INTELLIGIBILITY_METRICS
+
+# Human-readable labels used by report generators when rendering tables.
+METRIC_LABELS = {
+    "pesq": "PESQ (1--4.5)",
+    "psnr": "PSNR (dB)",
+    "si_sdr": "SI-SDR (dB)",
+    "mcd": "MCD (dB)",
+    "visqol": "ViSQOL (1--5)",
+    "stoi": "STOI (0--1)",
+    "sii": "SII (0--1)",
+    "ncm": "NCM (0--1)",
+}
+
+# Metrics that require 8 kHz or 16 kHz and are resampled accordingly
+_NARROWBAND_METRICS = {"pesq", "stoi"}
+
+
+def compute_metrics(
+    reference: np.ndarray,
+    degraded: np.ndarray,
+    sr: int,
+    metrics: Optional[Iterable[str]] = None,
+) -> Dict[str, Optional[float]]:
     """
     Compute audio quality and speech intelligibility metrics.
+
+    Measures the perceptual effect of the combined watermark + attack
+    pipeline on the audio signal: ``reference`` is the original clean
+    audio, ``degraded`` is the watermarked-then-attacked signal.
 
     Args:
         reference: Original clean audio signal
         degraded: Degraded audio signal
-        sr: Sampling rate
+        sr: Sampling rate of both signals
+        metrics: Optional iterable of metric names to compute. Defaults
+            to all metrics in ``ALL_METRICS``. Only listed metrics are
+            computed; any metric not requested is omitted from the
+            result dict (avoids needless compute for grouped reports).
 
     Returns:
-        dict with keys:
-            Quality: pesq, psnr, si_sdr, mcd, visqol (optional)
-            Intelligibility: stoi, sii
+        Dict with the requested metric names as keys. Values that could
+        not be computed are ``None``.
+
+    Available metrics:
+        Quality: pesq, psnr, si_sdr, mcd, visqol
+            (ViSQOL returns ``None`` when the optional ``visqol`` package
+            is not installed; see README.)
+        Intelligibility: stoi, sii, ncm
     """
     ref_trimmed, deg_trimmed = trim_audio_to_match(reference, degraded)
 
-    # PESQ/STOI require 8kHz or 16kHz
-    metrics_sr = 16000 if sr not in [8000, 16000] else sr
-    if metrics_sr != sr:
-        ref_resampled = librosa.resample(ref_trimmed, orig_sr=sr, target_sr=metrics_sr)
-        deg_resampled = librosa.resample(deg_trimmed, orig_sr=sr, target_sr=metrics_sr)
-    else:
-        ref_resampled = ref_trimmed
-        deg_resampled = deg_trimmed
+    requested = set(metrics) if metrics is not None else set(ALL_METRICS)
 
-    result = {
-        # Quality metrics
-        "pesq": pesq_wrapper(ref_resampled, deg_resampled, metrics_sr, 'wb'),
-        "psnr": psnr(ref_trimmed, deg_trimmed),
-        "si_sdr": si_sdr(ref_trimmed, deg_trimmed),
-        "mcd": mcd(ref_trimmed, deg_trimmed, sr),
-        "visqol": visqol_wrapper(ref_trimmed, deg_trimmed, sr),
-        # Speech intelligibility metrics
-        "stoi": stoi_wrapper(ref_resampled, deg_resampled, metrics_sr),
-        "sii": sii(ref_resampled, deg_resampled, metrics_sr),
-        "ncm": ncm(ref_resampled, deg_resampled, metrics_sr),
+    # Only pay the resample cost when a metric that needs it is requested
+    need_narrowband = bool(requested & _NARROWBAND_METRICS)
+    ref_nb = deg_nb = None
+    nb_sr = sr
+    if need_narrowband:
+        nb_sr = 16000 if sr not in (8000, 16000) else sr
+        if nb_sr != sr:
+            ref_nb = librosa.resample(ref_trimmed, orig_sr=sr, target_sr=nb_sr)
+            deg_nb = librosa.resample(deg_trimmed, orig_sr=sr, target_sr=nb_sr)
+        else:
+            ref_nb, deg_nb = ref_trimmed, deg_trimmed
+
+    # PESQ mode is determined by the sampling rate PESQ is actually run at.
+    pesq_mode = "wb" if nb_sr == 16000 else "nb"
+
+    computations = {
+        "pesq": lambda: pesq_wrapper(ref_nb, deg_nb, nb_sr, pesq_mode),
+        "psnr": lambda: psnr(ref_trimmed, deg_trimmed),
+        "si_sdr": lambda: si_sdr(ref_trimmed, deg_trimmed),
+        "mcd": lambda: mcd(ref_trimmed, deg_trimmed, sr),
+        "visqol": lambda: visqol_wrapper(ref_trimmed, deg_trimmed, sr),
+        "stoi": lambda: stoi_wrapper(ref_nb, deg_nb, nb_sr),
+        "sii": lambda: sii(ref_trimmed, deg_trimmed, sr),
+        "ncm": lambda: ncm(ref_trimmed, deg_trimmed, sr),
     }
 
-    return result
+    return {name: computations[name]() for name in ALL_METRICS if name in requested}

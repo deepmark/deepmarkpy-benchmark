@@ -36,7 +36,21 @@ def to_json_safe(obj):
     if isinstance(obj, list):
         return [to_json_safe(v) for v in obj]
     return obj
-    
+
+
+def from_json_safe(obj):
+    """
+    Inverse of to_json_safe: recursively convert "N/A" sentinel strings
+    back into None so numeric consumers do not crash.
+    """
+    if obj == "N/A":
+        return None
+    if isinstance(obj, dict):
+        return {k: from_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [from_json_safe(v) for v in obj]
+    return obj
+
 def main():
     benchmark = Benchmark()
 
@@ -97,7 +111,11 @@ def main():
         "--calculate_quality_metrics",
         action="store_true",
         default=False,
-        help="Calculate audio quality metrics (PESQ, STOI, PSNR, SI-SDR, SNR) and generate detailed report",
+        help=(
+            "Calculate audio quality metrics (PESQ, PSNR, SI-SDR, MCD, ViSQOL) "
+            "and speech intelligibility metrics (STOI, SII, NCM); "
+            "generates a detailed report."
+        ),
     )
 
     # Dynamically add configuration parameters from the available plugins
@@ -122,23 +140,21 @@ def main():
 
     # Resolve attack groups into individual attack types
     if args.attack_group:
-        group_attacks = get_attacks_for_groups(args.attack_group)
+        attacks_from_groups = get_attacks_for_groups(args.attack_group)
         # Filter to only attacks that are actually available
         available = set(attacks)
-        group_attacks = [a for a in group_attacks if a in available]
+        attacks_from_groups = [a for a in attacks_from_groups if a in available]
         if args.attack_types:
             # Combine with explicitly listed attacks
-            combined = list(dict.fromkeys(args.attack_types + group_attacks))
+            combined = list(dict.fromkeys(args.attack_types + attacks_from_groups))
             args.attack_types = combined
         else:
-            args.attack_types = group_attacks
+            args.attack_types = attacks_from_groups
         logger.info(f"Attack groups {args.attack_group} resolved to {len(args.attack_types)} attacks")
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logger.debug("Verbose logging enabled.")
-
-    args_dict = vars(args)
 
     try:
         all_files = os.listdir(args.wav_files_dir)
@@ -241,7 +257,7 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
         try:
             from utils.detailed_report_generator import DetailedReportGenerator
             detailed_generator = DetailedReportGenerator(report_dir=report_dir)
-            latex_path, _ = detailed_generator.generate_full_report(
+            latex_path = detailed_generator.generate_full_report(
                 results, model_name=model_name,
             )
             logger.info(f"Detailed report saved to: {latex_path}")
@@ -260,6 +276,7 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
     all_results = {}
     all_stats = {}
 
+    failed_models = []
     for model_name in model_names:
         logger.info(f"\n{'='*60}")
         logger.info(f"Running benchmark for model: {model_name}")
@@ -267,11 +284,43 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
 
         model_dir = os.path.join(report_base, model_name)
         _copy_deepmark_assets(report_base, model_dir)
-        results, flattened_stats = run_single_model(
-            benchmark, filepaths, model_name, args, output_dir=model_dir,
-        )
+        try:
+            results, flattened_stats = run_single_model(
+                benchmark, filepaths, model_name, args, output_dir=model_dir,
+            )
+        except (MemoryError, ConnectionError, OSError) as e:
+            # Only infrastructure failures (OOM, Docker service crash,
+            # network issue) are tolerated so that one model does not
+            # block the whole run. Code-level exceptions (SyntaxError,
+            # ImportError, NameError, AttributeError, ...) fall through
+            # and abort the benchmark — they signal bugs that need to
+            # be fixed rather than silently skipped.
+            logger.error(
+                f"Model {model_name} failed: {type(e).__name__}: {e}. "
+                f"Skipping to next model."
+            )
+            failed_models.append(model_name)
+            continue
+
         all_results[model_name] = results
         all_stats[model_name] = flattened_stats
+
+    if failed_models:
+        logger.warning(
+            f"Skipped {len(failed_models)} model(s) due to errors: "
+            f"{', '.join(failed_models)}"
+        )
+    if not all_results:
+        logger.error("No models completed successfully. Skipping comparative report.")
+        return
+    if len(all_results) < 2:
+        # Comparative report needs at least two models to compare.
+        only = next(iter(all_results))
+        logger.info(
+            f"Only {only} completed successfully; skipping comparative "
+            f"report (single-model outputs are already in report/{only}/)."
+        )
+        return
 
     # Generate comparative report
     try:

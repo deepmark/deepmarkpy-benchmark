@@ -1,36 +1,37 @@
 import json
 import os
 import logging
-import shutil
-import subprocess
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 from utils.attack_groups import group_attacks, ATTACK_GROUPS
+from utils.latex_helpers import (
+    build_longtable,
+    compile_latex,
+    display_attack_name,
+    make_preamble,
+)
+from utils.metrics import (
+    ALL_METRICS,
+    INTELLIGIBILITY_METRICS,
+    METRIC_LABELS,
+    QUALITY_METRICS,
+)
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Per-group metric relevance
+# Per-group metric relevance (read from attack_groups.py — single source)
 # ---------------------------------------------------------------------------
 
 GROUP_QUALITY_METRICS = {
-    "process_disruption": ["pesq", "psnr", "si_sdr", "mcd", "visqol"],
-    "audio_distortion": ["pesq", "psnr", "si_sdr", "visqol"],
-    "desynchronization": ["mcd", "visqol"],
-    "ai_attacks": ["mcd", "pesq", "visqol"],
-    "transmission": ["pesq", "psnr", "si_sdr", "mcd", "visqol"],
+    key: group.get("quality_metrics", []) for key, group in ATTACK_GROUPS.items()
 }
 
 GROUP_INTELLIGIBILITY_METRICS = {
-    "process_disruption": [],
-    "audio_distortion": ["stoi", "sii", "ncm"],
-    "desynchronization": [],
-    "ai_attacks": ["stoi", "sii", "ncm"],
-    "transmission": ["stoi", "sii", "ncm"],
+    key: group.get("intelligibility_metrics", []) for key, group in ATTACK_GROUPS.items()
 }
 
 # Audio Editing is handled via sub-groups instead of top-level metrics
@@ -149,18 +150,9 @@ GROUP_ORDER = [
 class DetailedReportGenerator:
     """Generate detailed LaTeX reports with full quality metrics analysis."""
 
-    BASE_QUALITY_METRICS = ["pesq", "psnr", "si_sdr", "mcd", "visqol"]
-    INTELLIGIBILITY_METRICS = ["stoi", "sii", "ncm"]
-    ALL_METRIC_LABELS = {
-        "pesq": "PESQ (1--4.5)",
-        "psnr": "PSNR (dB)",
-        "si_sdr": "SI-SDR (dB)",
-        "mcd": "MCD (dB)",
-        "visqol": "ViSQOL (1--5)",
-        "stoi": "STOI (0--1)",
-        "sii": "SII (0--1)",
-        "ncm": "NCM (0--1)",
-    }
+    BASE_QUALITY_METRICS = QUALITY_METRICS
+    INTELLIGIBILITY_METRICS = INTELLIGIBILITY_METRICS
+    ALL_METRIC_LABELS = METRIC_LABELS
 
     def __init__(self, report_dir="report"):
         self.report_dir = report_dir
@@ -174,36 +166,7 @@ class DetailedReportGenerator:
     # ------------------------------------------------------------------
 
     def _preamble(self, title, author):
-        """Generate LaTeX preamble with deepmark class fallback."""
-        if self._has_deepmark_cls:
-            return (
-                f"\\documentclass{{deepmark}}\n"
-                f"\\usepackage{{float}}\n"
-                f"\\usepackage{{longtable}}\n"
-                f"\\usepackage{{needspace}}\n\n"
-                f"\\title{{{title}}}\n"
-                f"\\author{{{author}}}\n\n"
-                f"\\begin{{document}}\n"
-                f"\\thispagestyle{{firststyle}}\n"
-                f"\\maketitle"
-            )
-        return (
-            f"\\documentclass{{article}}\n"
-            f"\\usepackage{{booktabs}}\n"
-            f"\\usepackage{{graphicx}}\n"
-            f"\\usepackage{{amsmath}}\n"
-            f"\\usepackage{{cleveref}}\n"
-            f"\\usepackage{{float}}\n"
-            f"\\usepackage{{longtable}}\n"
-            f"\\usepackage{{needspace}}\n"
-            f"\\usepackage{{geometry}}\n"
-            f"\\geometry{{margin=2.5cm}}\n\n"
-            f"\\title{{{title}}}\n"
-            f"\\author{{{author}}}\n"
-            f"\\date{{\\today}}\n\n"
-            f"\\begin{{document}}\n"
-            f"\\maketitle"
-        )
+        return make_preamble(title, author, self._has_deepmark_cls)
 
     def _format_val(self, stats):
         """Format mean value for display."""
@@ -212,8 +175,7 @@ class DetailedReportGenerator:
         return f"{stats['mean']:.2f}"
 
     def _display_name(self, attack_name):
-        """Convert attack class name to readable display name."""
-        return attack_name.replace("Attack", "")
+        return display_attack_name(attack_name)
 
     # ------------------------------------------------------------------
     # Data aggregation
@@ -249,7 +211,16 @@ class DetailedReportGenerator:
         watermark_values = {m: [] for m in all_metrics}
         attack_data = {}
 
-        for filepath, attacks in results.items():
+        for filepath, file_data in results.items():
+            # Watermark-only quality is stored once at file level (S5)
+            wm_quality = file_data.get("watermarked_audio_quality") if isinstance(file_data, dict) else None
+            if wm_quality and wm_quality != "N/A":
+                for m in all_metrics:
+                    val = wm_quality.get(m)
+                    if val is not None and val != "N/A":
+                        watermark_values[m].append(val)
+
+            attacks = file_data.get("attacks", {}) if isinstance(file_data, dict) else {}
             for attack_name, data in attacks.items():
                 if attack_name not in attack_data:
                     attack_data[attack_name] = {
@@ -263,17 +234,11 @@ class DetailedReportGenerator:
                 if "confidence" in data:
                     attack_data[attack_name]["confidence"].append(data["confidence"])
 
-                # Watermark quality (same for all attacks within a file)
-                if data.get("watermarked_audio_quality"):
+                attacked_quality = data.get("attacked_audio_quality_wm")
+                if attacked_quality and attacked_quality != "N/A":
                     for m in all_metrics:
-                        val = data["watermarked_audio_quality"].get(m)
-                        if val is not None:
-                            watermark_values[m].append(val)
-
-                if data.get("attacked_audio_quality_wm"):
-                    for m in all_metrics:
-                        val = data["attacked_audio_quality_wm"].get(m)
-                        if val is not None:
+                        val = attacked_quality.get(m)
+                        if val is not None and val != "N/A":
                             attack_data[attack_name]["metrics"][m].append(val)
 
         def mean_std(values):
@@ -346,27 +311,10 @@ class DetailedReportGenerator:
             col_spec = "lc"
             header = "Attack & Accuracy (\\%)"
 
-        return (
-            f"\\begin{{longtable}}{{{col_spec}}}\n"
-            f"    \\caption{{{caption}}}\n"
-            f"    \\label{{{label}}} \\\\\n"
-            f"    \\toprule\n"
-            f"    {header} \\\\\n"
-            f"    \\midrule\n"
-            f"    \\endfirsthead\n"
-            f"    \\toprule\n"
-            f"    {header} \\\\\n"
-            f"    \\midrule\n"
-            f"    \\endhead\n"
-            f"    \\bottomrule\n"
-            f"    \\endlastfoot\n"
-            + "\n".join(rows) + "\n"
-            "\\end{longtable}"
-        )
+        return build_longtable(col_spec, header, rows, caption, label)
 
     def _metrics_table(self, aggregated, attacks, metrics, data_key,
-                       caption, label, include_baseline=True,
-                       baseline_data=None):
+                       caption, label, baseline_data=None):
         """Generate metrics longtable for a subset of attacks and metrics.
 
         Args:
@@ -377,8 +325,10 @@ class DetailedReportGenerator:
                       'attack_intelligibility')
             caption: Table caption
             label: Table label
-            include_baseline: Whether to include watermark-only baseline row
-            baseline_data: Baseline data dict (e.g. watermarked_audio_quality)
+            baseline_data: Optional watermark-only baseline dict (e.g.
+                ``watermarked_audio_quality``). When provided, prepends a
+                "No Attack (watermark only)" row so attack rows can be
+                compared to the embedding-only condition.
         """
         if not metrics:
             return ""
@@ -392,7 +342,7 @@ class DetailedReportGenerator:
         col_spec = "l" + "c" * len(metrics)
 
         rows = []
-        if include_baseline and baseline_data:
+        if baseline_data:
             baseline_cols = " & ".join(
                 self._format_val(baseline_data.get(m, {"mean": None}))
                 for m in metrics
@@ -411,92 +361,9 @@ class DetailedReportGenerator:
             )
             rows.append(f"    {display} & {cols} \\\\")
 
-        return (
-            f"\\begin{{longtable}}{{{col_spec}}}\n"
-            f"    \\caption{{{caption}}}\n"
-            f"    \\label{{{label}}} \\\\\n"
-            f"    \\toprule\n"
-            f"    Condition & {header_str} \\\\\n"
-            f"    \\midrule\n"
-            f"    \\endfirsthead\n"
-            f"    \\toprule\n"
-            f"    Condition & {header_str} \\\\\n"
-            f"    \\midrule\n"
-            f"    \\endhead\n"
-            f"    \\bottomrule\n"
-            f"    \\endlastfoot\n"
-            + "\n".join(rows) + "\n"
-            "\\end{longtable}"
+        return build_longtable(
+            col_spec, f"Condition & {header_str}", rows, caption, label,
         )
-
-    # ------------------------------------------------------------------
-    # Charts
-    # ------------------------------------------------------------------
-
-    def create_radar_chart(self, aggregated, output_path, model_name="DeepMark"):
-        """Create radar chart of accuracy per attack with legend."""
-        attacks = sorted(aggregated["attacks"].keys())
-        accuracies = []
-        codes = []
-        legend_entries = []
-
-        for i, a in enumerate(attacks):
-            acc = aggregated["attacks"][a]["accuracy"]["mean"]
-            accuracies.append(acc if acc is not None else 0)
-            code = f"A{i + 1}"
-            codes.append(code)
-            legend_entries.append(f"{code}  --  {self._display_name(a)}")
-
-        if not accuracies:
-            logger.warning("No data available for radar chart, skipping.")
-            return
-
-        n = len(accuracies)
-        angles = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
-        accuracies_closed = accuracies + [accuracies[0]]
-        angles_closed = angles + [angles[0]]
-
-        fig = plt.figure(figsize=(16, 10))
-        fig.patch.set_facecolor("white")
-
-        ax = fig.add_axes([0.05, 0.08, 0.55, 0.82], polar=True)
-        ax.set_facecolor("white")
-        ax.plot(angles_closed, accuracies_closed, color="#469CA9",
-                linewidth=2, alpha=0.85)
-        ax.fill(angles_closed, accuracies_closed, color="#469CA9", alpha=0.15)
-
-        ax.set_xticks(angles)
-        ax.set_xticklabels(codes, fontsize=9, color="#333333")
-        ax.set_ylim(0, 100)
-        ax.set_yticks([20, 40, 60, 80, 100])
-        ax.set_yticklabels(["20%", "40%", "60%", "80%", "100%"],
-                           fontsize=8, color="#777777")
-        ax.set_rlabel_position(0)
-        ax.grid(color="#dddddd", linewidth=0.5)
-        ax.set_title(
-            "Watermark Detection Accuracy by Attack Type",
-            fontsize=14, fontweight="700", pad=20, color="#2c3e50",
-        )
-
-        legend_ax = fig.add_axes([0.63, 0.08, 0.35, 0.82])
-        legend_ax.axis("off")
-        legend_ax.set_title("Attack Legend", fontsize=12, fontweight="700",
-                            color="#2c3e50", loc="left", pad=10)
-
-        col_size = (n + 1) // 2
-        for i, entry in enumerate(legend_entries):
-            col = i // col_size
-            row = i % col_size
-            x = 0.0 + col * 0.5
-            y = 1.0 - (row + 1) * (1.0 / (col_size + 1))
-            legend_ax.text(x, y, entry, fontsize=8, color="#555555",
-                           transform=legend_ax.transAxes,
-                           verticalalignment="center")
-
-        plt.savefig(output_path, dpi=300, bbox_inches="tight",
-                    facecolor="white")
-        plt.close()
-        logger.info(f"Radar chart saved to {output_path}")
 
     # ------------------------------------------------------------------
     # Report section builders
@@ -528,7 +395,6 @@ class DetailedReportGenerator:
                     "attacked_audio_quality_wm",
                     f"Audio quality --- {sub_info['label']}.",
                     f"tab:qual_{sub_key}",
-                    include_baseline=True,
                     baseline_data=aggregated["watermarked_audio_quality"],
                 )
                 sections += "\n\n"
@@ -539,7 +405,6 @@ class DetailedReportGenerator:
                     "attack_intelligibility",
                     f"Speech intelligibility --- {sub_info['label']}.",
                     f"tab:intell_{sub_key}",
-                    include_baseline=True,
                     baseline_data=aggregated["watermark_intelligibility"],
                 )
                 sections += "\n\n"
@@ -581,7 +446,6 @@ class DetailedReportGenerator:
                         "attacked_audio_quality_wm",
                         f"Audio quality --- {group_label}.",
                         f"tab:qual_{group_key}",
-                        include_baseline=True,
                         baseline_data=aggregated["watermarked_audio_quality"],
                     )
                     sections += "\n\n"
@@ -593,7 +457,6 @@ class DetailedReportGenerator:
                         "attack_intelligibility",
                         f"Speech intelligibility --- {group_label}.",
                         f"tab:intell_{group_key}",
-                        include_baseline=True,
                         baseline_data=aggregated[
                             "watermark_intelligibility"
                         ],
@@ -610,7 +473,6 @@ class DetailedReportGenerator:
                 "attacked_audio_quality_wm",
                 "Audio quality --- other attacks.",
                 "tab:qual_other",
-                include_baseline=True,
                 baseline_data=aggregated["watermarked_audio_quality"],
             )
             sections += "\n\n"
@@ -619,7 +481,6 @@ class DetailedReportGenerator:
                 "attack_intelligibility",
                 "Speech intelligibility --- other attacks.",
                 "tab:intell_other",
-                include_baseline=True,
                 baseline_data=aggregated["watermark_intelligibility"],
             )
             sections += "\n\n"
@@ -693,19 +554,16 @@ class DetailedReportGenerator:
             f"\\end{{document}}"
         )
 
-    def generate_full_report(self, results, model_name="DeepMark",
-                             total_attacks=None):
+    def generate_full_report(self, results, model_name="DeepMark"):
         """
         Generate complete detailed report from raw benchmark results.
 
         Args:
             results: Raw benchmark results dict from Benchmark.run()
             model_name: Name of the watermarking model
-            total_attacks: Total number of available attacks (unused,
-                           kept for API compatibility)
 
         Returns:
-            Tuple of (latex_path, None)
+            Path to the generated ``.tex`` file.
         """
         aggregated = self.aggregate_results(results)
 
@@ -716,32 +574,6 @@ class DetailedReportGenerator:
 
         logger.info(f"Detailed report saved to {latex_path}")
 
-        if shutil.which("pdflatex"):
-            try:
-                pdflatex_cmd = [
-                    "pdflatex", "-interaction=nonstopmode",
-                    "detailed_report.tex",
-                ]
-                subprocess.run(
-                    pdflatex_cmd, cwd=self.report_dir,
-                    capture_output=True, timeout=60,
-                )
-                subprocess.run(
-                    pdflatex_cmd, cwd=self.report_dir,
-                    capture_output=True, timeout=60,
-                )
-                pdf_path = os.path.join(
-                    self.report_dir, "detailed_report.pdf"
-                )
-                if os.path.exists(pdf_path):
-                    logger.info(f"PDF report generated: {pdf_path}")
-                    for ext in [".aux", ".log", ".out"]:
-                        aux = os.path.join(
-                            self.report_dir, f"detailed_report{ext}"
-                        )
-                        if os.path.exists(aux):
-                            os.remove(aux)
-            except Exception as e:
-                logger.warning(f"PDF compilation failed: {e}")
+        compile_latex(self.report_dir, "detailed_report")
 
-        return latex_path, None
+        return latex_path

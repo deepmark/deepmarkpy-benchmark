@@ -1,4 +1,14 @@
-"""Attack group definitions for the DeepMark Benchmark."""
+"""Attack group definitions for the DeepMark Benchmark.
+
+Each group declares which quality / intelligibility metrics are
+meaningful for that attack family. This acts as the single source of
+truth for both the benchmark runner (which metrics to compute) and
+report generators (which metrics to display).
+
+Groups with empty metric lists skip those metrics entirely -- this
+avoids reporting misleading values (e.g. PESQ for collusion attacks
+that preserve audio quality but overwrite the watermark).
+"""
 
 ATTACK_GROUPS = {
     "process_disruption": {
@@ -9,6 +19,8 @@ ATTACK_GROUPS = {
             "ZeroBitCollusionAttack",
             "SameModelAttack",
         ],
+        "quality_metrics": [],
+        "intelligibility_metrics": [],
     },
     "audio_editing": {
         "label": "Audio Editing Attacks",
@@ -34,6 +46,8 @@ ATTACK_GROUPS = {
             "ResamplingPolyAttack",
             "MixingAttack",
         ],
+        "quality_metrics": ["pesq", "psnr", "si_sdr", "mcd", "visqol"],
+        "intelligibility_metrics": ["stoi", "sii", "ncm"],
     },
     "audio_distortion": {
         "label": "Audio Distortion Attacks",
@@ -44,6 +58,8 @@ ATTACK_GROUPS = {
             "SignInversionAttack",
             "LPCAttack",
         ],
+        "quality_metrics": ["pesq", "psnr", "si_sdr", "visqol"],
+        "intelligibility_metrics": ["stoi", "sii", "ncm"],
     },
     "desynchronization": {
         "label": "Desynchronization Attacks",
@@ -55,6 +71,8 @@ ATTACK_GROUPS = {
             "FlipSamplesAttack",
             "ReplacementAttack",
         ],
+        "quality_metrics": ["mcd", "visqol"],
+        "intelligibility_metrics": [],
     },
     "ai_attacks": {
         "label": "AI Attacks",
@@ -66,6 +84,8 @@ ATTACK_GROUPS = {
             "DiffusionAttack",
             "VAEAttack",
         ],
+        "quality_metrics": ["mcd", "pesq", "visqol"],
+        "intelligibility_metrics": ["stoi", "sii", "ncm"],
     },
     "transmission": {
         "label": "Transmission Attacks",
@@ -73,8 +93,25 @@ ATTACK_GROUPS = {
             "ReplayAttack",
             "NetworkTransmissionAttack",
         ],
+        "quality_metrics": ["pesq", "psnr", "si_sdr", "mcd", "visqol"],
+        "intelligibility_metrics": ["stoi", "sii", "ncm"],
     },
 }
+
+
+def get_metrics_for_attack(attack_name):
+    """Return the list of metric names relevant for ``attack_name``.
+
+    Combines quality and intelligibility metrics. Attacks with no known
+    group fall back to the full metric set so callers do not silently
+    drop unknown attacks.
+    """
+    group_key = get_group_for_attack(attack_name)
+    if group_key is None:
+        from utils.metrics import ALL_METRICS
+        return list(ALL_METRICS)
+    group = ATTACK_GROUPS[group_key]
+    return list(group["quality_metrics"]) + list(group["intelligibility_metrics"])
 
 
 def get_attacks_for_groups(group_names):

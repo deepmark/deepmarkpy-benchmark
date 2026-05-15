@@ -1,16 +1,14 @@
 import os
 import logging
-import shutil
-import subprocess
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-from utils.attack_groups import get_group_for_attack
-from utils.detailed_report_generator import (
-    GROUP_QUALITY_METRICS,
-    GROUP_INTELLIGIBILITY_METRICS,
-    AUDIO_EDITING_SUBGROUPS,
+from utils.latex_helpers import (
+    build_longtable,
+    compile_latex,
+    display_attack_name,
+    make_preamble,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,28 +24,15 @@ RANK_COLORS = [
 
 
 class ComparativeReportGenerator:
-    """Generate comparative LaTeX reports across multiple watermarking models."""
+    """Generate comparative LaTeX reports across multiple watermarking models.
 
-    QUALITY_METRICS = ["pesq", "psnr", "si_sdr", "mcd", "visqol"]
-    INTELLIGIBILITY_METRICS = ["stoi", "sii", "ncm"]
-    METRIC_LABELS = {
-        "pesq": "PESQ (1--4.5)",
-        "psnr": "PSNR (dB)",
-        "si_sdr": "SI-SDR (dB)",
-        "mcd": "MCD (dB)",
-        "visqol": "ViSQOL (1--5)",
-        "stoi": "STOI (0--1)",
-        "sii": "SII (0--1)",
-        "ncm": "NCM (0--1)",
-    }
-    # Higher is better for most metrics; MCD is lower-is-better
-    HIGHER_IS_BETTER = {
-        "pesq": True, "psnr": True, "si_sdr": True,
-        "mcd": False, "visqol": True,
-        "stoi": True, "sii": True, "ncm": True,
-    }
+    The report compares only watermark detection accuracy across models.
+    Per-model quality and intelligibility breakdowns stay in the
+    individual detailed reports; mixing model-level metrics here would
+    compare different models on different signals and is not meaningful.
+    """
 
-    def __init__(self, report_dir="results/comparison"):
+    def __init__(self, report_dir="report/comparison"):
         self.report_dir = report_dir
         os.makedirs(self.report_dir, exist_ok=True)
         self._has_deepmark_cls = os.path.exists(
@@ -55,77 +40,18 @@ class ComparativeReportGenerator:
         )
 
     def _preamble(self, title, author):
-        """Generate LaTeX preamble with deepmark class fallback."""
-        if self._has_deepmark_cls:
-            return (
-                f"\\documentclass{{deepmark}}\n"
-                f"\\usepackage{{float}}\n"
-                f"\\usepackage{{longtable}}\n"
-                f"\\usepackage{{colortbl}}\n"
-                f"\\usepackage{{xcolor}}\n"
-                f"\\usepackage{{needspace}}\n\n"
-                f"\\title{{{title}}}\n"
-                f"\\author{{{author}}}\n\n"
-                f"\\begin{{document}}\n"
-                f"\\thispagestyle{{firststyle}}\n"
-                f"\\maketitle"
-            )
-        return (
-            f"\\documentclass{{article}}\n"
-            f"\\usepackage{{booktabs}}\n"
-            f"\\usepackage{{graphicx}}\n"
-            f"\\usepackage{{amsmath}}\n"
-            f"\\usepackage{{cleveref}}\n"
-            f"\\usepackage{{float}}\n"
-            f"\\usepackage{{longtable}}\n"
-            f"\\usepackage{{colortbl}}\n"
-            f"\\usepackage{{xcolor}}\n"
-            f"\\usepackage{{needspace}}\n"
-            f"\\usepackage{{geometry}}\n"
-            f"\\geometry{{margin=2.5cm}}\n\n"
-            f"\\title{{{title}}}\n"
-            f"\\author{{{author}}}\n"
-            f"\\date{{\\today}}\n\n"
-            f"\\begin{{document}}\n"
-            f"\\maketitle"
+        return make_preamble(
+            title, author, self._has_deepmark_cls,
+            extra_packages=("colortbl", "xcolor"),
         )
 
     @staticmethod
     def _display_name(attack_name):
-        return attack_name.replace("Attack", "")
+        return display_attack_name(attack_name)
 
     @staticmethod
     def _short_model_name(model_name):
         return model_name.replace("Model", "")
-
-    @staticmethod
-    def _attacks_for_metric(attacks, metric_key):
-        """Return the subset of attacks for which metric_key is relevant."""
-        relevant = []
-        for attack in attacks:
-            group = get_group_for_attack(attack)
-            if group is None:
-                # Unknown group — keep all metrics
-                relevant.append(attack)
-                continue
-            if group == "audio_editing":
-                for sub_info in AUDIO_EDITING_SUBGROUPS.values():
-                    if attack in sub_info["attacks"]:
-                        sub_metrics = (
-                            sub_info.get("quality_metrics", [])
-                            + sub_info.get("intelligibility_metrics", [])
-                        )
-                        if metric_key in sub_metrics:
-                            relevant.append(attack)
-                        break
-            else:
-                group_metrics = (
-                    GROUP_QUALITY_METRICS.get(group, [])
-                    + GROUP_INTELLIGIBILITY_METRICS.get(group, [])
-                )
-                if metric_key in group_metrics:
-                    relevant.append(attack)
-        return relevant
 
     def _rank_color(self, value, all_values, higher_is_better=True):
         """Return rank color name for a value among all_values, or None.
@@ -185,32 +111,6 @@ class ComparativeReportGenerator:
         attacks = sorted(all_attacks)
         return model_names, attacks
 
-    def aggregate_metrics(self, all_results):
-        """Aggregate per-file results into per-model, per-attack metric means."""
-        aggregated = {}
-        for model_name, results in all_results.items():
-            aggregated[model_name] = {}
-            attack_data = {}
-            for filepath, attacks in results.items():
-                for attack_name, data in attacks.items():
-                    if attack_name not in attack_data:
-                        attack_data[attack_name] = {
-                            m: [] for m in self.QUALITY_METRICS + self.INTELLIGIBILITY_METRICS
-                        }
-                    quality = data.get("attacked_audio_quality_wm")
-                    if quality:
-                        for m in self.QUALITY_METRICS + self.INTELLIGIBILITY_METRICS:
-                            val = quality.get(m)
-                            if val is not None:
-                                attack_data[attack_name][m].append(val)
-
-            for attack_name, metrics in attack_data.items():
-                aggregated[model_name][attack_name] = {
-                    m: float(np.mean(vals)) if vals else None
-                    for m, vals in metrics.items()
-                }
-        return aggregated
-
     # ----------------------------------------------------------------
     # Accuracy comparison table
     # ----------------------------------------------------------------
@@ -233,75 +133,30 @@ class ComparativeReportGenerator:
             ]
             rows.append(f"    {display} & " + " & ".join(cells) + " \\\\")
 
-        return (
-            f"\\begin{{longtable}}{{{col_spec}}}\n"
-            "    \\caption{Watermark detection accuracy (\\%) by attack type "
-            "for all tested models.}\n"
-            "    \\label{tab:comparison_accuracy} \\\\\n"
-            "    \\toprule\n"
-            f"    {header} \\\\\n"
-            "    \\midrule\n"
-            "    \\endfirsthead\n"
-            "    \\toprule\n"
-            f"    {header} \\\\\n"
-            "    \\midrule\n"
-            "    \\endhead\n"
-            "    \\bottomrule\n"
-            "    \\endlastfoot\n"
-            + "\n".join(rows) + "\n"
-            "\\end{longtable}"
-        )
-
-    # ----------------------------------------------------------------
-    # Metric comparison table
-    # ----------------------------------------------------------------
-    def generate_metric_table(self, aggregated_metrics, model_names, attacks,
-                              metric_key, caption, label):
-        """Generate a single metric comparison table (attack x model)."""
-        if not attacks:
-            return ""
-        n_models = len(model_names)
-        short_names = [self._short_model_name(m) for m in model_names]
-        header = "Attack Type & " + " & ".join(short_names)
-        col_spec = "l" + "c" * n_models
-        higher = self.HIGHER_IS_BETTER.get(metric_key, True)
-
-        rows = []
-        for attack in attacks:
-            display = self._display_name(attack)
-            values = [
-                aggregated_metrics[m].get(attack, {}).get(metric_key)
-                for m in model_names
-            ]
-            cells = [
-                self._colored_val(v, values, higher_is_better=higher)
-                for v in values
-            ]
-            rows.append(f"    {display} & " + " & ".join(cells) + " \\\\")
-
-        return (
-            f"\\begin{{longtable}}{{{col_spec}}}\n"
-            f"    \\caption{{{caption}}}\n"
-            f"    \\label{{{label}}} \\\\\n"
-            "    \\toprule\n"
-            f"    {header} \\\\\n"
-            "    \\midrule\n"
-            "    \\endfirsthead\n"
-            "    \\toprule\n"
-            f"    {header} \\\\\n"
-            "    \\midrule\n"
-            "    \\endhead\n"
-            "    \\bottomrule\n"
-            "    \\endlastfoot\n"
-            + "\n".join(rows) + "\n"
-            "\\end{longtable}"
+        return build_longtable(
+            col_spec,
+            header,
+            rows,
+            caption="Watermark detection accuracy (\\%) by attack type "
+                    "for all tested models.",
+            label="tab:comparison_accuracy",
         )
 
     # ----------------------------------------------------------------
     # Charts
     # ----------------------------------------------------------------
+    _MODEL_COLORS = [
+        "#039FAC", "#E74C3C", "#2ECC71", "#F39C12",
+        "#9B59B6", "#1ABC9C", "#E67E22", "#3498DB",
+    ]
+
     def create_radar_chart(self, all_stats, output_path):
-        """Create radar chart comparing multiple models across attacks."""
+        """Create radar chart comparing multiple models across attacks.
+
+        The figure is split into a polar plot on the left and a legend
+        panel on the right. Each piece is drawn by a dedicated helper to
+        keep this method focused on orchestration.
+        """
         model_names, attacks = self.aggregate_stats(all_stats)
         n = len(attacks)
         if n < 5:
@@ -309,25 +164,35 @@ class ComparativeReportGenerator:
             return False
 
         codes = [f"A{i+1}" for i in range(n)]
-        legend_entries = [
-            f"{codes[i]}  --  {self._display_name(attacks[i])}"
-            for i in range(n)
-        ]
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
-        angles_closed = angles + [angles[0]]
-
-        colors = ["#039FAC", "#E74C3C", "#2ECC71", "#F39C12", "#9B59B6",
-                  "#1ABC9C", "#E67E22", "#3498DB"]
 
         fig = plt.figure(figsize=(16, 10))
         fig.patch.set_facecolor("white")
-        ax = fig.add_axes([0.05, 0.08, 0.55, 0.82], polar=True)
+        polar_ax = fig.add_axes([0.05, 0.08, 0.55, 0.82], polar=True)
+        legend_ax = fig.add_axes([0.63, 0.08, 0.35, 0.82])
+
+        self._draw_radar_axes(polar_ax, all_stats, model_names,
+                              attacks, angles, codes)
+        self._draw_model_legend(legend_ax, model_names)
+        self._draw_attack_legend(legend_ax, attacks, codes,
+                                 n_models=len(model_names))
+
+        plt.savefig(output_path, dpi=300, bbox_inches="tight",
+                    facecolor="white")
+        plt.close()
+        logger.info(f"Comparative radar chart saved to {output_path}")
+        return True
+
+    def _draw_radar_axes(self, ax, all_stats, model_names,
+                         attacks, angles, codes):
+        """Draw the polar plot itself: one coloured polygon per model."""
+        angles_closed = angles + [angles[0]]
         ax.set_facecolor("white")
 
         for idx, model in enumerate(model_names):
             values = [all_stats[model].get(a, 0) or 0 for a in attacks]
             values_closed = values + [values[0]]
-            color = colors[idx % len(colors)]
+            color = self._MODEL_COLORS[idx % len(self._MODEL_COLORS)]
             ax.plot(angles_closed, values_closed, color=color,
                     linewidth=2, alpha=0.85,
                     label=self._short_model_name(model))
@@ -344,23 +209,22 @@ class ComparativeReportGenerator:
         ax.set_title("Watermark Detection Accuracy by Attack Type",
                      fontsize=14, fontweight="700", pad=20, color="#2c3e50")
 
-        legend_ax = fig.add_axes([0.63, 0.08, 0.35, 0.82])
+    def _draw_model_legend(self, legend_ax, model_names):
+        """Draw the "Models" block at the top of the legend panel."""
         legend_ax.axis("off")
-
-        # Model legend at top — two columns, compact
         n_models = len(model_names)
         legend_ax.text(0.0, 1.0, "Models", fontsize=14, fontweight="700",
                        color="#2c3e50", transform=legend_ax.transAxes,
                        verticalalignment="top")
-        model_col_size = (n_models + 1) // 2
-        model_row_spacing = 0.04
+        col_size = (n_models + 1) // 2
+        row_spacing = 0.04
         for idx, model in enumerate(model_names):
-            color = colors[idx % len(colors)]
+            color = self._MODEL_COLORS[idx % len(self._MODEL_COLORS)]
             short = self._short_model_name(model)
-            col = idx // model_col_size
-            row = idx % model_col_size
+            col = idx // col_size
+            row = idx % col_size
             x = col * 0.5
-            y = 1.0 - (row + 1) * model_row_spacing - 0.01
+            y = 1.0 - (row + 1) * row_spacing - 0.01
             legend_ax.plot([x, x + 0.04], [y, y], color=color,
                            linewidth=2.5, transform=legend_ax.transAxes,
                            clip_on=False)
@@ -369,14 +233,21 @@ class ComparativeReportGenerator:
                            transform=legend_ax.transAxes,
                            verticalalignment="center")
 
-        # Attack legend below model legend
-        model_rows = model_col_size
-        attack_top = 1.0 - (model_rows + 1) * model_row_spacing - 0.04
+    def _draw_attack_legend(self, legend_ax, attacks, codes, n_models):
+        """Draw the "Attack Legend" block below the model legend."""
+        legend_entries = [
+            f"{codes[i]}  --  {self._display_name(attacks[i])}"
+            for i in range(len(attacks))
+        ]
+        model_col_size = (n_models + 1) // 2
+        model_row_spacing = 0.04
+        attack_top = 1.0 - (model_col_size + 1) * model_row_spacing - 0.04
         legend_ax.text(0.0, attack_top, "Attack Legend",
                        fontsize=14, fontweight="700", color="#2c3e50",
                        transform=legend_ax.transAxes,
                        verticalalignment="top")
 
+        n = len(attacks)
         col_size = (n + 1) // 2
         available_height = attack_top - 0.05
         row_spacing = min(0.032, available_height / (col_size + 1))
@@ -386,22 +257,19 @@ class ComparativeReportGenerator:
             x = col * 0.5
             y = attack_top - 0.06 - row * row_spacing
             legend_ax.text(x, y, entry, fontsize=10, color="#555555",
-                          transform=legend_ax.transAxes,
-                          verticalalignment="center")
-
-        plt.savefig(output_path, dpi=300, bbox_inches="tight",
-                    facecolor="white")
-        plt.close()
-        logger.info(f"Comparative radar chart saved to {output_path}")
-        return True
+                           transform=legend_ax.transAxes,
+                           verticalalignment="center")
 
     # ----------------------------------------------------------------
     # Full LaTeX report
     # ----------------------------------------------------------------
-    def generate_latex_report(self, all_stats, all_results,
-                              include_radar=True,
-                              calculate_quality_metrics=False):
-        """Generate complete comparative LaTeX document."""
+    def generate_latex_report(self, all_stats, include_radar=True):
+        """Generate complete comparative LaTeX document.
+
+        The comparative report compares detection accuracy only. Per-
+        model quality and intelligibility breakdowns stay in each
+        model's own detailed report.
+        """
         model_names, attacks = self.aggregate_stats(all_stats)
         num_models = len(model_names)
         num_attacks = len(attacks)
@@ -434,64 +302,6 @@ class ComparativeReportGenerator:
                 "\\end{figure}\n"
             )
 
-        # Metric sections — only attacks where each metric is relevant
-        metrics_sections = ""
-        if calculate_quality_metrics:
-            aggregated_metrics = self.aggregate_metrics(all_results)
-
-            quality_tables = []
-            for m in self.QUALITY_METRICS:
-                relevant = self._attacks_for_metric(attacks, m)
-                if not relevant:
-                    continue
-                label = self.METRIC_LABELS.get(m, m)
-                table = self.generate_metric_table(
-                    aggregated_metrics, model_names, relevant,
-                    metric_key=m,
-                    caption=f"{label} comparison across models "
-                            f"(post-attack).",
-                    label=f"tab:comp_{m}",
-                )
-                if table:
-                    quality_tables.append(table)
-
-            intell_tables = []
-            for m in self.INTELLIGIBILITY_METRICS:
-                relevant = self._attacks_for_metric(attacks, m)
-                if not relevant:
-                    continue
-                label = self.METRIC_LABELS.get(m, m)
-                table = self.generate_metric_table(
-                    aggregated_metrics, model_names, relevant,
-                    metric_key=m,
-                    caption=f"{label} comparison across models "
-                            f"(post-attack).",
-                    label=f"tab:comp_{m}",
-                )
-                if table:
-                    intell_tables.append(table)
-
-            if quality_tables:
-                metrics_sections += (
-                    "\\needspace{5\\baselineskip}\n"
-                    "\\section{Audio Quality Comparison}\n\n"
-                    "The following tables compare audio quality metrics "
-                    "across models for each attack type. Only attacks for "
-                    "which each metric is relevant are included. Colors "
-                    "indicate row-wise rank using the same scheme as the "
-                    "accuracy table.\n\n"
-                    + "\n\n".join(quality_tables)
-                )
-
-            if intell_tables:
-                metrics_sections += (
-                    "\n\n\\needspace{5\\baselineskip}\n"
-                    "\\section{Speech Intelligibility Comparison}\n\n"
-                    "The following tables compare speech intelligibility "
-                    "metrics across models for each attack type.\n\n"
-                    + "\n\n".join(intell_tables)
-                )
-
         return (
             f"{preamble}\n\n"
             f"\\begin{{abstract}}\n"
@@ -504,7 +314,6 @@ class ComparativeReportGenerator:
             f"{accuracy_table}\n\n"
             f"{color_legend}\n\n"
             f"{radar_figure}\n"
-            f"{metrics_sections}\n\n"
             f"\\end{{document}}"
         )
 
@@ -513,18 +322,22 @@ class ComparativeReportGenerator:
         """Generate complete comparative report.
 
         Args:
-            all_results: Dict of {model_name: raw benchmark results}
+            all_results: Dict of {model_name: raw benchmark results}.
+                Kept in the signature for API compatibility with callers;
+                the comparative report now only uses accuracy stats.
             all_stats: Dict of {model_name: {attack: accuracy_mean}}
-            calculate_quality_metrics: Whether quality metrics are available
+            calculate_quality_metrics: Kept for API compatibility;
+                ignored — per-model quality details live in each
+                model's detailed report, not the comparative one.
         """
+        del all_results, calculate_quality_metrics  # unused, see docstring
+
         # Radar chart
         radar_path = os.path.join(self.report_dir, "radar_chart.png")
         include_radar = self.create_radar_chart(all_stats, radar_path)
 
         latex_content = self.generate_latex_report(
-            all_stats, all_results,
-            include_radar=include_radar,
-            calculate_quality_metrics=calculate_quality_metrics,
+            all_stats, include_radar=include_radar,
         )
 
         latex_path = os.path.join(self.report_dir, "comparative_report.tex")
@@ -532,28 +345,5 @@ class ComparativeReportGenerator:
             f.write(latex_content)
         logger.info(f"Comparative report saved to {latex_path}")
 
-        if shutil.which("pdflatex"):
-            try:
-                pdflatex_cmd = [
-                    "pdflatex", "-interaction=nonstopmode",
-                    "comparative_report.tex",
-                ]
-                subprocess.run(pdflatex_cmd, cwd=self.report_dir,
-                              capture_output=True, timeout=60)
-                subprocess.run(pdflatex_cmd, cwd=self.report_dir,
-                              capture_output=True, timeout=60)
-                pdf_path = os.path.join(
-                    self.report_dir, "comparative_report.pdf"
-                )
-                if os.path.exists(pdf_path):
-                    logger.info(f"PDF report generated: {pdf_path}")
-                    for ext in [".aux", ".log", ".out"]:
-                        aux = os.path.join(
-                            self.report_dir, f"comparative_report{ext}"
-                        )
-                        if os.path.exists(aux):
-                            os.remove(aux)
-            except Exception as e:
-                logger.warning(f"PDF compilation failed: {e}")
-
+        compile_latex(self.report_dir, "comparative_report")
         return latex_path

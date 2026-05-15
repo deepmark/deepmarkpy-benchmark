@@ -54,12 +54,16 @@ def sample_results():
     """Sample benchmark results dict as returned by Benchmark.run()."""
     return {
         "file1.wav": {
-            "GaussianNoiseAttack": {"accuracy": 95.0, "stoi": "N/A", "pesq": "N/A"},
-            "SignInversionAttack": {"accuracy": 30.0, "stoi": "N/A", "pesq": "N/A"},
+            "attacks": {
+                "GaussianNoiseAttack": {"accuracy": 95.0},
+                "SignInversionAttack": {"accuracy": 30.0},
+            },
         },
         "file2.wav": {
-            "GaussianNoiseAttack": {"accuracy": 100.0, "stoi": "N/A", "pesq": "N/A"},
-            "SignInversionAttack": {"accuracy": 28.0, "stoi": "N/A", "pesq": "N/A"},
+            "attacks": {
+                "GaussianNoiseAttack": {"accuracy": 100.0},
+                "SignInversionAttack": {"accuracy": 28.0},
+            },
         },
     }
 
@@ -69,10 +73,14 @@ def sample_results_with_confidence():
     """Results including confidence scores."""
     return {
         "file1.wav": {
-            "Attack1": {"accuracy": 95.0, "stoi": "N/A", "pesq": "N/A", "confidence": 0.95},
+            "attacks": {
+                "Attack1": {"accuracy": 95.0, "confidence": 0.95},
+            },
         },
         "file2.wav": {
-            "Attack1": {"accuracy": 90.0, "stoi": "N/A", "pesq": "N/A", "confidence": 0.88},
+            "attacks": {
+                "Attack1": {"accuracy": 90.0, "confidence": 0.88},
+            },
         },
     }
 
@@ -82,11 +90,11 @@ def sample_results_with_cross_model():
     """Results including cross-model accuracy."""
     return {
         "file1.wav": {
-            "CrossModelAttack": {
-                "accuracy": 50.0,
-                "stoi": "N/A",
-                "pesq": "N/A",
-                "accuracy_cross_model": 95.0,
+            "attacks": {
+                "CrossModelAttack": {
+                    "accuracy": 50.0,
+                    "accuracy_cross_model": 95.0,
+                },
             },
         },
     }

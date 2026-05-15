@@ -160,7 +160,9 @@ python src/run.py --wav_files_dir /path/to/audio --wm_model AudioSealModel \
 | PSNR | Peak Signal-to-Noise Ratio | dB (higher = better) |
 | SI-SDR | Scale-Invariant Signal-to-Distortion Ratio | dB (higher = better) |
 | MCD | Mel Cepstral Distortion | dB (lower = better) |
-| ViSQOL | Virtual Speech Quality Objective Listener | 1.0 - 5.0 (MOS) |
+| ViSQOL* | Virtual Speech Quality Objective Listener | 1.0 - 5.0 (MOS) |
+
+*ViSQOL is **optional**. The [`visqol`](https://github.com/google/visqol) package is not in `requirements.txt` because its installation requires Bazel and platform-specific build steps. Install it separately if you want ViSQOL scores in your reports; otherwise this metric is silently skipped and all other metrics are still computed.
 
 **Speech Intelligibility Measures:**
 
@@ -169,6 +171,20 @@ python src/run.py --wav_files_dir /path/to/audio --wm_model AudioSealModel \
 | STOI | Short-Time Objective Intelligibility | 0 - 1 (higher = better) |
 | SII | Speech Intelligibility Index (ANSI S3.5-1997) | 0 - 1 (higher = better) |
 | NCM | Normalized Covariance Metric | 0 - 1 (higher = better) |
+
+> **What is measured:** each per-attack metric compares the original
+> clean audio against the **watermarked-then-attacked** signal — i.e.
+> the combined effect of embedding and the attack. The "No Attack
+> (watermark only)" row in the detailed report isolates the embedding
+> cost so you can tell the two contributions apart.
+
+> **ViSQOL is optional.** The `visqol` package is not installed by the
+> default `requirements.txt` because it requires Bazel and
+> platform-specific build steps. If it is not installed the benchmark
+> logs an informational message once and skips the ViSQOL column while
+> all other metrics still run. To enable it, follow the build
+> instructions at https://github.com/google/visqol and install the
+> resulting Python package into the same environment.
 
 ### 4. View Results
 

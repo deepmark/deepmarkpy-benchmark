@@ -6,6 +6,8 @@ import subprocess
 from typing import Dict
 import matplotlib.pyplot as plt
 
+from utils.latex_helpers import display_attack_name
+
 logger = logging.getLogger(__name__)
 
 class BenchmarkReportGenerator:
@@ -113,11 +115,8 @@ class BenchmarkReportGenerator:
 
         table_rows = []
         for attack_name, accuracy in sorted_attacks:
-            display_name = attack_name.replace("Attack", "").strip()
-            display_name = ''.join([' ' + c if c.isupper() and i > 0 else c for i, c in enumerate(display_name)]).strip()
-
-            acc_percent = accuracy
-            table_rows.append(f"    {display_name} & {acc_percent:.2f}\\% \\\\")
+            display_name = display_attack_name(attack_name, split_camel_case=True)
+            table_rows.append(f"    {display_name} & {accuracy:.2f}\\% \\\\")
 
         table_code = (
             "\\begin{longtable}{lc}\n"

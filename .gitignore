@@ -34,6 +34,9 @@ audio_processed/
 
 
 report/
+
+# Local helper script for manually regenerating the comparative report
+# from existing per-model results (not meant to be committed).
 generate_comparative.py
 
 # Distribution / packaging
