@@ -19,8 +19,8 @@ ATTACK_GROUPS = {
             "ZeroBitCollusionAttack",
             "SameModelAttack",
         ],
-        "quality_metrics": [],
-        "intelligibility_metrics": [],
+        "quality_metrics": ["pesq", "psnr", "si_sdr", "mcd", "visqol"],
+        "intelligibility_metrics": ["stoi", "sii", "ncm"],
     },
     "audio_editing": {
         "label": "Audio Editing Attacks",
@@ -54,7 +54,6 @@ ATTACK_GROUPS = {
         "attacks": [
             "GaussianNoiseAttack",
             "PinkNoiseAttack",
-            "AdditiveNoiseAttack",
             "SignInversionAttack",
             "LPCAttack",
         ],
@@ -82,9 +81,8 @@ ATTACK_GROUPS = {
             "SpeechTokenizationAttack",
             "NeuralVocoderAttack",
             "DiffusionAttack",
-            "VAEAttack",
         ],
-        "quality_metrics": ["mcd", "pesq", "visqol"],
+        "quality_metrics": ["pesq", "mcd", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],
     },
     "transmission": {

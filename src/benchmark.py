@@ -224,13 +224,18 @@ class Benchmark:
                 if isinstance(attacked_audio, np.ndarray):
                     attacked_audio = np.squeeze(attacked_audio)
 
-                # Save attacked audio
+                # Save attacked audio. Use a separate variable so the 2D
+                # reshape required by sf.write doesn't leak into detect(),
+                # which expects a 1D signal.
                 if save_audio:
-                    if attacked_audio.ndim == 1:
-                        attacked_audio = np.expand_dims(attacked_audio, axis=1)
+                    attacked_to_save = (
+                        np.expand_dims(attacked_audio, axis=1)
+                        if attacked_audio.ndim == 1
+                        else attacked_audio
+                    )
                     attacked_filename = f"{base_filename}_{attack_name}.wav"
                     attacked_path = os.path.join(output_dir, attacked_filename)
-                    sf.write(attacked_path, attacked_audio, sampling_rate)
+                    sf.write(attacked_path, attacked_to_save, sampling_rate)
                     if verbose:
                         logger.info(f"Saved attacked audio: {attacked_filename}")
                 

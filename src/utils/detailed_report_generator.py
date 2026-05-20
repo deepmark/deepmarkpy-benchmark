@@ -44,7 +44,7 @@ AUDIO_EDITING_SUBGROUPS = {
             "BandstopFilterAttack",
             "EqualizerAttack",
         ],
-        "quality_metrics": ["mcd", "visqol", "pesq"],
+        "quality_metrics": ["pesq", "mcd", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],
         "description": (
             "Frequency-domain modifications that selectively attenuate "
@@ -77,8 +77,8 @@ AUDIO_EDITING_SUBGROUPS = {
             "EchoAttack",
             "MixingAttack",
         ],
-        "quality_metrics": ["pesq", "visqol", "si_sdr", "mcd"],
-        "intelligibility_metrics": [],
+        "quality_metrics": ["pesq", "si_sdr", "mcd", "visqol"],
+        "intelligibility_metrics": ["stoi", "sii", "ncm"],
         "description": (
             "Common audio processing effects that alter signal characteristics "
             "while preserving perceptual quality."
@@ -95,8 +95,8 @@ AUDIO_EDITING_SUBGROUPS = {
             "DescriptAudioCodecAttack",
             "ResamplingPolyAttack",
         ],
-        "quality_metrics": ["pesq", "visqol", "psnr", "mcd"],
-        "intelligibility_metrics": ["stoi", "sii"],
+        "quality_metrics": ["pesq", "psnr", "mcd", "visqol"],
+        "intelligibility_metrics": ["stoi", "sii", "ncm"],
         "description": (
             "Lossy compression and bit-depth reduction operations commonly "
             "encountered in audio distribution pipelines."
@@ -382,12 +382,16 @@ class DetailedReportGenerator:
             if not sub_attacks:
                 continue
 
+            q_metrics = sub_info.get("quality_metrics", [])
+            i_metrics = sub_info.get("intelligibility_metrics", [])
+
+            # Skip subgroups with no metrics configured (nothing to display)
+            if not q_metrics and not i_metrics:
+                continue
+
             sections += "\\needspace{5\\baselineskip}\n"
             sections += f"\\subsection{{{sub_info['label']}}}\n\n"
             sections += f"{sub_info['description']}\n\n"
-
-            q_metrics = sub_info.get("quality_metrics", [])
-            i_metrics = sub_info.get("intelligibility_metrics", [])
 
             if q_metrics:
                 sections += self._metrics_table(

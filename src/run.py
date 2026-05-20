@@ -118,6 +118,16 @@ def main():
         ),
     )
 
+    parser.add_argument(
+        "--save_audio",
+        action="store_true",
+        default=False,
+        help=(
+            "Save watermarked and attacked audio files to disk for manual inspection. "
+            "Files are written to <report_dir>/audio/ (per-model subfolder in multi-model mode)."
+        ),
+    )
+
     # Dynamically add configuration parameters from the available plugins
     for arg, default_value in valid_args.items():
         if isinstance(default_value, bool):
@@ -228,6 +238,11 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
 
     report_dir = output_dir or "report"
     os.makedirs(report_dir, exist_ok=True)
+
+    # Keep audio files in a dedicated subfolder so they don't clutter
+    # the report directory next to .tex/.pdf/.json outputs.
+    if args.save_audio:
+        args_dict["output_dir"] = os.path.join(report_dir, "audio")
 
     results = benchmark.run(filepaths=filepaths, **args_dict)
 
