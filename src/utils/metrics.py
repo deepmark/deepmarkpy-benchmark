@@ -1,9 +1,12 @@
 import functools
 import logging
+import os
+import tempfile
 from typing import Dict, Iterable, Optional
 
 import librosa
 import numpy as np
+import soundfile as sf
 from pystoi import stoi
 from pesq import pesq
 
@@ -219,7 +222,7 @@ def pesq_wrapper(reference: np.ndarray, degraded: np.ndarray,
         mode: 'wb' (wideband) for 16kHz or 'nb' (narrowband) for 8kHz
 
     Returns:
-        PESQ score (narrowband: 0.5-4.5, wideband: 1.0-4.5), or None if calculation fails
+        PESQ score (narrowband: -0.5-4.5, wideband: 1.0-4.66), or None if calculation fails
     """
     if fs not in (8000, 16000):
         logger.warning(f"PESQ: Unsupported sampling rate ({fs} Hz), skipping")
@@ -379,6 +382,104 @@ def mcd(reference: np.ndarray, degraded: np.ndarray,
     return float(_MCD_FACTOR * np.mean(np.sqrt(np.sum(diff ** 2, axis=0))))
 
 
+# --- NISQA (non-intrusive MOS prediction) ---------------------------
+# NISQA is a deep model. Loading it is expensive (~1s + weights I/O), so
+# we cache the model instance and the per-call result so that all five
+# NISQA dimensions returned by a single inference (mos/noi/dis/col/loud)
+# can be served from one prediction.
+_NISQA_WEIGHTS_PATH = os.environ.get(
+    "NISQA_WEIGHTS_PATH",
+    os.path.join(os.path.dirname(__file__), "..", "..", "weights", "nisqa.tar"),
+)
+_nisqa_model = None
+_nisqa_unavailable = False
+
+
+def _get_nisqa_model():
+    """Return a cached nisqaModel, or None when unavailable."""
+    global _nisqa_model, _nisqa_unavailable
+    if _nisqa_unavailable:
+        return None
+    if _nisqa_model is not None:
+        return _nisqa_model
+    weights_abs = os.path.abspath(_NISQA_WEIGHTS_PATH)
+    if not os.path.exists(weights_abs):
+        logger.info(
+            f"NISQA weights not found at {weights_abs}; NISQA scores will be "
+            f"skipped. Set NISQA_WEIGHTS_PATH or place nisqa.tar there."
+        )
+        _nisqa_unavailable = True
+        return None
+    try:
+        from nisqa.NISQA_model import nisqaModel
+    except ImportError:
+        logger.info(
+            "nisqa package not installed; NISQA scores will be skipped."
+        )
+        _nisqa_unavailable = True
+        return None
+    try:
+        import contextlib
+        import io
+        # The package always prints a yaml dump + 'Loaded pretrained model'
+        # banner on init. Silence both so logs stay clean.
+        with contextlib.redirect_stdout(io.StringIO()):
+            _nisqa_model = nisqaModel({
+                "mode": "predict_file",
+                "pretrained_model": weights_abs,
+                "deg": __file__,  # placeholder, overwritten before each predict
+                "tr_bs_val": 1,
+                "tr_num_workers": 0,
+                "output_dir": None,
+                "ms_channel": None,
+            })
+        return _nisqa_model
+    except (RuntimeError, ValueError, FileNotFoundError, ImportError) as e:
+        logger.warning(f"NISQA model could not be loaded: {e}")
+        _nisqa_unavailable = True
+        return None
+
+
+def compute_nisqa(degraded: np.ndarray, sr: int) -> Dict[str, Optional[float]]:
+    """Run a single NISQA inference and return all five MOS dimensions.
+
+    NISQA is non-intrusive: it scores ``degraded`` alone, no reference
+    needed. The five dimensions (mos / noisiness / discontinuity /
+    coloration / loudness) are produced together in one forward pass, so
+    callers should request them as a group rather than five times.
+    """
+    none_result = {k: None for k in NISQA_METRICS}
+    model = _get_nisqa_model()
+    if model is None:
+        return none_result
+
+    try:
+        import contextlib
+        import io
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            sf.write(tmp_path, degraded, sr)
+            model.args["deg"] = tmp_path
+            with contextlib.redirect_stdout(io.StringIO()):
+                model._loadDatasets()
+                df = model.predict()
+            row = df.iloc[0]
+            return {
+                "nisqa_mos": float(row["mos_pred"]),
+                "nisqa_noi": float(row["noi_pred"]),
+                "nisqa_dis": float(row["dis_pred"]),
+                "nisqa_col": float(row["col_pred"]),
+                "nisqa_loud": float(row["loud_pred"]),
+            }
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+    except (RuntimeError, ValueError, KeyError) as e:
+        logger.warning(f"NISQA prediction failed: {e}")
+        return none_result
+
+
 @_safe_metric("NCM")
 def ncm(reference: np.ndarray, degraded: np.ndarray,
         fs: int = 16000) -> Optional[float]:
@@ -434,13 +535,16 @@ def ncm(reference: np.ndarray, degraded: np.ndarray,
     return float(np.clip(ncm_val, 0.0, 1.0))
 
 
-QUALITY_METRICS = ["pesq", "psnr", "si_sdr", "mcd", "visqol"]
+NISQA_METRICS = [
+    "nisqa_mos", "nisqa_noi", "nisqa_dis", "nisqa_col", "nisqa_loud",
+]
+QUALITY_METRICS = ["pesq", "psnr", "si_sdr", "mcd", "visqol"] + NISQA_METRICS
 INTELLIGIBILITY_METRICS = ["stoi", "sii", "ncm"]
 ALL_METRICS = QUALITY_METRICS + INTELLIGIBILITY_METRICS
 
 # Human-readable labels used by report generators when rendering tables.
 METRIC_LABELS = {
-    "pesq": "PESQ (1--4.5)",
+    "pesq": "PESQ (1--4.66)",
     "psnr": "PSNR (dB)",
     "si_sdr": "SI-SDR (dB)",
     "mcd": "MCD (dB)",
@@ -448,6 +552,11 @@ METRIC_LABELS = {
     "stoi": "STOI (0--1)",
     "sii": "SII (0--1)",
     "ncm": "NCM (0--1)",
+    "nisqa_mos": "MOS (1--5)",
+    "nisqa_noi": "Noisiness (1--5)",
+    "nisqa_dis": "Discontinuity (1--5)",
+    "nisqa_col": "Coloration (1--5)",
+    "nisqa_loud": "Loudness (1--5)",
 }
 
 # Metrics that require 8 kHz or 16 kHz and are resampled accordingly
@@ -505,6 +614,14 @@ def compute_metrics(
     # PESQ mode is determined by the sampling rate PESQ is actually run at.
     pesq_mode = "wb" if nb_sr == 16000 else "nb"
 
+    # NISQA returns all 5 dimensions in a single forward pass; cache the
+    # result so requesting more than one of them only runs inference once.
+    nisqa_cache: Dict[str, Optional[float]] = {}
+    def _nisqa(key):
+        if not nisqa_cache:
+            nisqa_cache.update(compute_nisqa(deg_trimmed, sr))
+        return nisqa_cache[key]
+
     computations = {
         "pesq": lambda: pesq_wrapper(ref_nb, deg_nb, nb_sr, pesq_mode),
         "psnr": lambda: psnr(ref_trimmed, deg_trimmed),
@@ -514,6 +631,11 @@ def compute_metrics(
         "stoi": lambda: stoi_wrapper(ref_nb, deg_nb, nb_sr),
         "sii": lambda: sii(ref_trimmed, deg_trimmed, sr),
         "ncm": lambda: ncm(ref_trimmed, deg_trimmed, sr),
+        "nisqa_mos": lambda: _nisqa("nisqa_mos"),
+        "nisqa_noi": lambda: _nisqa("nisqa_noi"),
+        "nisqa_dis": lambda: _nisqa("nisqa_dis"),
+        "nisqa_col": lambda: _nisqa("nisqa_col"),
+        "nisqa_loud": lambda: _nisqa("nisqa_loud"),
     }
 
     return {name: computations[name]() for name in ALL_METRICS if name in requested}

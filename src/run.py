@@ -81,6 +81,15 @@ def main():
         help="Multiple watermarking models to benchmark and compare.",
     )
     parser.add_argument(
+        "--no_attacks",
+        action="store_true",
+        default=False,
+        help=(
+            "Skip all attacks. Only embed and detect the watermark to "
+            "measure baseline model fidelity (accuracy and confidence)."
+        ),
+    )
+    parser.add_argument(
         "--attack_types",
         type=str,
         nargs="*",
@@ -184,7 +193,12 @@ def main():
         logger.error(f"Error accessing audio directory {args.wav_files_dir}: {e}")
         return
 
-    if args.wm_models and len(args.wm_models) > 1:
+    if args.no_attacks:
+        # --- No-attacks mode: embed + detect only ---
+        model_names = args.wm_models if args.wm_models else [args.wm_model]
+        _clean_report_dir("report")
+        run_no_attacks_mode(benchmark, filepaths, model_names, args)
+    elif args.wm_models and len(args.wm_models) > 1:
         # --- Multi-model mode ---
         run_multiple_models(benchmark, filepaths, args.wm_models, args)
     else:
@@ -220,6 +234,48 @@ def _copy_deepmark_assets(src_dir, dst_dir):
             shutil.copy2(src, os.path.join(dst_dir, name))
 
 
+def run_no_attacks_mode(benchmark, filepaths, model_names, args):
+    """Run embed+detect without attacks for one or more models."""
+    report_dir = "report"
+    os.makedirs(report_dir, exist_ok=True)
+
+    from utils.no_attacks_report_generator import generate_no_attacks_report
+
+    all_results = {}
+    for model_name in model_names:
+        logger.info(f"Running no-attacks baseline for: {model_name}")
+        try:
+            results = benchmark.run_no_attacks(
+                filepaths=filepaths,
+                wm_model=model_name,
+                sampling_rate=None,
+                verbose=args.verbose,
+            )
+            all_results[model_name] = results
+        except (MemoryError, ConnectionError, OSError) as e:
+            logger.error(f"Model {model_name} failed: {type(e).__name__}: {e}. Skipping.")
+            continue
+
+        # Save each model's results to a separate JSON file
+        model_results_path = os.path.join(report_dir, f"no_attacks_{model_name}.json")
+        with open(model_results_path, "w") as fp:
+            json.dump(to_json_safe(results), fp, indent=4)
+        logger.info(f"Results for {model_name} saved to {model_results_path}")
+
+        # Regenerate report after each successful model so a partial
+        # report is available even if later models fail.
+        try:
+            latex_path = generate_no_attacks_report(
+                all_results, report_dir=report_dir,
+            )
+            logger.info(f"No-attacks report updated: {latex_path}")
+        except Exception as e:
+            logger.error(f"Failed to generate no-attacks report: {e}")
+
+    if not all_results:
+        logger.error("No models completed successfully.")
+
+
 def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
     """Run benchmark for a single model, save results and generate reports.
 
@@ -253,9 +309,13 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
 
     stats = benchmark.compute_mean_accuracy(results)
     flattened_stats = {attack: metrics["accuracy_mean"] for attack, metrics in stats.items()}
+    # Persist the full per-attack stats (accuracy_mean + always-on
+    # metric means) so the basic report can show PESQ/ViSQOL/STOI
+    # averages without needing the detailed-report flag. The flat
+    # accuracy-only mapping stays in memory for the comparative report.
     stats_path = os.path.join(report_dir, "benchmark_stats.json")
     with open(stats_path, "w") as fp:
-        json.dump(to_json_safe(flattened_stats), fp, indent=4)
+        json.dump(to_json_safe(stats), fp, indent=4)
     logger.info(f"Statistics saved to {stats_path}")
 
     try:
@@ -272,8 +332,10 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
         try:
             from utils.detailed_report_generator import DetailedReportGenerator
             detailed_generator = DetailedReportGenerator(report_dir=report_dir)
+            model_config = benchmark.models.get(model_name, {}).get("config") or {}
+            is_zero_bit = model_config.get("is_zero_bit", False)
             latex_path = detailed_generator.generate_full_report(
-                results, model_name=model_name,
+                results, model_name=model_name, is_zero_bit=is_zero_bit,
             )
             logger.info(f"Detailed report saved to: {latex_path}")
         except Exception as e:

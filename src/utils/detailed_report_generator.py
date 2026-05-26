@@ -34,7 +34,13 @@ GROUP_INTELLIGIBILITY_METRICS = {
     key: group.get("intelligibility_metrics", []) for key, group in ATTACK_GROUPS.items()
 }
 
+GROUP_NISQA_METRICS = {
+    key: group.get("nisqa_metrics", []) for key, group in ATTACK_GROUPS.items()
+}
+
 # Audio Editing is handled via sub-groups instead of top-level metrics
+from utils.attack_groups import _NISQA_METRICS
+
 AUDIO_EDITING_SUBGROUPS = {
     "frequency_filtering": {
         "label": "Frequency Filtering",
@@ -46,6 +52,7 @@ AUDIO_EDITING_SUBGROUPS = {
         ],
         "quality_metrics": ["pesq", "mcd", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],
+        "nisqa_metrics": _NISQA_METRICS,
         "description": (
             "Frequency-domain modifications that selectively attenuate "
             "or boost spectral content."
@@ -60,6 +67,7 @@ AUDIO_EDITING_SUBGROUPS = {
         ],
         "quality_metrics": [],
         "intelligibility_metrics": [],
+        "nisqa_metrics": [],
         "description": (
             "Attacks that modify the temporal structure of the audio signal "
             "by removing or rearranging samples. Quality and intelligibility "
@@ -79,6 +87,7 @@ AUDIO_EDITING_SUBGROUPS = {
         ],
         "quality_metrics": ["pesq", "si_sdr", "mcd", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],
+        "nisqa_metrics": _NISQA_METRICS,
         "description": (
             "Common audio processing effects that alter signal characteristics "
             "while preserving perceptual quality."
@@ -97,6 +106,7 @@ AUDIO_EDITING_SUBGROUPS = {
         ],
         "quality_metrics": ["pesq", "psnr", "mcd", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],
+        "nisqa_metrics": _NISQA_METRICS,
         "description": (
             "Lossy compression and bit-depth reduction operations commonly "
             "encountered in audio distribution pipelines."
@@ -181,12 +191,16 @@ class DetailedReportGenerator:
     # Data aggregation
     # ------------------------------------------------------------------
 
-    def aggregate_results(self, results):
+    def aggregate_results(self, results, is_zero_bit=False):
         """
         Aggregate per-file results into per-attack means.
 
         Args:
             results: Raw benchmark results dict (per file, per attack)
+            is_zero_bit: When True, accuracy is treated as a boolean
+                detection flag (0/1 per file) and the aggregate is
+                reported as a count string ``"n/N"`` (files detected /
+                files total) instead of a percentage.
 
         Returns:
             dict with structure:
@@ -195,9 +209,10 @@ class DetailedReportGenerator:
                 "intelligibility_metrics": [...],
                 "watermarked_audio_quality": {metric: {"mean": ...}},
                 "watermark_intelligibility": {metric: {"mean": ...}},
+                "is_zero_bit": bool,
                 "attacks": {
                     attack_name: {
-                        "accuracy": {"mean": ...},
+                        "accuracy": {"mean": ..., "count": "n/N" (zero-bit)},
                         "attacked_audio_quality_wm": {metric: {"mean": ...}},
                         "attack_intelligibility": {metric: {"mean": ...}},
                     }
@@ -255,12 +270,25 @@ class DetailedReportGenerator:
             "watermark_intelligibility": {
                 m: mean_std(watermark_values[m]) for m in intelligibility_metrics
             },
+            "is_zero_bit": bool(is_zero_bit),
             "attacks": {},
         }
 
         for attack_name, data in attack_data.items():
+            if is_zero_bit:
+                valid = [a for a in data["accuracy"] if a is not None]
+                n_total = len(valid)
+                n_detected = int(sum(1 for v in valid if v))
+                accuracy_entry = {
+                    "mean": (n_detected / n_total * 100.0) if n_total else None,
+                    "std": None,
+                    "count": f"{n_detected}/{n_total}",
+                }
+            else:
+                accuracy_entry = mean_std(data["accuracy"])
+
             entry = {
-                "accuracy": mean_std(data["accuracy"]),
+                "accuracy": accuracy_entry,
                 "attacked_audio_quality_wm": {
                     m: mean_std(data["metrics"][m]) for m in quality_metrics
                 },
@@ -280,11 +308,18 @@ class DetailedReportGenerator:
     # ------------------------------------------------------------------
 
     def _accuracy_table(self, aggregated, attacks, caption, label):
-        """Generate accuracy longtable for a subset of attacks."""
+        """Generate accuracy longtable for a subset of attacks.
+
+        Zero-bit models additionally report a per-attack count "n/N"
+        (files where the watermark was detected over total files) next
+        to the percentage, since the per-file value collapses to 0/1
+        and the count makes the underlying detection ratio explicit.
+        """
         available = sorted([a for a in attacks if a in aggregated["attacks"]])
         if not available:
             return ""
 
+        is_zero_bit = aggregated.get("is_zero_bit", False)
         has_confidence = any(
             "confidence" in aggregated["attacks"][a] for a in available
         )
@@ -294,22 +329,42 @@ class DetailedReportGenerator:
             data = aggregated["attacks"][a]
             display = self._display_name(a)
             acc = self._format_val(data["accuracy"])
-            if has_confidence:
-                conf = (
-                    self._format_val(data["confidence"])
-                    if "confidence" in data
-                    else "---"
-                )
-                rows.append(f"    {display} & {acc} & {conf} \\\\")
+            if is_zero_bit:
+                count = data["accuracy"].get("count", "N/A")
+                if has_confidence:
+                    conf = (
+                        self._format_val(data["confidence"])
+                        if "confidence" in data
+                        else "---"
+                    )
+                    rows.append(f"    {display} & {acc} & {count} & {conf} \\\\")
+                else:
+                    rows.append(f"    {display} & {acc} & {count} \\\\")
             else:
-                rows.append(f"    {display} & {acc} \\\\")
+                if has_confidence:
+                    conf = (
+                        self._format_val(data["confidence"])
+                        if "confidence" in data
+                        else "---"
+                    )
+                    rows.append(f"    {display} & {acc} & {conf} \\\\")
+                else:
+                    rows.append(f"    {display} & {acc} \\\\")
 
-        if has_confidence:
-            col_spec = "lcc"
-            header = "Attack & Accuracy (\\%) & Confidence"
+        if is_zero_bit:
+            if has_confidence:
+                col_spec = "lccc"
+                header = "Attack & Accuracy (\\%) & Detected (files) & Confidence"
+            else:
+                col_spec = "lcc"
+                header = "Attack & Accuracy (\\%) & Detected (files)"
         else:
-            col_spec = "lc"
-            header = "Attack & Accuracy (\\%)"
+            if has_confidence:
+                col_spec = "lcc"
+                header = "Attack & Accuracy (\\%) & Confidence"
+            else:
+                col_spec = "lc"
+                header = "Attack & Accuracy (\\%)"
 
         return build_longtable(col_spec, header, rows, caption, label)
 
@@ -384,9 +439,9 @@ class DetailedReportGenerator:
 
             q_metrics = sub_info.get("quality_metrics", [])
             i_metrics = sub_info.get("intelligibility_metrics", [])
+            n_metrics = sub_info.get("nisqa_metrics", [])
 
-            # Skip subgroups with no metrics configured (nothing to display)
-            if not q_metrics and not i_metrics:
+            if not q_metrics and not i_metrics and not n_metrics:
                 continue
 
             sections += "\\needspace{5\\baselineskip}\n"
@@ -410,6 +465,16 @@ class DetailedReportGenerator:
                     f"Speech intelligibility --- {sub_info['label']}.",
                     f"tab:intell_{sub_key}",
                     baseline_data=aggregated["watermark_intelligibility"],
+                )
+                sections += "\n\n"
+
+            if n_metrics:
+                sections += self._metrics_table(
+                    aggregated, sub_attacks, n_metrics,
+                    "attacked_audio_quality_wm",
+                    f"NISQA non-intrusive quality dimensions --- {sub_info['label']}.",
+                    f"tab:nisqa_{sub_key}",
+                    baseline_data=aggregated["watermarked_audio_quality"],
                 )
                 sections += "\n\n"
 
@@ -442,8 +507,10 @@ class DetailedReportGenerator:
                     aggregated, group_attack_list
                 )
             else:
-                # Quality and intelligibility metrics for this group
                 q_metrics = GROUP_QUALITY_METRICS.get(group_key, [])
+                i_metrics = GROUP_INTELLIGIBILITY_METRICS.get(group_key, [])
+                n_metrics = GROUP_NISQA_METRICS.get(group_key, [])
+
                 if q_metrics:
                     sections += self._metrics_table(
                         aggregated, group_attack_list, q_metrics,
@@ -454,7 +521,6 @@ class DetailedReportGenerator:
                     )
                     sections += "\n\n"
 
-                i_metrics = GROUP_INTELLIGIBILITY_METRICS.get(group_key, [])
                 if i_metrics:
                     sections += self._metrics_table(
                         aggregated, group_attack_list, i_metrics,
@@ -464,6 +530,16 @@ class DetailedReportGenerator:
                         baseline_data=aggregated[
                             "watermark_intelligibility"
                         ],
+                    )
+                    sections += "\n\n"
+
+                if n_metrics:
+                    sections += self._metrics_table(
+                        aggregated, group_attack_list, n_metrics,
+                        "attacked_audio_quality_wm",
+                        f"NISQA non-intrusive quality dimensions --- {group_label}.",
+                        f"tab:nisqa_{group_key}",
+                        baseline_data=aggregated["watermarked_audio_quality"],
                     )
                     sections += "\n\n"
 
@@ -504,6 +580,12 @@ class DetailedReportGenerator:
         """
         num_attacks = len(aggregated["attacks"])
         all_attacks = list(aggregated["attacks"].keys())
+        is_single = num_attacks == 1
+        attack_word = "attack type" if is_single else "attack types"
+        across_phrase = (
+            f"a single attack type" if is_single
+            else f"{num_attacks} attack types"
+        )
 
         preamble = self._preamble(
             f"Detailed Benchmark Report: {model_name}",
@@ -513,23 +595,23 @@ class DetailedReportGenerator:
         abstract = (
             f"\\begin{{abstract}}\n"
             f"This report presents a detailed evaluation of the "
-            f"{model_name} watermarking model across {num_attacks} attack "
-            f"types. It covers watermark detection robustness, audio quality "
+            f"{model_name} watermarking model across {across_phrase}. "
+            f"It covers watermark detection robustness, audio quality "
             f"impact analysis, and speech intelligibility measures, comparing "
-            f"the effects of watermark embedding and adversarial attacks on "
-            f"the audio signal.\n"
+            f"the effects of watermark embedding and adversarial "
+            f"{'attack' if is_single else 'attacks'} on the audio signal.\n"
             f"\\end{{abstract}}\n"
         )
 
         # Overall accuracy table + bar chart at the top
         robustness = "\\section{Watermark Detection Robustness}\n\n"
         robustness += (
-            "The following table reports the mean detection accuracy "
-            "per attack type.\n\n"
+            f"The following table reports the mean detection accuracy "
+            f"per {attack_word}.\n\n"
         )
         robustness += self._accuracy_table(
             aggregated, all_attacks,
-            "Watermark detection robustness per attack type.",
+            f"Watermark detection robustness per {attack_word}.",
             "tab:robustness",
         )
         robustness += "\n\n"
@@ -558,18 +640,22 @@ class DetailedReportGenerator:
             f"\\end{{document}}"
         )
 
-    def generate_full_report(self, results, model_name="DeepMark"):
+    def generate_full_report(self, results, model_name="DeepMark",
+                              is_zero_bit=False):
         """
         Generate complete detailed report from raw benchmark results.
 
         Args:
             results: Raw benchmark results dict from Benchmark.run()
             model_name: Name of the watermarking model
+            is_zero_bit: When True, render accuracy as "n/N" detection
+                counts (zero-bit detector returns 0/1 per file, so a
+                percentage column would only ever show 0 or 100).
 
         Returns:
             Path to the generated ``.tex`` file.
         """
-        aggregated = self.aggregate_results(results)
+        aggregated = self.aggregate_results(results, is_zero_bit=is_zero_bit)
 
         latex_content = self.generate_latex_report(aggregated, model_name)
         latex_path = os.path.join(self.report_dir, "detailed_report.tex")

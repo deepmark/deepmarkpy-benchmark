@@ -164,6 +164,36 @@ python src/run.py --wav_files_dir /path/to/audio --wm_model AudioSealModel \
 
 *ViSQOL is **optional**. The [`visqol`](https://github.com/google/visqol) package is not in `requirements.txt` because its installation requires Bazel and platform-specific build steps. Install it separately if you want ViSQOL scores in your reports; otherwise this metric is silently skipped and all other metrics are still computed.
 
+**Non-Intrusive Quality (NISQA):**
+
+| Metric | Description | Range |
+|--------|-------------|-------|
+| NISQA MOS | Overall speech quality (Mean Opinion Score) | 1.0 - 5.0 |
+| NISQA NOI | Noisiness | 1.0 - 5.0 |
+| NISQA DIS | Discontinuity | 1.0 - 5.0 |
+| NISQA COL | Coloration | 1.0 - 5.0 |
+| NISQA LOUD | Loudness | 1.0 - 5.0 |
+
+NISQA is a **non-intrusive** metric (it does not require a clean reference signal), which makes it particularly useful for desynchronization attacks where intrusive metrics like PESQ break down. To enable NISQA:
+
+1. Install the package:
+   ```bash
+   pip install nisqa
+   ```
+
+2. Download the model weights (`nisqa.tar`, ~1.1 MB) from the [NISQA GitHub repository](https://github.com/gabrielmittag/NISQA/tree/master/weights):
+   ```bash
+   mkdir -p weights
+   wget -O weights/nisqa.tar https://github.com/gabrielmittag/NISQA/raw/master/weights/nisqa.tar
+   ```
+
+3. The benchmark automatically looks for `weights/nisqa.tar` in the project root. To use a custom path, set the environment variable:
+   ```bash
+   export NISQA_WEIGHTS_PATH=/path/to/nisqa.tar
+   ```
+
+If NISQA is not installed or the weights file is missing, the metric is silently skipped and all other metrics still run.
+
 **Speech Intelligibility Measures:**
 
 | Metric | Description | Range |

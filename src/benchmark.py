@@ -8,7 +8,7 @@ import librosa
 
 from plugin_manager import PluginManager
 from utils.utils import load_audio
-from utils.metrics import compute_metrics
+from utils.metrics import ALL_METRICS, compute_metrics
 from utils.attack_groups import get_metrics_for_attack
 
 
@@ -81,6 +81,86 @@ class Benchmark:
         for name, entry in self.attacks.items():
             self._log_plugin_entry("Attack", name, entry)
 
+    def run_no_attacks(
+        self,
+        filepaths,
+        wm_model,
+        watermark_data=None,
+        sampling_rate=None,
+        verbose=False,
+        **kwargs,
+    ):
+        """Embed and detect without applying any attacks.
+
+        Returns per-file accuracy (and confidence where available).
+        Used with ``--no_attacks`` to measure baseline model fidelity.
+        """
+        if isinstance(filepaths, str):
+            filepaths = [filepaths]
+
+        if wm_model not in self.models:
+            raise ValueError(
+                f"Model '{wm_model}' not found. Available: {list(self.models.keys())}"
+            )
+
+        model_cls = self.models[wm_model]["class"]
+        model_instance = model_cls()
+        model_config = self.models[wm_model]["config"] or {}
+        returns_confidence = model_config.get("returns_confidence", False)
+        is_zero_bit = model_config.get("is_zero_bit", False)
+
+        if sampling_rate is None:
+            sampling_rate = model_config["sampling_rate"]
+            logger.info(f"Using default sampling rate {sampling_rate} for model {wm_model}")
+
+        results = []
+        for filepath in filepaths:
+            if verbose:
+                logger.info(f"Processing file: {filepath}")
+
+            audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
+
+            file_watermark = (
+                watermark_data
+                if watermark_data is not None
+                else model_instance.generate_watermark()
+            )
+
+            watermarked_audio = model_instance.embed(
+                audio=audio, watermark_data=file_watermark, sampling_rate=sampling_rate,
+            )
+
+            confidence = None
+            if returns_confidence:
+                detected_message, confidence = model_instance.detect(
+                    watermarked_audio, sampling_rate,
+                )
+            else:
+                detected_message = model_instance.detect(
+                    watermarked_audio, sampling_rate,
+                )
+
+            if is_zero_bit:
+                raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
+                accuracy = float(raw) * 100
+            else:
+                accuracy = self.compare_watermarks(file_watermark, detected_message)
+
+            entry = {
+                "file": os.path.basename(filepath),
+                "accuracy": accuracy,
+            }
+            if confidence is not None:
+                entry["confidence"] = confidence
+
+            results.append(entry)
+
+        return {
+            "is_zero_bit": is_zero_bit,
+            "returns_confidence": returns_confidence,
+            "files": results,
+        }
+
     def run(
         self,
         filepaths,
@@ -91,7 +171,7 @@ class Benchmark:
         verbose=False,
         save_audio=False,
         output_dir="audio_processed",
-        calculate_quality_metrics=False,
+        calculate_quality_metrics=True,
         **kwargs,
     ):
         """
@@ -180,10 +260,15 @@ class Benchmark:
 
             # Watermark-only quality: computed once per file, not per attack.
             # Stored at file level to avoid duplicating the same values 40x.
+            # Always-on metrics (PESQ/ViSQOL/STOI) are computed even when
+            # the full metric flag is off, so the detailed report always
+            # has a baseline row to compare attack rows against.
+            wm_metrics = set(self.ALWAYS_ON_METRICS)
             if calculate_quality_metrics:
-                results[filepath]["watermarked_audio_quality"] = compute_metrics(
-                    audio, watermarked_audio, sr_scalar
-                )
+                wm_metrics.update(ALL_METRICS)
+            results[filepath]["watermarked_audio_quality"] = compute_metrics(
+                audio, watermarked_audio, sr_scalar, metrics=wm_metrics,
+            )
 
             # Apply each attack and compute metrics
             for attack_name in attack_types:
@@ -268,10 +353,8 @@ class Benchmark:
                 )
 
                 if is_zero_bit:
-                    if isinstance(detected_message, np.ndarray):
-                        accuracy = detected_message.tolist()
-                    else:
-                        accuracy = detected_message
+                    raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
+                    accuracy = float(raw) * 100
                 else:
                     accuracy = self.compare_watermarks(file_watermark, detected_message)
 
@@ -289,20 +372,26 @@ class Benchmark:
 
         return results
 
+    # Metrics computed for every attack, regardless of group definitions
+    # or the ``calculate_quality_metrics`` flag. PESQ/ViSQOL/STOI are
+    # core robustness signals and must always appear in the detailed
+    # report; everything else is opt-in via the per-group whitelist.
+    ALWAYS_ON_METRICS = ("pesq", "visqol", "stoi")
+
     @staticmethod
     def _compute_attack_quality(enabled, attack_name, original, attacked, sr):
-        """Return per-attack quality metrics, or None when disabled/irrelevant.
+        """Return per-attack quality metrics for the detailed report.
 
-        Only computes metrics flagged as relevant for the attack's group
-        (see ``attack_groups.get_metrics_for_attack``) so groups whose
-        group-level metric list is empty (e.g. process disruption) skip
-        the compute entirely. The comparison is ``original`` vs the
-        watermarked-then-attacked signal, capturing the combined
-        embedding + attack effect.
+        Always computes PESQ, ViSQOL and STOI so the core robustness
+        signals are present in every run. When ``enabled`` is True (the
+        ``--calculate_quality_metrics`` flag is set) the per-group
+        metric whitelist (see ``attack_groups.get_metrics_for_attack``)
+        is also computed. The comparison is always ``original`` vs the
+        watermarked-then-attacked signal.
         """
-        if not enabled:
-            return None
-        relevant = get_metrics_for_attack(attack_name)
+        relevant = set(Benchmark.ALWAYS_ON_METRICS)
+        if enabled:
+            relevant.update(get_metrics_for_attack(attack_name))
         if not relevant:
             return None
         return compute_metrics(original, attacked, sr, metrics=relevant)
@@ -316,7 +405,9 @@ class Benchmark:
 
         Returns:
             Dictionary mapping each attack name to ``{"accuracy_mean": float,
-            "accuracy_cross_model_mean": float (optional)}``.
+            "accuracy_cross_model_mean": float (optional), and
+            ``<metric>_mean`` for each always-on quality metric (PESQ,
+            ViSQOL, STOI) so the basic report can show them.``.
         """
         attack_accuracies = {}
 
@@ -327,7 +418,8 @@ class Benchmark:
                     attack_accuracies[attack_name] = {
                         "accuracy": [],
                         "accuracy_cross_model": [],
-                        "confidence": []
+                        "confidence": [],
+                        "metrics": {m: [] for m in self.ALWAYS_ON_METRICS},
                     }
 
                 attack_accuracies[attack_name]["accuracy"].append(metrics["accuracy"])
@@ -339,6 +431,13 @@ class Benchmark:
 
                 if "confidence" in metrics:
                     attack_accuracies[attack_name]["confidence"].append(metrics["confidence"])
+
+                quality = metrics.get("attacked_audio_quality_wm")
+                if isinstance(quality, dict):
+                    for m in self.ALWAYS_ON_METRICS:
+                        v = quality.get(m)
+                        if v is not None:
+                            attack_accuracies[attack_name]["metrics"][m].append(v)
 
         mean_accuracies = {}
 
@@ -353,6 +452,10 @@ class Benchmark:
                 mean_accuracies[attack_name]["accuracy_cross_model_mean"] = float(
                     np.mean([a for a in acc["accuracy_cross_model"] if a is not None])
                 )
+
+            for m, vals in acc["metrics"].items():
+                if vals:
+                    mean_accuracies[attack_name][f"{m}_mean"] = float(np.mean(vals))
 
         return mean_accuracies
 

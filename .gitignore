@@ -31,6 +31,11 @@ MOS_audio/
 metrics_testing_samples/
 checkpoints/
 audio_processed/
+samples-148/
+rezultati/
+weights/
+report_examples/
+CHANGELOG_DPM-1576.md
 
 
 report/

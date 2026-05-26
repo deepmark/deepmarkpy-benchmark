@@ -34,7 +34,11 @@ class NetworkTransmissionAttack(BaseAttack):
         - delay_ms_opus_network (int): Base network delay in ms (default: 50)
         - jitter_ms_opus_network (int): Delay variation in ms (default: 20)
         - packet_loss_opus_network (int): Packet loss percentage (default: 5)
-        - sampling_rate_opus_network (int): Audio sampling rate (default: 16000)
+
+    The signal sampling rate is taken from the benchmark runner via the
+    ``sampling_rate`` kwarg; the server resamples internally to the
+    nearest Opus-supported rate so the codec stage stays consistent
+    regardless of which watermarking model is in use.
     """
 
     def __init__(self):
@@ -60,13 +64,16 @@ class NetworkTransmissionAttack(BaseAttack):
         Returns:
             np.ndarray: Audio after Opus encoding/decoding with network effects
         """
-        # Get sampling rate (required)
-        sampling_rate = kwargs.get(
-            "sampling_rate_opus_network",
-            self.config.get("sampling_rate_opus_network")
-        )
+        # Use the actual signal SR propagated by the benchmark, not the
+        # config-only attack-specific override (which was historically
+        # hardcoded to 16 kHz and silently misrepresented every other
+        # model's audio).
+        sampling_rate = kwargs.get("sampling_rate")
         if sampling_rate is None:
-            raise ValueError("'sampling_rate_opus_network' must be provided.")
+            raise ValueError(
+                "NetworkTransmissionAttack requires 'sampling_rate' in kwargs "
+                "(propagated from the benchmark runner)."
+            )
 
         # Basic parameters
         bitrate = kwargs.get(

@@ -70,9 +70,10 @@ class TestGetMetricsForAttack:
         assert "pesq" in metrics
         assert "stoi" in metrics
 
-    def test_process_disruption_has_no_metrics(self):
-        # Quality metrics are intentionally empty for this group
-        assert get_metrics_for_attack("SameModelAttack") == []
+    def test_process_disruption_has_metrics(self):
+        metrics = get_metrics_for_attack("SameModelAttack")
+        assert "pesq" in metrics
+        assert "nisqa_mos" in metrics
 
     def test_unknown_attack_returns_all_metrics(self):
         from utils.metrics import ALL_METRICS

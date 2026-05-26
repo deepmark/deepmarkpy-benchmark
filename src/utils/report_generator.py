@@ -3,12 +3,20 @@ import os
 import logging
 import shutil
 import subprocess
-from typing import Dict
+from typing import Dict, Mapping, Union
 import matplotlib.pyplot as plt
 
-from utils.latex_helpers import display_attack_name
+from utils.latex_helpers import display_attack_name, make_preamble
 
 logger = logging.getLogger(__name__)
+
+# Quality metrics shown alongside accuracy in the basic report. Kept
+# in sync with Benchmark.ALWAYS_ON_METRICS so every run -- with or
+# without --calculate_quality_metrics -- has values for these columns.
+_ALWAYS_ON_METRICS = ("pesq", "visqol", "stoi")
+_METRIC_HEADERS = {"pesq": "PESQ", "visqol": "ViSQOL", "stoi": "STOI"}
+
+StatsValue = Union[float, Mapping[str, float]]
 
 class BenchmarkReportGenerator:
     """Generate LaTeX reports for benchmark results with visualizations."""
@@ -25,42 +33,41 @@ class BenchmarkReportGenerator:
 
     def _preamble(self, title, author):
         """Generate LaTeX preamble with deepmark class fallback."""
-        if self._has_deepmark_cls:
-            return (
-                f"\\documentclass{{deepmark}}\n"
-                f"        \\usepackage{{float}}\n"
-                f"        \\usepackage{{longtable}}\n\n"
-                f"        \\title{{{title}}}\n"
-                f"        \\author{{{author}}}\n\n"
-                f"        \\begin{{document}}\n"
-                f"        \\thispagestyle{{firststyle}}\n"
-                f"        \\maketitle"
-            )
-        return (
-            f"\\documentclass{{article}}\n"
-            f"        \\usepackage{{booktabs}}\n"
-            f"        \\usepackage{{graphicx}}\n"
-            f"        \\usepackage{{cleveref}}\n"
-            f"        \\usepackage{{float}}\n"
-            f"        \\usepackage{{longtable}}\n\n"
-            f"        \\title{{{title}}}\n"
-            f"        \\author{{{author}}}\n"
-            f"        \\date{{\\today}}\n\n"
-            f"        \\begin{{document}}\n"
-            f"        \\maketitle"
-        )
+        return make_preamble(title, author, self._has_deepmark_cls)
 
-    def create_gradient_bar_chart(self, stats: Dict[str, float], output_path: str):
+    @staticmethod
+    def _accuracy_of(value: StatsValue) -> float:
+        """Extract accuracy from a stats entry.
+
+        Stats entries are either a bare ``accuracy_mean`` float (legacy
+        single-attribute format used by the comparative report) or a
+        per-attack dict carrying ``accuracy_mean`` plus always-on
+        metric means.
+        """
+        if isinstance(value, Mapping):
+            return float(value.get("accuracy_mean", 0.0) or 0.0)
+        return float(value or 0.0)
+
+    @staticmethod
+    def _metric_of(value: StatsValue, metric: str):
+        """Return ``<metric>_mean`` from a per-attack stats dict, or None."""
+        if isinstance(value, Mapping):
+            return value.get(f"{metric}_mean")
+        return None
+
+    def create_gradient_bar_chart(self, stats: Dict[str, StatsValue], output_path: str):
         """
         Create a modern bar chart with consistent color scheme.
 
         Args:
-            stats: Dictionary with attack names as keys and accuracy values
+            stats: Dictionary with attack names as keys and either an
+                accuracy float or a per-attack stats dict (containing
+                ``accuracy_mean`` and metric means).
             output_path: Path to save the chart image
         """
         sorted_attacks = sorted(stats.items())
         attack_names = [name for name, _ in sorted_attacks]
-        accuracies = [acc for _, acc in sorted_attacks]
+        accuracies = [self._accuracy_of(v) for _, v in sorted_attacks]
 
         plt.style.use('default')
         fig, ax = plt.subplots(figsize=(14, 8))
@@ -101,50 +108,79 @@ class BenchmarkReportGenerator:
 
         logger.info(f"Bar chart saved to {output_path}")
 
-    def generate_latex_table(self, stats: Dict[str, float]) -> str:
+    def generate_latex_table(self, stats: Dict[str, StatsValue]) -> str:
         """
         Generate LaTeX table code for the benchmark results.
 
         Args:
-            stats: Dictionary with attack names as keys and accuracy values
+            stats: Dictionary with attack names as keys; each value is
+                either an accuracy float or a per-attack dict with
+                ``accuracy_mean`` and ``<metric>_mean`` for the
+                always-on quality metrics (PESQ, ViSQOL, STOI). The
+                metric columns appear in every basic report so the
+                three core robustness signals are visible without
+                requiring ``--calculate_quality_metrics``.
 
         Returns:
             LaTeX table code as string
         """
         sorted_attacks = sorted(stats.items())
 
+        col_spec = "lc" + "c" * len(_ALWAYS_ON_METRICS)
+        metric_headers = " & ".join(_METRIC_HEADERS[m] for m in _ALWAYS_ON_METRICS)
+        header_row = f"    Attack Type & Accuracy & {metric_headers} \\\\"
+        caption_word = (
+            "the attack type"
+            if len(sorted_attacks) == 1
+            else "different attack types"
+        )
+
         table_rows = []
-        for attack_name, accuracy in sorted_attacks:
+        for attack_name, value in sorted_attacks:
             display_name = display_attack_name(attack_name, split_camel_case=True)
-            table_rows.append(f"    {display_name} & {accuracy:.2f}\\% \\\\")
+            accuracy = self._accuracy_of(value)
+            metric_cells = []
+            for metric in _ALWAYS_ON_METRICS:
+                v = self._metric_of(value, metric)
+                metric_cells.append("N/A" if v is None else f"{float(v):.2f}")
+            row = (
+                f"    {display_name} & {accuracy:.2f}\\% & "
+                + " & ".join(metric_cells)
+                + " \\\\"
+            )
+            table_rows.append(row)
 
         table_code = (
-            "\\begin{longtable}{lc}\n"
-            "    \\caption{Watermark detection accuracy for different attack types.}\n"
+            "{\\small\\setlength{\\tabcolsep}{4pt}\n"
+            f"\\begin{{longtable}}{{{col_spec}}}\n"
+            f"    \\caption{{Watermark detection accuracy and audio quality "
+            f"metrics for {caption_word}.}}\n"
             "    \\label{tab:benchmark_results} \\\\\n"
             "    \\toprule\n"
-            "    Attack Type & Accuracy \\\\\n"
+            f"{header_row}\n"
             "    \\midrule\n"
             "    \\endfirsthead\n"
             "    \\toprule\n"
-            "    Attack Type & Accuracy \\\\\n"
+            f"{header_row}\n"
             "    \\midrule\n"
             "    \\endhead\n"
             "    \\bottomrule\n"
             "    \\endlastfoot\n"
             + "\n".join(table_rows) + "\n"
-            "\\end{longtable}"
+            "\\end{longtable}\n"
+            "}"
         )
 
         return table_code
 
-    def calculate_mean_accuracy(self, stats: Dict[str, float]) -> float:
+    def calculate_mean_accuracy(self, stats: Dict[str, StatsValue]) -> float:
         """Calculate overall mean accuracy across all attacks."""
         if not stats:
             return 0.0
-        return sum(stats.values()) / len(stats)
+        accuracies = [self._accuracy_of(v) for v in stats.values()]
+        return sum(accuracies) / len(accuracies)
 
-    def generate_latex_report(self, stats: Dict[str, float], model_name: str = "DeepMark",
+    def generate_latex_report(self, stats: Dict[str, StatsValue], model_name: str = "DeepMark",
                             chart_filename: str = "benchmark_chart.png") -> str:
         """
         Generate complete LaTeX report content.
@@ -165,25 +201,28 @@ class BenchmarkReportGenerator:
             "DeepMark Benchmark System",
         )
 
+        num_attacks = len(stats)
+        attack_word = "attack type" if num_attacks == 1 else "different attack types"
+        coverage_phrase = (
+            f"a single attack type"
+            if num_attacks == 1
+            else f"{num_attacks} {attack_word}"
+        )
+
         latex_content = f"""{preamble}
 
         % -------------------- Abstract --------------------
         \\begin{{abstract}}
-        This report presents the benchmark results for the {model_name} watermarking model across various attack scenarios. The evaluation covers {len(stats)} different attack types, measuring the robustness of watermark detection under adversarial conditions using the DeepMark benchmark framework.
+        This report presents the benchmark results for the {model_name} watermarking model across various attack scenarios. The evaluation covers {coverage_phrase}, measuring the robustness of watermark detection under adversarial conditions using the DeepMark benchmark framework.
         \\end{{abstract}}
 
         % -------------------- Results --------------------
         \\section{{Benchmark Results}}
 
-        Table~\\ref{{tab:benchmark_results}} reports per-attack watermark detection accuracy (attacks are listed alphabetically).
-
         {table_code}
 
         \\vspace{{1em}}
         \\noindent\\textbf{{Overall Mean Accuracy:}} {mean_accuracy:.2f}\\%
-
-        \\vspace{{1em}}
-        \\noindent Figure~\\ref{{fig:benchmark_chart}} complements the table by visualizing the same results, enabling quicker inspection of relative differences and overall trends across attacks.
 
         \\begin{{figure}}[H]
         \\centering
@@ -195,15 +234,18 @@ class BenchmarkReportGenerator:
         % -------------------- Analysis --------------------
         \\section{{Performance Analysis}}
 
-        The watermarking model demonstrates following levels of robustness across different attack types:
+        The watermarking model demonstrates following levels of robustness across {"the attack type" if num_attacks == 1 else "different attack types"}:
 
         \\begin{{itemize}}
         """
 
-        excellent = [name for name, acc in stats.items() if acc >= 95]
-        good = [name for name, acc in stats.items() if 85 <= acc < 95]
-        fair = [name for name, acc in stats.items() if 70 <= acc < 85]
-        poor = [name for name, acc in stats.items() if acc < 70]
+        accuracy_by_attack = {
+            name: self._accuracy_of(value) for name, value in stats.items()
+        }
+        excellent = [name for name, acc in accuracy_by_attack.items() if acc >= 95]
+        good = [name for name, acc in accuracy_by_attack.items() if 85 <= acc < 95]
+        fair = [name for name, acc in accuracy_by_attack.items() if 70 <= acc < 85]
+        poor = [name for name, acc in accuracy_by_attack.items() if acc < 70]
 
         if excellent:
             attack_word = "attack" if len(excellent) == 1 else "attacks"

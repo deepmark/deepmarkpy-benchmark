@@ -31,7 +31,7 @@ class SpeechTokenizationAttack(BaseAttack):
             response = requests.post(
                 self.endpoint + "/attack",
                 json={"audio": audio.tolist(), "sampling_rate": sampling_rate},
-                timeout=180,
+                timeout=600,
             )
             response.raise_for_status()
             response_data = response.json()

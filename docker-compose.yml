@@ -88,8 +88,8 @@ services:
       - "${SPEECH_ENHANCEMENT_PORT2}:${SPEECH_ENHANCEMENT_PORT2}"
     environment:
       - APP_PORT=${SPEECH_ENHANCEMENT_PORT2}
-    mem_limit: 12g
-    memswap_limit: 16g
+    mem_limit: 14g
+    memswap_limit: 20g
   
   timbrewm:
     build:
@@ -108,7 +108,6 @@ services:
       - "${PERTH_PORT}:${PERTH_PORT}"
     environment:
       - APP_PORT=${PERTH_PORT}
-
 
   network_transmission:
     build:

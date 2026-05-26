@@ -3,6 +3,5 @@
     "framesize_opus_network": 20,
     "delay_ms_opus_network": 50,
     "jitter_ms_opus_network": 20,
-    "packet_loss_opus_network": 2,
-    "sampling_rate_opus_network": 16000
+    "packet_loss_opus_network": 0
 }

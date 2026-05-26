@@ -64,8 +64,8 @@ def make_preamble(
     package_block = "\n".join(f"\\usepackage{{{p}}}" for p in packages)
     return (
         f"\\documentclass{{article}}\n"
-        f"{package_block}\n"
-        f"\\geometry{{margin=2.5cm}}\n\n"
+        f"\\usepackage[margin=2.5cm]{{geometry}}\n"
+        f"{package_block}\n\n"
         f"\\title{{{title}}}\n"
         f"\\author{{{author}}}\n"
         f"\\date{{\\today}}\n\n"
@@ -109,7 +109,21 @@ def build_longtable(
         label: Table label (passed as-is to ``\\label{...}``).
     """
     body = "\n".join(rows)
+    # Wide tables get smaller font and tighter column spacing so they
+    # fit within page margins.
+    n_cols = col_spec.count("c") + col_spec.count("l") + col_spec.count("r")
+    if n_cols >= 6:
+        size_prefix = "{\\footnotesize\\setlength{\\tabcolsep}{3pt}\n"
+        size_suffix = "\n}"
+    elif n_cols >= 5:
+        size_prefix = "{\\small\\setlength{\\tabcolsep}{4pt}\n"
+        size_suffix = "\n}"
+    else:
+        size_prefix = ""
+        size_suffix = ""
+
     return (
+        f"{size_prefix}"
         f"\\begin{{longtable}}{{{col_spec}}}\n"
         f"    \\caption{{{caption}}}\n"
         f"    \\label{{{label}}} \\\\\n"
@@ -125,6 +139,7 @@ def build_longtable(
         f"    \\endlastfoot\n"
         f"{body}\n"
         f"\\end{{longtable}}"
+        f"{size_suffix}"
     )
 
 

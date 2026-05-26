@@ -159,7 +159,7 @@ class ComparativeReportGenerator:
         """
         model_names, attacks = self.aggregate_stats(all_stats)
         n = len(attacks)
-        if n < 5:
+        if n < 2:
             logger.warning("Too few attacks for radar chart, skipping.")
             return False
 
@@ -302,11 +302,15 @@ class ComparativeReportGenerator:
                 "\\end{figure}\n"
             )
 
+        attack_word = "attack type" if num_attacks == 1 else "attack types"
+        model_word = "watermarking model" if num_models == 1 else "watermarking models"
+
         return (
             f"{preamble}\n\n"
             f"\\begin{{abstract}}\n"
-            f"This report compares {num_models} watermarking models "
-            f"across {num_attacks} attack types: {model_list}. "
+            f"This report compares {num_models} {model_word} "
+            f"({model_list}) "
+            f"across {num_attacks} {attack_word}. "
             f"Detection accuracy is compared per attack, with "
             f"row-wise color ranking highlighting relative performance.\n"
             f"\\end{{abstract}}\n\n"
