@@ -30,7 +30,16 @@ from webrtc_audio_processing import AudioProcessingModule as AP
 # anything else (e.g. 22050 -> 24000, 44100 -> 48000), so we resample
 # explicitly to keep the pipeline honest.
 OPUS_SUPPORTED_RATES = (8000, 12000, 16000, 24000, 48000)
-WEBRTC_APM_RATE = 16000  # WebRTC APM is locked to 8/16/32/48 kHz; we use 16k.
+# WebRTC APM is locked to these rates (NOT 12k/24k/44.1k). We pick the
+# nearest supported rate to the input signal so high-fidelity inputs
+# (44.1k, 48k) don't lose the upper spectrum to forced 16 kHz downsampling.
+WEBRTC_APM_SUPPORTED_RATES = (8000, 16000, 32000, 48000)
+
+
+def _nearest_rate(rate: int, supported: tuple) -> int:
+    """Return the supported rate closest to ``rate`` (ties favor higher)."""
+    return min(supported, key=lambda r: (abs(r - rate), -r))
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -315,19 +324,22 @@ def audio_preprocessing(audio: np.ndarray, sampling_rate: int) -> np.ndarray:
     """Apply WebRTC Audio Processing.
 
     WebRTC APM only accepts 8/16/32/48 kHz with 10ms frames. We resample
-    to 16 kHz, process, then resample back so the caller stays oblivious
-    to the codec's internal rate.
+    to the *nearest* supported rate (so 44.1k stays at 48k, 22050 goes
+    to 16k, etc.) so high-fidelity inputs don't lose their upper spectrum
+    to a forced 16 kHz downsample. Output is resampled back to the
+    caller's SR.
     """
-    needs_resample = sampling_rate != WEBRTC_APM_RATE
+    apm_rate = _nearest_rate(sampling_rate, WEBRTC_APM_SUPPORTED_RATES)
+    needs_resample = sampling_rate != apm_rate
     if needs_resample:
         apm_audio = librosa.resample(
-            audio, orig_sr=sampling_rate, target_sr=WEBRTC_APM_RATE
+            audio, orig_sr=sampling_rate, target_sr=apm_rate
         )
     else:
         apm_audio = audio
 
     ap = AP(enable_vad=True, enable_ns=True)
-    ap.set_stream_format(WEBRTC_APM_RATE, 1)
+    ap.set_stream_format(apm_rate, 1)
     ap.set_ns_level(1)
     ap.set_vad_level(1)
 
@@ -335,7 +347,7 @@ def audio_preprocessing(audio: np.ndarray, sampling_rate: int) -> np.ndarray:
     apm_audio = np.clip(apm_audio, -1.0, 1.0)
     audio_int16 = (apm_audio * 32767).astype(np.int16)
 
-    frame_size = WEBRTC_APM_RATE // 100  # 10ms = 160 samples at 16 kHz
+    frame_size = apm_rate // 100  # 10ms frame at the chosen APM rate
     processed_frames = []
 
     n_full = (len(audio_int16) // frame_size) * frame_size
@@ -353,7 +365,7 @@ def audio_preprocessing(audio: np.ndarray, sampling_rate: int) -> np.ndarray:
     out = np.concatenate(processed_frames).astype(np.float32) / 32767.0
     if needs_resample:
         out = librosa.resample(
-            out, orig_sr=WEBRTC_APM_RATE, target_sr=sampling_rate
+            out, orig_sr=apm_rate, target_sr=sampling_rate
         )
         # librosa.resample length can drift by ±1; lock to caller's length
         # so the downstream pad/truncate doesn't accumulate further drift.
@@ -379,7 +391,7 @@ async def attack(request: AttackRequest):
         # the caller's SR so detect() sees the audio at the same rate it
         # provided. This keeps the rest of the benchmark pipeline
         # consistent regardless of model.
-        codec_sr = min(OPUS_SUPPORTED_RATES, key=lambda r: abs(r - original_sr))
+        codec_sr = _nearest_rate(original_sr, OPUS_SUPPORTED_RATES)
         if codec_sr != original_sr:
             codec_audio = librosa.resample(
                 audio, orig_sr=original_sr, target_sr=codec_sr

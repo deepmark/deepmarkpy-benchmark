@@ -65,7 +65,7 @@ class TestToJsonSafe:
     def test_plain_python_types_unchanged(self):
         data = {"a": 1, "b": 2.0, "c": "hello", "d": True, "e": None}
         result = to_json_safe(data)
-        assert result == data
+        assert result == {"a": 1, "b": 2.0, "c": "hello", "d": True, "e": "N/A"}
 
     def test_empty_structures(self):
         assert to_json_safe({}) == {}

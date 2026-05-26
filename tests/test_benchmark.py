@@ -85,7 +85,7 @@ class TestComputeMeanAccuracy:
 
     def test_single_file_single_attack(self):
         results = {
-            "f.wav": {"A": {"accuracy": 75.0, "stoi": "N/A", "pesq": "N/A"}}
+            "f.wav": {"attacks": {"A": {"accuracy": 75.0}}}
         }
         stats = self.bench.compute_mean_accuracy(results)
         assert stats["A"]["accuracy_mean"] == pytest.approx(75.0)

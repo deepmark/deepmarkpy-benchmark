@@ -7,8 +7,9 @@ import soundfile as sf
 import librosa
 
 from plugin_manager import PluginManager
-from utils.utils import load_audio, snr
-from utils.metrics import pesq_wrapper, psnr, stoi_wrapper, si_sdr
+from utils.utils import load_audio
+from utils.metrics import ALL_METRICS, compute_metrics
+from utils.attack_groups import get_metrics_for_attack
 
 
 logger = logging.getLogger(__name__)
@@ -45,55 +46,120 @@ class Benchmark:
                     valid_args[key] = value
         return list(models), list(attacks), valid_args
 
+    @staticmethod
+    def _log_plugin_entry(kind_label: str, name: str, entry: dict) -> None:
+        """Log constructor params + config defaults for a single plugin."""
+        plugin_cls = entry["class"]
+        config = entry.get("config") or {}
+
+        signature = inspect.signature(plugin_cls.__init__)
+        params = [p for p in signature.parameters.values() if p.name != "self"]
+        init_params = {
+            p.name: (None if p.default is inspect.Parameter.empty else p.default)
+            for p in params
+        }
+
+        logger.info(f"\n{kind_label}: {name}")
+        logger.info(f"  - Constructor parameters: {init_params}")
+        logger.info("  - Argument defaults:")
+        if config:
+            for key, val in config.items():
+                logger.info(f"    {key}: {val}")
+        else:
+            logger.info("    (none found)")
+
     def show_available_plugins(self):
         """
         Print out all discovered models and attacks, including any __init__ parameters
         and key-value pairs from config.json (defaults).
         """
         logger.info("===== Available Models =====")
-        for model_name, model_entry in self.models.items():
-            model_cls = model_entry["class"]
-            config = model_entry.get("config") or {}
-
-            signature = inspect.signature(model_cls.__init__)
-            params = [p for p in signature.parameters.values() if p.name != "self"]
-
-            init_params = {
-                p.name: (None if p.default is inspect.Parameter.empty else p.default)
-                for p in params
-            }
-
-            logger.info(f"\nModel: {model_name}")
-            logger.info(f"  - Constructor parameters: {init_params}")
-
-            logger.info("  - Arguments defaults:")
-            if config:
-                for key, val in config.items():
-                    logger.info(f"    {key}: {val}")
-            else:
-                logger.info("    (none found)")
+        for name, entry in self.models.items():
+            self._log_plugin_entry("Model", name, entry)
 
         logger.info("\n===== Available Attacks =====")
-        for attack_name, attack_entry in self.attacks.items():
-            attack_cls = attack_entry["class"]
-            config = attack_entry.get("config") or {}
+        for name, entry in self.attacks.items():
+            self._log_plugin_entry("Attack", name, entry)
 
-            signature = inspect.signature(attack_cls.__init__)
-            params = [p for p in signature.parameters.values() if p.name != "self"]
-            init_params = {
-                p.name: (None if p.default is inspect.Parameter.empty else p.default)
-                for p in params
-            }
+    def run_no_attacks(
+        self,
+        filepaths,
+        wm_model,
+        watermark_data=None,
+        sampling_rate=None,
+        verbose=False,
+        **kwargs,
+    ):
+        """Embed and detect without applying any attacks.
 
-            logger.info(f"\nAttack: {attack_name}")
-            logger.info(f"  - Constructor parameters: {init_params}")
+        Returns per-file accuracy (and confidence where available).
+        Used with ``--no_attacks`` to measure baseline model fidelity.
+        """
+        if isinstance(filepaths, str):
+            filepaths = [filepaths]
 
-            logger.info("  - Argument defaults:")
-            if config:
-                for key, val in config.items():
-                    logger.info(f"    {key}: {val}")
+        if wm_model not in self.models:
+            raise ValueError(
+                f"Model '{wm_model}' not found. Available: {list(self.models.keys())}"
+            )
+
+        model_cls = self.models[wm_model]["class"]
+        model_instance = model_cls()
+        model_config = self.models[wm_model]["config"] or {}
+        returns_confidence = model_config.get("returns_confidence", False)
+        is_zero_bit = model_config.get("is_zero_bit", False)
+
+        if sampling_rate is None:
+            sampling_rate = model_config["sampling_rate"]
+            logger.info(f"Using default sampling rate {sampling_rate} for model {wm_model}")
+
+        results = []
+        for filepath in filepaths:
+            if verbose:
+                logger.info(f"Processing file: {filepath}")
+
+            audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
+
+            file_watermark = (
+                watermark_data
+                if watermark_data is not None
+                else model_instance.generate_watermark()
+            )
+
+            watermarked_audio = model_instance.embed(
+                audio=audio, watermark_data=file_watermark, sampling_rate=sampling_rate,
+            )
+
+            confidence = None
+            if returns_confidence:
+                detected_message, confidence = model_instance.detect(
+                    watermarked_audio, sampling_rate,
+                )
             else:
-                logger.info("    (none found)")
+                detected_message = model_instance.detect(
+                    watermarked_audio, sampling_rate,
+                )
+
+            if is_zero_bit:
+                raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
+                accuracy = float(raw) * 100
+            else:
+                accuracy = self.compare_watermarks(file_watermark, detected_message)
+
+            entry = {
+                "file": os.path.basename(filepath),
+                "accuracy": accuracy,
+            }
+            if confidence is not None:
+                entry["confidence"] = confidence
+
+            results.append(entry)
+
+        return {
+            "is_zero_bit": is_zero_bit,
+            "returns_confidence": returns_confidence,
+            "files": results,
+        }
 
     def run(
         self,
@@ -103,9 +169,9 @@ class Benchmark:
         attack_types=None,
         sampling_rate=None,
         verbose=False,
-        save_audio= False,
+        save_audio=False,
         output_dir="audio_processed",
-        calculate_quality_metrics=False,
+        calculate_quality_metrics=True,
         **kwargs,
     ):
         """
@@ -163,7 +229,9 @@ class Benchmark:
         for filepath in filepaths:
             if verbose:
                 logger.info(f"\nProcessing file: {filepath}")
-            results[filepath] = {}
+            # File-level container: watermark-only quality is stored here
+            # once, and per-attack data lives under the "attacks" key.
+            results[filepath] = {"attacks": {}}
 
             # Get base filename without extension
             base_filename = os.path.splitext(os.path.basename(filepath))[0]
@@ -180,13 +248,28 @@ class Benchmark:
             # Embed watermark
             watermarked_audio = model_instance.embed(
                 audio=audio, watermark_data=file_watermark, sampling_rate=sampling_rate
-            ) 
+            )
 
             # Save watermarked audio
             if save_audio:
                 watermarked_filename = f"{base_filename}_watermarked.wav"
                 watermarked_path = os.path.join(output_dir, watermarked_filename)
-                sf.write(watermarked_path, watermarked_audio, sampling_rate) 
+                sf.write(watermarked_path, watermarked_audio, sampling_rate)
+
+            sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
+
+            # Watermark-only quality: computed once per file, not per attack.
+            # Stored at file level to avoid duplicating the same values 40x.
+            # Always-on metrics (PESQ/ViSQOL/STOI) are computed even when
+            # the full metric flag is off, so the detailed report always
+            # has a baseline row to compare attack rows against.
+            wm_metrics = set(self.ALWAYS_ON_METRICS)
+            if calculate_quality_metrics:
+                wm_metrics.update(ALL_METRICS)
+            results[filepath]["watermarked_audio_quality"] = compute_metrics(
+                audio, watermarked_audio, sr_scalar, metrics=wm_metrics,
+            )
+
             # Apply each attack and compute metrics
             for attack_name in attack_types:
                 if attack_name not in self.attacks:
@@ -208,11 +291,6 @@ class Benchmark:
                     attacked_audio, different_watermark = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    if calculate_quality_metrics:
-                        attacked_audio_metrics, _ = attack_instance.apply(
-                            audio, **attack_kwargs
-                        )
-
 
                 #in case of the collusion mod attack
                 elif (attack_name == "ZeroBitCollusionAttack"):
@@ -221,33 +299,28 @@ class Benchmark:
                     attacked_audio = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    if calculate_quality_metrics:
-                        attacked_audio_metrics = attack_instance.apply(
-                            audio, **attack_kwargs
-                        )
 
                 else:
                     attacked_audio = attack_instance.apply(
                         watermarked_audio, **attack_kwargs
                     )
-                    if calculate_quality_metrics:
-                        attacked_audio_metrics = attack_instance.apply(
-                            audio, **attack_kwargs
-                        )
 
                 # Ensure consistent shape for all attacks
                 if isinstance(attacked_audio, np.ndarray):
                     attacked_audio = np.squeeze(attacked_audio)
-                if calculate_quality_metrics and isinstance(attacked_audio_metrics, np.ndarray):
-                    attacked_audio_metrics = np.squeeze(attacked_audio_metrics)
 
-                # Save attacked audio
+                # Save attacked audio. Use a separate variable so the 2D
+                # reshape required by sf.write doesn't leak into detect(),
+                # which expects a 1D signal.
                 if save_audio:
-                    if attacked_audio.ndim == 1:
-                        attacked_audio = np.expand_dims(attacked_audio, axis=1)
+                    attacked_to_save = (
+                        np.expand_dims(attacked_audio, axis=1)
+                        if attacked_audio.ndim == 1
+                        else attacked_audio
+                    )
                     attacked_filename = f"{base_filename}_{attack_name}.wav"
                     attacked_path = os.path.join(output_dir, attacked_filename)
-                    sf.write(attacked_path, attacked_audio, sampling_rate)
+                    sf.write(attacked_path, attacked_to_save, sampling_rate)
                     if verbose:
                         logger.info(f"Saved attacked audio: {attacked_filename}")
                 
@@ -274,65 +347,79 @@ class Benchmark:
                         different_accuracy = self.compare_watermarks(different_watermark, different_detected_message)
                 
 
-                snr_val = snr(audio, attacked_audio)
-                
-
-                sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
-                stoi_val = "N/A"
-                pesq_val = "N/A"
-                if calculate_quality_metrics:
-                    # Resample to 16kHz if needed (PESQ/STOI only support 8kHz/16kHz)
-                    metrics_sr = 16000 if sr_scalar not in [8000, 16000] else sr_scalar
-                    ref = librosa.resample(audio, orig_sr=sr_scalar, target_sr=metrics_sr) if metrics_sr != sr_scalar else audio
-                    deg = librosa.resample(attacked_audio_metrics, orig_sr=sr_scalar, target_sr=metrics_sr) if metrics_sr != sr_scalar else attacked_audio_metrics
-
-                    stoi_val = stoi_wrapper(ref, deg, metrics_sr)
-                    pesq_val = pesq_wrapper(ref, deg, metrics_sr, 'wb')
-
+                attacked_audio_quality_wm = self._compute_attack_quality(
+                    calculate_quality_metrics, attack_name,
+                    audio, attacked_audio, sr_scalar,
+                )
 
                 if is_zero_bit:
-                    if isinstance(detected_message, np.ndarray):
-                        accuracy = detected_message.tolist()
-                    else:
-                        accuracy = detected_message
+                    raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
+                    accuracy = float(raw) * 100
                 else:
                     accuracy = self.compare_watermarks(file_watermark, detected_message)
-                    
-                results[filepath][attack_name] = {
+
+                results[filepath]["attacks"][attack_name] = {
                     "accuracy": accuracy,
-                    "stoi": stoi_val,
-                    "pesq": pesq_val
-                    }
+                    "attacked_audio_quality_wm": attacked_audio_quality_wm,
+                }
 
                 # Add confidence for models that return it
                 if confidence is not None:
-                    results[filepath][attack_name]["confidence"] = confidence
+                    results[filepath]["attacks"][attack_name]["confidence"] = confidence
 
                 if attack_name == "CrossModelAttack":
-                    results[filepath][attack_name]["accuracy_cross_model"] = different_accuracy
+                    results[filepath]["attacks"][attack_name]["accuracy_cross_model"] = different_accuracy
 
         return results
 
+    # Metrics computed for every attack, regardless of group definitions
+    # or the ``calculate_quality_metrics`` flag. PESQ/ViSQOL/STOI are
+    # core robustness signals and must always appear in the detailed
+    # report; everything else is opt-in via the per-group whitelist.
+    ALWAYS_ON_METRICS = ("pesq", "visqol", "stoi")
+
+    @staticmethod
+    def _compute_attack_quality(enabled, attack_name, original, attacked, sr):
+        """Return per-attack quality metrics for the detailed report.
+
+        Always computes PESQ, ViSQOL and STOI so the core robustness
+        signals are present in every run. When ``enabled`` is True (the
+        ``--calculate_quality_metrics`` flag is set) the per-group
+        metric whitelist (see ``attack_groups.get_metrics_for_attack``)
+        is also computed. The comparison is always ``original`` vs the
+        watermarked-then-attacked signal.
+        """
+        relevant = set(Benchmark.ALWAYS_ON_METRICS)
+        if enabled:
+            relevant.update(get_metrics_for_attack(attack_name))
+        if not relevant:
+            return None
+        return compute_metrics(original, attacked, sr, metrics=relevant)
+
     def compute_mean_accuracy(self, results):
         """
-        Compute mean accuracy and FNR/FPR for each attack.
+        Compute mean accuracy per attack (plus cross-model accuracy where available).
 
         Args:
-            results: Dictionary of results from run()
-            confidence_threshold: Threshold for watermark detection (default 0.5)
+            results: Dictionary of results from ``run()``
 
         Returns:
-            Dictionary with mean accuracies and FNR/FPR rates
+            Dictionary mapping each attack name to ``{"accuracy_mean": float,
+            "accuracy_cross_model_mean": float (optional), and
+            ``<metric>_mean`` for each always-on quality metric (PESQ,
+            ViSQOL, STOI) so the basic report can show them.``.
         """
         attack_accuracies = {}
 
-        for _, attack_dict in results.items():
-            for attack_name, metrics in attack_dict.items():
+        for _, file_data in results.items():
+            attacks_dict = file_data.get("attacks", {})
+            for attack_name, metrics in attacks_dict.items():
                 if attack_name not in attack_accuracies:
                     attack_accuracies[attack_name] = {
                         "accuracy": [],
                         "accuracy_cross_model": [],
-                        "confidence": []
+                        "confidence": [],
+                        "metrics": {m: [] for m in self.ALWAYS_ON_METRICS},
                     }
 
                 attack_accuracies[attack_name]["accuracy"].append(metrics["accuracy"])
@@ -344,6 +431,13 @@ class Benchmark:
 
                 if "confidence" in metrics:
                     attack_accuracies[attack_name]["confidence"].append(metrics["confidence"])
+
+                quality = metrics.get("attacked_audio_quality_wm")
+                if isinstance(quality, dict):
+                    for m in self.ALWAYS_ON_METRICS:
+                        v = quality.get(m)
+                        if v is not None:
+                            attack_accuracies[attack_name]["metrics"][m].append(v)
 
         mean_accuracies = {}
 
@@ -359,8 +453,32 @@ class Benchmark:
                     np.mean([a for a in acc["accuracy_cross_model"] if a is not None])
                 )
 
+            for m, vals in acc["metrics"].items():
+                if vals:
+                    mean_accuracies[attack_name][f"{m}_mean"] = float(np.mean(vals))
+
         return mean_accuracies
 
+
+    # Accuracy returned when detection produces no usable watermark. 50%
+    # matches the random-guess baseline for a uniform binary message, so
+    # comparisons against this value cleanly identify "detector failed".
+    RANDOM_GUESS_ACCURACY = 50.00
+
+    @staticmethod
+    def _is_invalid_detection(detected, original) -> bool:
+        """Return True when ``detected`` can't be compared against ``original``."""
+        if detected is None:
+            return True
+        if isinstance(detected, np.ndarray) and detected.ndim == 0:
+            return True
+        if isinstance(detected, (list, np.ndarray)) and len(detected) == 0:
+            return True
+        if np.any(detected == np.array(None)):
+            return True
+        if len(original) != len(detected):
+            return True
+        return False
 
     def compare_watermarks(self, original, detected):
         """
@@ -371,18 +489,11 @@ class Benchmark:
             detected (np.ndarray): The detected binary watermark.
 
         Returns:
-            float: The accuracy of the detected watermark (percentage), or None if invalid.
+            float: Detection accuracy as a percentage, or
+            ``RANDOM_GUESS_ACCURACY`` (50.0) when the detected payload is
+            missing, empty, wrong-length, or otherwise unusable.
         """
-        if detected is None:
-            return 50.00
-        if isinstance(detected, np.ndarray) and detected.ndim == 0:
-            return 50.00
-        if isinstance(detected, (list, np.ndarray)) and len(detected) == 0:
-            return 50.00
-        if np.any(detected == np.array(None)):
-            return 50.00
-        # Check for shape mismatch
-        if len(original) != len(detected):
-            return 50.00
+        if self._is_invalid_detection(detected, original):
+            return self.RANDOM_GUESS_ACCURACY
         matches = np.sum(original == detected)
         return (matches / len(original)) * 100

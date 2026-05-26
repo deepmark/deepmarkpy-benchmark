@@ -61,8 +61,8 @@ class TestLatexTable:
     def test_has_tabular_structure(self, sample_stats):
         gen = BenchmarkReportGenerator()
         table = gen.generate_latex_table(sample_stats)
-        assert "\\begin{table}" in table
-        assert "\\end{table}" in table
+        assert "\\begin{longtable}" in table
+        assert "\\end{longtable}" in table
         assert "\\toprule" in table
         assert "\\bottomrule" in table
 
@@ -104,7 +104,8 @@ class TestFullReport:
         assert latex_path.endswith(".tex")
         assert chart_path.endswith(".png")
 
-    def test_latex_uses_standard_documentclass(self, sample_stats, tmp_path):
+    def test_latex_fallback_without_deepmark_cls(self, sample_stats, tmp_path):
+        """Without deepmark.cls in report dir, should fall back to article."""
         stats_file = tmp_path / "stats.json"
         stats_file.write_text(json.dumps(sample_stats))
 
@@ -114,8 +115,19 @@ class TestFullReport:
         latex_path = tmp_path / "benchmark_report.tex"
         content = latex_path.read_text()
         assert "\\documentclass{article}" in content
-        # Should NOT use the custom deepmark class
-        assert "deepmark" not in content.split("\\documentclass")[1].split("\n")[0]
+
+    def test_latex_uses_deepmark_cls_when_available(self, sample_stats, tmp_path):
+        """With deepmark.cls in report dir, should use deepmark class."""
+        stats_file = tmp_path / "stats.json"
+        stats_file.write_text(json.dumps(sample_stats))
+        (tmp_path / "deepmark.cls").write_text("")
+
+        gen = BenchmarkReportGenerator(str(tmp_path))
+        gen.generate_full_report(str(stats_file), model_name="TestModel")
+
+        latex_path = tmp_path / "benchmark_report.tex"
+        content = latex_path.read_text()
+        assert "\\documentclass{deepmark}" in content
 
     def test_missing_stats_file_raises(self, tmp_path):
         gen = BenchmarkReportGenerator(str(tmp_path))
