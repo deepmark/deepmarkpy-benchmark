@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import os
 import random
@@ -7,6 +8,8 @@ import soundfile as sf
 from scipy.signal import butter, sosfilt
 
 from core.base_attack import BaseAttack
+
+logger = logging.getLogger(__name__)
 
 
 class ReplayAttack(BaseAttack):
@@ -68,9 +71,9 @@ class ReplayAttack(BaseAttack):
         Returns:
             np.ndarray: The processed audio signal.
         """
-        sampling_rate = kwargs.get("sampling_rate_replay", None)
+        sampling_rate = kwargs.get("sampling_rate", None)
         if sampling_rate is None:
-            raise ValueError("'sampling_rate_replay' must be provided in kwargs.")
+            raise ValueError("'sampling_rate' must be provided in kwargs.")
 
         # get parameters from kwargs or config
         air_folder = kwargs.get("air_folder_replay", self.config.get("air_folder_replay", "AIR_wav_files"))
