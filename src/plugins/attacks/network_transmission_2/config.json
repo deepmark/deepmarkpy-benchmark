@@ -1,0 +1,16 @@
+{
+    "bitrate_bps_netem2": 24000,
+    "frame_duration_ms_netem2": 20,
+    "delay_ms_netem2": 100,
+    "jitter_ms_netem2": 30,
+    "packet_loss_netem2": 10,
+    "duplication_netem2": 0,
+    "reorder_netem2": 3,
+    "corruption_netem2": 0,
+    "fec_enabled_netem2": true,
+    "expected_loss_netem2": 10,
+    "aec_enabled_netem2": false,
+    "denoise_method_netem2": "none",
+    "agc_target_lufs_netem2": -18,
+    "playout_delay_ms_netem2": 60
+}

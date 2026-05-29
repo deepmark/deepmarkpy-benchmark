@@ -440,19 +440,15 @@ def _get_nisqa_model():
         return None
 
 
-def compute_nisqa(degraded: np.ndarray, sr: int) -> Dict[str, Optional[float]]:
-    """Run a single NISQA inference and return all five MOS dimensions.
+_NISQA_MAX_SEC = 12.0
+_NISQA_CHUNK_SEC = 10.0
+_NISQA_MIN_CHUNK_SEC = 3.0
 
-    NISQA is non-intrusive: it scores ``degraded`` alone, no reference
-    needed. The five dimensions (mos / noisiness / discontinuity /
-    coloration / loudness) are produced together in one forward pass, so
-    callers should request them as a group rather than five times.
-    """
+
+def _nisqa_predict_once(model, degraded: np.ndarray, sr: int
+                        ) -> Dict[str, Optional[float]]:
+    """Run NISQA on a single segment that fits in one forward pass."""
     none_result = {k: None for k in NISQA_METRICS}
-    model = _get_nisqa_model()
-    if model is None:
-        return none_result
-
     try:
         import contextlib
         import io
@@ -478,6 +474,55 @@ def compute_nisqa(degraded: np.ndarray, sr: int) -> Dict[str, Optional[float]]:
     except (RuntimeError, ValueError, KeyError) as e:
         logger.warning(f"NISQA prediction failed: {e}")
         return none_result
+
+
+def compute_nisqa(degraded: np.ndarray, sr: int) -> Dict[str, Optional[float]]:
+    """Run NISQA inference and return all five MOS dimensions.
+
+    NISQA is non-intrusive: it scores ``degraded`` alone, no reference
+    needed. The five dimensions (mos / noisiness / discontinuity /
+    coloration / loudness) are produced together in one forward pass, so
+    callers should request them as a group rather than five times.
+
+    NISQA's mel-spec window buffer caps inference at ~13 s; longer signals
+    are split into ~10 s chunks here and averaged so callers don't have to
+    care about duration.
+    """
+    none_result = {k: None for k in NISQA_METRICS}
+    model = _get_nisqa_model()
+    if model is None:
+        return none_result
+
+    duration = len(degraded) / sr
+    if duration <= _NISQA_MAX_SEC:
+        return _nisqa_predict_once(model, degraded, sr)
+
+    chunk_len = int(_NISQA_CHUNK_SEC * sr)
+    min_len = int(_NISQA_MIN_CHUNK_SEC * sr)
+    accum: Dict[str, list] = {k: [] for k in NISQA_METRICS}
+    failed = 0
+    for start in range(0, len(degraded), chunk_len):
+        chunk = degraded[start:start + chunk_len]
+        if len(chunk) < min_len:
+            continue
+        res = _nisqa_predict_once(model, chunk, sr)
+        if res["nisqa_mos"] is None:
+            failed += 1
+            continue
+        for k in NISQA_METRICS:
+            accum[k].append(res[k])
+
+    if not accum["nisqa_mos"]:
+        logger.warning(
+            f"NISQA: no successful chunks across {duration:.1f}s signal."
+        )
+        return none_result
+    if failed:
+        logger.info(
+            f"NISQA: {failed} chunk(s) failed out of "
+            f"{failed + len(accum['nisqa_mos'])} for {duration:.1f}s signal."
+        )
+    return {k: float(np.mean(accum[k])) for k in NISQA_METRICS}
 
 
 @_safe_metric("NCM")

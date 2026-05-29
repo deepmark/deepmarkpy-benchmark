@@ -99,7 +99,7 @@ def main():
         help="List of attacks to apply. Allowed values: " + ", ".join(attacks),
     )
     parser.add_argument(
-        "--attack_group",
+        "--attack_groups",
         type=str,
         nargs="+",
         choices=list(ATTACK_GROUPS.keys()),
@@ -158,8 +158,8 @@ def main():
     args = parser.parse_args()
 
     # Resolve attack groups into individual attack types
-    if args.attack_group:
-        attacks_from_groups = get_attacks_for_groups(args.attack_group)
+    if args.attack_groups:
+        attacks_from_groups = get_attacks_for_groups(args.attack_groups)
         # Filter to only attacks that are actually available
         available = set(attacks)
         attacks_from_groups = [a for a in attacks_from_groups if a in available]
@@ -169,7 +169,7 @@ def main():
             args.attack_types = combined
         else:
             args.attack_types = attacks_from_groups
-        logger.info(f"Attack groups {args.attack_group} resolved to {len(args.attack_types)} attacks")
+        logger.info(f"Attack groups {args.attack_groups} resolved to {len(args.attack_types)} attacks")
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)

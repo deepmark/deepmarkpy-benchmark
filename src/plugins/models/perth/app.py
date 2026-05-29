@@ -67,7 +67,7 @@ async def detect(request: DetectRequest):
     if sampling_rate != config["sampling_rate"]:
         audio = resample_audio(request.audio, sampling_rate, config["sampling_rate"])
 
-    message = model.get_watermark(audio, config["sampling_rate"], round = False)
+    message = model.get_watermark(audio, config["sampling_rate"], round=True)
     if isinstance(message, np.ndarray) and message.ndim == 0:
         message = message.item() # Converts a 0-d NumPy array to its scalar equivalent
 
