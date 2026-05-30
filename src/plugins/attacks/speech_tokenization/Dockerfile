@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 
 COPY src/plugins/attacks/speech_tokenization .
 
+RUN python -c "from xcodec2.modeling_xcodec2 import XCodec2Model; XCodec2Model.from_pretrained('HKUST-Audio/xcodec2')"
+
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}
 
