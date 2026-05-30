@@ -9,7 +9,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 from clearvoice import ClearVoice
-from utils.utils import load_config
+from utils.utils import load_config, resample_audio
 import soundfile as sf
 
 logger = logging.getLogger(__name__)
@@ -44,17 +44,27 @@ async def attack(request: AttackRequest):
             noisy = audio + noise_strength * np.random.normal(0, 1, size=(len(audio)))
             audio = noisy
 
+        # Resample to 16kHz for the model
+        target_sr = 16000
+        if sampling_rate != target_sr:
+            audio = resample_audio(audio, sampling_rate, target_sr)
+
         # Save the audio array to the temporary WAV file
-        logger.info(f"Saving audio to: {tmp_path} with sampling rate: {sampling_rate}")
-        sf.write(tmp_path, audio, sampling_rate)
-        logger.info(f"Audio saved successfully")
+
+        sf.write(tmp_path, audio, target_sr)
         
         # Pass the temporary file path to ClearVoice
         logger.info(f"Processing with ClearVoice model: {request.model_name}")
         myClearVoice = ClearVoice(task='speech_enhancement', model_names=[request.model_name])
         audio_cv = myClearVoice(input_path=tmp_path, online_write=False)
         
-        logger.info(f"Successfully processed audio with {request.model_name}")
+
+        # ClearVoice returns a dict {filename: audio_array} when online_write=False
+        if isinstance(audio_cv, dict):
+            audio_cv = list(audio_cv.values())[0]
+        audio_cv = np.array(audio_cv).squeeze()
+        if sampling_rate != target_sr:
+            audio_cv = resample_audio(audio_cv, target_sr, sampling_rate)
         return {"audio": audio_cv.tolist()}
     
     except Exception as e:

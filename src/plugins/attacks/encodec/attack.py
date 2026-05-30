@@ -43,7 +43,7 @@ class EncodecAttack(BaseAttack):
         Returns:
             np.ndarray: The processed audio signal after Encodec compression.
         """
-        sampling_rate = 16000
+        sampling_rate = kwargs.get("sampling_rate", 16000)
 
         # Load model on first use
         self._load_model()

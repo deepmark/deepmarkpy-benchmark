@@ -213,7 +213,7 @@ class MixingAttack(BaseAttack):
         Returns:
             np.ndarray: Audio mixed with ducked background music
         """
-        sampling_rate = kwargs.get("sampling_rate_mixing", self.config.get("sampling_rate_mixing", 16000))
+        sampling_rate = kwargs.get("sampling_rate", 16000)
         music_folder = kwargs.get("music_folder_mixing", self.config.get("music_folder_mixing", "music"))
         volume_high_ratio = kwargs.get("music_volume_high_mixing", self.config.get("music_volume_high_mixing", 0.5))
         volume_low_ratio = kwargs.get("music_volume_low_mixing", self.config.get("music_volume_low_mixing", 0.1))
