@@ -11,12 +11,20 @@ from pydantic import BaseModel
 from aware.service import embed_watermark, detect_watermark
 from aware.utils.models import load
 
+from utils.utils import load_config, resample_audio
+
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
 # Load AWARE models
+try:
+    config = load_config("config.json")
+except (FileNotFoundError, ValueError, IOError) as e:
+    logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
+    sys.exit(1)
+
 try:
     logger.info("Loading AWARE models...")
     embedder, detector = load()
@@ -50,19 +58,15 @@ async def embed(request: EmbedRequest):
     watermark_data = np.array(request.watermark_data, dtype=np.int32)
     sampling_rate = request.sampling_rate
 
+    if sampling_rate != config["sampling_rate"]:
+        audio = resample_audio(audio, sampling_rate, config["sampling_rate"])
+
     embedder = model["embedder"]
-
-
-    try:
-        import torch
-        audio_tensor = torch.tensor(audio, dtype=torch.float32).unsqueeze(0)
-    except Exception as e:
-        logger.warning(f"Failed to count FLOPs for embedding: {e}")
 
     try:
         watermarked_audio = embed_watermark(
             audio,
-            sampling_rate,
+            config["sampling_rate"],
             watermark_data,
             embedder
         )
@@ -76,6 +80,9 @@ async def embed(request: EmbedRequest):
     # Replace NaN and Inf values with 0
     watermarked_audio = np.nan_to_num(watermarked_audio, nan=0.0, posinf=0.0, neginf=0.0)
 
+    if sampling_rate != config["sampling_rate"]:
+        watermarked_audio = resample_audio(watermarked_audio, config["sampling_rate"], sampling_rate)
+
     return {
         "watermarked_audio": watermarked_audio.tolist(),
     }
@@ -87,18 +94,15 @@ async def detect(request: DetectRequest):
     audio = np.array(request.audio)
     sampling_rate = request.sampling_rate
 
-    detector = model["detector"]
+    if sampling_rate != config["sampling_rate"]:
+        audio = resample_audio(audio, sampling_rate, config["sampling_rate"])
 
-    try:
-        import torch
-        audio_tensor = torch.tensor(audio, dtype=torch.float32).unsqueeze(0)
-    except Exception as e:
-        logger.warning(f"Failed to count FLOPs for detection: {e}")
+    detector = model["detector"]
 
     try:
         detected_watermark, confidence = detect_watermark(
             audio,
-            sampling_rate,
+            config["sampling_rate"],
             detector
         )
     except Exception as e:

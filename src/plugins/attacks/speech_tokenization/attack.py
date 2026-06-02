@@ -23,7 +23,8 @@ class SpeechTokenizationAttack(BaseAttack):
         logging.info(f"SpeechTokenizationAttack initialized. Target API: {self.endpoint}")
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
-        sampling_rate = kwargs.get("sampling_rate_st", None)
+        sampling_rate = kwargs.get("sampling_rate", 16000)
+        logger.info(f"[SpeechTokenization] Using sampling_rate={sampling_rate}")
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
 
@@ -42,5 +43,7 @@ class SpeechTokenizationAttack(BaseAttack):
         if "audio" not in response_data:
              logger.error("'/apply' response does not contain 'audio' key.")
              raise KeyError("Missing 'audio' in response from /apply")
-        return np.array(response_data["audio"])
+        result = np.array(response_data["audio"])
+        logger.info(f"[SpeechTokenization] Output length={len(result)}, sampling_rate={sampling_rate}")
+        return result
 

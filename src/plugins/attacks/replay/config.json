@@ -6,6 +6,5 @@
     "high_freq_replay": 8000,
     "filter_order_replay": 4,
     "add_noise_replay": true,
-    "snr_db_replay": 50,
-    "sampling_rate_replay": 16000
+    "snr_db_replay": 50
 }
