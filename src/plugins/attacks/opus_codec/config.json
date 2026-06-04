@@ -1,4 +1,5 @@
 {
     "bitrate_opus_codec": 16,
-    "framesize_opus_codec": 20
+    "framesize_opus_codec": 20,
+    "sampling_rate_opus_codec": 16000
 }
