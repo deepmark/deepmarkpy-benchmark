@@ -1,0 +1,17 @@
+{
+    "bitrate_bps_netem3": 24000,
+    "frame_duration_ms_netem3": 20,
+    "delay_ms_netem3": 50,
+    "jitter_ms_netem3": 10,
+    "packet_loss_netem3": 5,
+    "duplication_netem3": 0,
+    "reorder_netem3": 0,
+    "corruption_netem3": 0,
+    "fec_enabled_netem3": true,
+    "expected_loss_netem3": 5,
+    "ns_enabled_netem3": false,
+    "vad_enabled_netem3": true,
+    "agc_enabled_netem3": true,
+    "agc_target_lufs_netem3": -18,
+    "playout_delay_ms_netem3": 60
+}

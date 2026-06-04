@@ -30,15 +30,33 @@ from webrtc_audio_processing import AudioProcessingModule as AP
 # anything else (e.g. 22050 -> 24000, 44100 -> 48000), so we resample
 # explicitly to keep the pipeline honest.
 OPUS_SUPPORTED_RATES = (8000, 12000, 16000, 24000, 48000)
-# WebRTC APM is locked to these rates (NOT 12k/24k/44.1k). We pick the
-# nearest supported rate to the input signal so high-fidelity inputs
-# (44.1k, 48k) don't lose the upper spectrum to forced 16 kHz downsampling.
+# WebRTC APM is locked to these rates (NOT 12k/24k/44.1k).
 WEBRTC_APM_SUPPORTED_RATES = (8000, 16000, 32000, 48000)
+# Intersection of APM and Opus rates -- the only rates we can run the
+# whole pipeline at without resampling between stages. Picking from this
+# set lets us resample once on entry and once on exit, instead of four
+# times (APM in/out + Opus in/out).
+COMMON_SUPPORTED_RATES = tuple(
+    sorted(set(OPUS_SUPPORTED_RATES) & set(WEBRTC_APM_SUPPORTED_RATES))
+)  # (8000, 16000, 48000)
 
 
 def _nearest_rate(rate: int, supported: tuple) -> int:
     """Return the supported rate closest to ``rate`` (ties favor higher)."""
     return min(supported, key=lambda r: (abs(r - rate), -r))
+
+
+def _pipeline_rate(input_sr: int) -> int:
+    """Pick a rate from COMMON_SUPPORTED_RATES that preserves spectrum.
+
+    Prefers the smallest supported rate >= ``input_sr`` so we never
+    downsample (which would discard the upper spectrum). Falls back to
+    the highest supported rate if input exceeds everything in the set.
+    """
+    higher = [r for r in COMMON_SUPPORTED_RATES if r >= input_sr]
+    if higher:
+        return min(higher)
+    return max(COMMON_SUPPORTED_RATES)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -55,7 +73,7 @@ class AttackRequest(BaseModel):
     delay_ms: int = 50
     jitter_ms: int = 20
     packet_loss: int = 5
-    
+
 
 class NetworkEmulator:
     """Manages tc netem rules for network emulation."""
@@ -231,7 +249,7 @@ def process_with_opus_and_network(
     Process audio through Opus codec with full network emulation.
 
     Simulates:
-    1. Opus encoding 
+    1. Opus encoding
     2. Network delay and jitter via tc netem
     5. Opus decoding with PLC for lost packets
     """
@@ -321,33 +339,29 @@ def process_with_opus_and_network(
 
 
 def audio_preprocessing(audio: np.ndarray, sampling_rate: int) -> np.ndarray:
-    """Apply WebRTC Audio Processing.
+    """Apply WebRTC Audio Processing (noise suppression + VAD).
 
-    WebRTC APM only accepts 8/16/32/48 kHz with 10ms frames. We resample
-    to the *nearest* supported rate (so 44.1k stays at 48k, 22050 goes
-    to 16k, etc.) so high-fidelity inputs don't lose their upper spectrum
-    to a forced 16 kHz downsample. Output is resampled back to the
-    caller's SR.
+    Caller is expected to pass audio already at a rate supported by both
+    APM and Opus (see ``COMMON_SUPPORTED_RATES``). We process in-place at
+    that rate without resampling, so the only resampling cost is the one
+    pair (entry + exit) the caller does around the whole pipeline.
     """
-    apm_rate = _nearest_rate(sampling_rate, WEBRTC_APM_SUPPORTED_RATES)
-    needs_resample = sampling_rate != apm_rate
-    if needs_resample:
-        apm_audio = librosa.resample(
-            audio, orig_sr=sampling_rate, target_sr=apm_rate
+    if sampling_rate not in WEBRTC_APM_SUPPORTED_RATES:
+        raise ValueError(
+            f"audio_preprocessing got sampling_rate={sampling_rate}, expected "
+            f"one of {WEBRTC_APM_SUPPORTED_RATES}"
         )
-    else:
-        apm_audio = audio
 
     ap = AP(enable_vad=True, enable_ns=True)
-    ap.set_stream_format(apm_rate, 1)
+    ap.set_stream_format(sampling_rate, 1)
     ap.set_ns_level(1)
     ap.set_vad_level(1)
 
     # Clip first so out-of-range samples don't wrap on int16 cast.
-    apm_audio = np.clip(apm_audio, -1.0, 1.0)
+    apm_audio = np.clip(audio, -1.0, 1.0)
     audio_int16 = (apm_audio * 32767).astype(np.int16)
 
-    frame_size = apm_rate // 100  # 10ms frame at the chosen APM rate
+    frame_size = sampling_rate // 100  # 10ms frame at the pipeline rate
     processed_frames = []
 
     n_full = (len(audio_int16) // frame_size) * frame_size
@@ -362,49 +376,42 @@ def audio_preprocessing(audio: np.ndarray, sampling_rate: int) -> np.ndarray:
     if len(tail) > 0:
         processed_frames.append(tail)
 
-    out = np.concatenate(processed_frames).astype(np.float32) / 32767.0
-    if needs_resample:
-        out = librosa.resample(
-            out, orig_sr=apm_rate, target_sr=sampling_rate
-        )
-        # librosa.resample length can drift by ±1; lock to caller's length
-        # so the downstream pad/truncate doesn't accumulate further drift.
-        if len(out) > len(audio):
-            out = out[:len(audio)]
-        elif len(out) < len(audio):
-            out = np.pad(out, (0, len(audio) - len(out)))
-    return out
+    return np.concatenate(processed_frames).astype(np.float32) / 32767.0
 
 
 @app.post("/attack")
 async def attack(request: AttackRequest):
-    """Process audio through Opus codec with full network emulation."""
+    """Process audio through Opus codec with full network emulation.
+
+    Pipeline:
+        input -> [resample to pipeline_sr] -> APM -> Opus + netem -> [resample back] -> output
+
+    The pipeline_sr is chosen from the intersection of APM and Opus
+    supported rates, so we resample exactly once on entry and once on
+    exit -- not four times (APM in/out + Opus in/out) like before.
+    """
     try:
         audio = np.array(request.audio, dtype=np.float32)
         original_sr = request.sampling_rate
         original_len = len(audio)
 
-        audio = audio_preprocessing(audio, original_sr)
-
-        # Opus only supports a fixed set of internal rates. Resample to
-        # the nearest supported rate for the codec stage, then back to
-        # the caller's SR so detect() sees the audio at the same rate it
-        # provided. This keeps the rest of the benchmark pipeline
-        # consistent regardless of model.
-        codec_sr = _nearest_rate(original_sr, OPUS_SUPPORTED_RATES)
-        if codec_sr != original_sr:
-            codec_audio = librosa.resample(
-                audio, orig_sr=original_sr, target_sr=codec_sr
+        # Pick a rate both APM and Opus accept; prefer not to lose spectrum.
+        pipeline_sr = _pipeline_rate(original_sr)
+        if pipeline_sr != original_sr:
+            audio = librosa.resample(
+                audio, orig_sr=original_sr, target_sr=pipeline_sr
             )
             logger.info(
-                f"Resampling {original_sr} Hz -> {codec_sr} Hz for Opus codec"
+                f"Resampled {original_sr} Hz -> {pipeline_sr} Hz "
+                f"(common APM+Opus rate)"
             )
-        else:
-            codec_audio = audio
+
+        # APM and Opus stages now both run at pipeline_sr; no resample between.
+        audio = audio_preprocessing(audio, pipeline_sr)
 
         codec_out = process_with_opus_and_network(
-            audio=codec_audio,
-            sampling_rate=codec_sr,
+            audio=audio,
+            sampling_rate=pipeline_sr,
             bitrate=request.bitrate,
             framesize=request.framesize,
             delay_ms=request.delay_ms,
@@ -412,13 +419,15 @@ async def attack(request: AttackRequest):
             packet_loss=request.packet_loss,
         )
 
-        if codec_sr != original_sr:
+        # Single resample back to the caller's SR.
+        if pipeline_sr != original_sr:
             result = librosa.resample(
-                codec_out, orig_sr=codec_sr, target_sr=original_sr
+                codec_out, orig_sr=pipeline_sr, target_sr=original_sr
             )
         else:
             result = codec_out
 
+        # Lock to the caller's length so resample drift doesn't leak out.
         if len(result) > original_len:
             result = result[:original_len]
         elif len(result) < original_len:

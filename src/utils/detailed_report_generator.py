@@ -102,6 +102,7 @@ AUDIO_EDITING_SUBGROUPS = {
             "Mp3CompressionAttack",
             "EncodecAttack",
             "DescriptAudioCodecAttack",
+            "OpusCodecAttack",
             "ResamplingPolyAttack",
         ],
         "quality_metrics": ["pesq", "psnr", "mcd", "visqol"],

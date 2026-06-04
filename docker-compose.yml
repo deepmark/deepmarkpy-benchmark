@@ -130,3 +130,23 @@ services:
       - APP_PORT=${NETWORK_TRANSMISSION_2_PORT}
     cap_add:
       - NET_ADMIN
+
+  network_transmission_3:
+    build:
+      context: .
+      dockerfile: src/plugins/attacks/network_transmission_3/Dockerfile
+    ports:
+      - "${NETWORK_TRANSMISSION_3_PORT}:${NETWORK_TRANSMISSION_3_PORT}"
+    environment:
+      - APP_PORT=${NETWORK_TRANSMISSION_3_PORT}
+    cap_add:
+      - NET_ADMIN
+
+  opus_codec:
+    build:
+      context: .
+      dockerfile: src/plugins/attacks/opus_codec/Dockerfile
+    ports:
+      - "${OPUS_CODEC_PORT}:${OPUS_CODEC_PORT}"
+    environment:
+      - APP_PORT=${OPUS_CODEC_PORT}
