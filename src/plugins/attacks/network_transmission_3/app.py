@@ -248,11 +248,19 @@ def _jitter_buffer_playout(
     if not by_seq:
         return [None] * total_frames
 
-    first_arrival = min(t for t, _ in by_seq.values())
+    # Anchor the playout clock to when seq 0 *should* have arrived, derived
+    # from the earliest (arrival - seq*frame_duration) across all received
+    # packets. Using the raw earliest arrival would be wrong whenever seq 0
+    # is lost or a reordered higher-seq packet arrives first -- then every
+    # deadline would be shifted and borderline packets dropped spuriously.
+    anchor = min(
+        arrival - seq * frame_duration_s
+        for seq, (arrival, _) in by_seq.items()
+    )
     output: List[Optional[bytes]] = []
     late_count = 0
     for expected_seq in range(total_frames):
-        deadline = first_arrival + playout_delay_s + expected_seq * frame_duration_s
+        deadline = anchor + playout_delay_s + expected_seq * frame_duration_s
         entry = by_seq.get(expected_seq % 65536)
         if entry is None:
             output.append(None)
@@ -304,41 +312,63 @@ def _opus_decode_frames(
     opus_frames: List[Optional[bytes]], fs: int, frame_size: int,
     fec_enabled: bool,
 ) -> np.ndarray:
-    """Decode Opus frames; FEC payload in packet N+1 overwrites PLC for N."""
+    """Decode Opus frames using the canonical single-decoder FEC/PLC pattern.
+
+    A single stateful decoder is used (one decoder per stream, as in a real
+    receiver). When a frame is lost and the *next* frame is available, Opus
+    in-band FEC lets us recover the lost frame from the next packet:
+
+        decode(next_pkt, decode_fec=True)   -> reconstructs the lost frame
+        decode(next_pkt, decode_fec=False)  -> decodes the next frame
+
+    Both calls run on the same decoder, in order, which keeps its internal
+    state aligned with the playout sequence -- the two-decoder scheme used
+    previously accumulated an extra decode per recovered loss and drifted.
+
+    A lost frame whose successor is also missing (or when FEC is disabled)
+    falls back to PLC via an empty-payload decode.
+    """
     import opuslib
 
-    main_decoder = opuslib.Decoder(fs, 1)
-    fec_decoder = opuslib.Decoder(fs, 1)
+    decoder = opuslib.Decoder(fs, 1)
     n = len(opus_frames)
-    pcm_chunks: List[Optional[np.ndarray]] = [None] * n
+    pcm_chunks: List[np.ndarray] = []
 
-    for i, frame in enumerate(opus_frames):
+    i = 0
+    while i < n:
+        frame = opus_frames[i]
         if frame is not None:
-            if i > 0 and opus_frames[i - 1] is None and fec_enabled:
-                try:
-                    fec_pcm = fec_decoder.decode(frame, frame_size, decode_fec=True)
-                    pcm_chunks[i - 1] = np.frombuffer(fec_pcm, dtype=np.int16)
-                except opuslib.OpusError as e:
-                    logger.debug(f"FEC recovery failed at seq {i-1}: {e}")
-            pcm = main_decoder.decode(frame, frame_size, decode_fec=False)
-            pcm_chunks[i] = np.frombuffer(pcm, dtype=np.int16)
+            # Normal decode of an available frame.
+            pcm = decoder.decode(frame, frame_size, decode_fec=False)
+            pcm_chunks.append(np.frombuffer(pcm, dtype=np.int16))
+            i += 1
+        elif (
+            fec_enabled
+            and i + 1 < n
+            and opus_frames[i + 1] is not None
+        ):
+            # Frame i is lost but frame i+1 carries FEC for it. Recover i
+            # from i+1, then decode i+1 normally -- both on the same decoder.
+            nxt = opus_frames[i + 1]
             try:
-                fec_decoder.decode(frame, frame_size, decode_fec=False)
-            except opuslib.OpusError:
-                pass
+                fec_pcm = decoder.decode(nxt, frame_size, decode_fec=True)
+                pcm_chunks.append(np.frombuffer(fec_pcm, dtype=np.int16))
+            except opuslib.OpusError as e:
+                logger.debug(f"FEC recovery failed at seq {i}: {e}")
+                plc = decoder.decode(b"", frame_size, decode_fec=False)
+                pcm_chunks.append(np.frombuffer(plc, dtype=np.int16))
+            nxt_pcm = decoder.decode(nxt, frame_size, decode_fec=False)
+            pcm_chunks.append(np.frombuffer(nxt_pcm, dtype=np.int16))
+            i += 2
         else:
-            pcm = main_decoder.decode(b"", frame_size, decode_fec=False)
-            pcm_chunks[i] = np.frombuffer(pcm, dtype=np.int16)
-            try:
-                fec_decoder.decode(b"", frame_size, decode_fec=False)
-            except opuslib.OpusError:
-                pass
+            # Lost frame with no FEC available -> packet loss concealment.
+            plc = decoder.decode(b"", frame_size, decode_fec=False)
+            pcm_chunks.append(np.frombuffer(plc, dtype=np.int16))
+            i += 1
 
-    if not any(c is not None for c in pcm_chunks):
+    if not pcm_chunks:
         return np.zeros(0, dtype=np.float32)
-    silence = np.zeros(frame_size, dtype=np.int16)
-    safe = [c if c is not None else silence for c in pcm_chunks]
-    return np.concatenate(safe).astype(np.float32) / 32767.0
+    return np.concatenate(pcm_chunks).astype(np.float32) / 32767.0
 
 
 # ---------------------------------------------------------------------------
@@ -394,41 +424,45 @@ def voip_pipeline(
         hdr = _build_rtp_header(seq, ts, ssrc)
         rtp_packets.append(hdr + opus_frame)
 
-    # --- Network emulation ---
+    # --- Network emulation + RTP transmission ---
+    # Everything from netem setup to teardown is wrapped in try/finally so a
+    # failure mid-transmission (jitter buffer, decode, etc.) can never leave a
+    # tc netem qdisc installed on `lo` -- that would silently corrupt every
+    # subsequent attack run and any other loopback traffic in the container.
     network = NetworkEmulator()
-    network.setup(delay_ms, jitter_ms, packet_loss, duplication, reorder, corruption)
-
-    # --- RTP transmission with sender / receiver threads ---
     port = 30000 + (os.getpid() % 10000)
     sender_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     receiver_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    receiver_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    receiver_sock.bind(("127.0.0.1", port))
-
     received_packets = []
-    stop_event = threading.Event()
+    try:
+        network.setup(delay_ms, jitter_ms, packet_loss, duplication, reorder, corruption)
 
-    recv_thread = threading.Thread(
-        target=_rtp_receiver_thread,
-        args=(receiver_sock, received_packets, stop_event),
-    )
-    recv_thread.start()
+        receiver_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        receiver_sock.bind(("127.0.0.1", port))
 
-    send_thread = threading.Thread(
-        target=_rtp_sender_thread,
-        args=(rtp_packets, sender_sock, ("127.0.0.1", port),
-              frame_duration_ms / 1000.0, stop_event),
-    )
-    send_thread.start()
-    send_thread.join()
+        stop_event = threading.Event()
 
-    time.sleep(max(delay_ms * 3 / 1000.0, 0.5))
-    stop_event.set()
-    recv_thread.join(timeout=2.0)
+        recv_thread = threading.Thread(
+            target=_rtp_receiver_thread,
+            args=(receiver_sock, received_packets, stop_event),
+        )
+        recv_thread.start()
 
-    sender_sock.close()
-    receiver_sock.close()
-    network.cleanup()
+        send_thread = threading.Thread(
+            target=_rtp_sender_thread,
+            args=(rtp_packets, sender_sock, ("127.0.0.1", port),
+                  frame_duration_ms / 1000.0, stop_event),
+        )
+        send_thread.start()
+        send_thread.join()
+
+        time.sleep(max(delay_ms * 3 / 1000.0, 0.5))
+        stop_event.set()
+        recv_thread.join(timeout=2.0)
+    finally:
+        sender_sock.close()
+        receiver_sock.close()
+        network.cleanup()
 
     loss_count = total_frames - len(received_packets)
     logger.info(

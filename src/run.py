@@ -250,6 +250,7 @@ def run_no_attacks_mode(benchmark, filepaths, model_names, args):
                 wm_model=model_name,
                 sampling_rate=None,
                 verbose=args.verbose,
+                calculate_quality_metrics=args.calculate_quality_metrics,
             )
             all_results[model_name] = results
         except (MemoryError, ConnectionError, OSError) as e:

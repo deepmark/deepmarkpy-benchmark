@@ -137,10 +137,25 @@ When using `--wm_models` with two or more models, the benchmark runs each model 
 ```bash
 python src/run.py --wav_files_dir /path/to/audio \
                   --wm_model AudioSealModel \
-                  --attack_group audio_distortion desynchronization
+                  --attack_groups audio_distortion desynchronization
 ```
 
-Available attack groups: `process_disruption`, `audio_editing`, `audio_distortion`, `desynchronization`, `ai_attacks`, `transmission`. Groups can be combined with `--attack_types` to add individual attacks.
+`--attack_groups` accepts one or more group tags. The tag is what you pass on the
+command line; the table below lists every group together with the attacks it
+covers. Groups can be combined with `--attack_types` to add individual attacks.
+
+| Tag | Attacks |
+|-----|---------|
+| `process_disruption` | `CrossModelAttack`, `CollusionAttack`, `ZeroBitCollusionAttack`, `SameModelAttack` |
+| `audio_editing` | `CutSamplesAttack`, `CropBeginningAttack`, `CropRandomAttack`, `WaveletAttack`, `LowpassFilterAttack`, `HighpassFilterAttack`, `BandstopFilterAttack`, `SmoothingAttack`, `ChorusAttack`, `FlangerAttack`, `EchoAttack`, `EqualizerAttack`, `QuantizationAttack`, `STFTQuantizationAttack`, `PCMQuantizationAttack`, `Mp3CompressionAttack`, `EncodecAttack`, `DescriptAudioCodecAttack`, `OpusCodecAttack`, `ResamplingPolyAttack`, `MixingAttack` |
+| `audio_distortion` | `GaussianNoiseAttack`, `PinkNoiseAttack`, `SignInversionAttack`, `LPCAttack` |
+| `desynchronization` | `TimeStretchAttack`, `PitchShiftAttack`, `InvertedTimeStretch`, `ZeroCrossInsertsAttack`, `FlipSamplesAttack`, `ReplacementAttack` |
+| `ai_attacks` | `SpeechEnhancement1Attack`, `SpeechEnhancement2Attack`, `SpeechTokenizationAttack`, `NeuralVocoderAttack`, `DiffusionAttack` |
+| `transmission` | `ReplayAttack`, `NetworkTransmissionAttack`, `NetworkTransmission2Attack`, `NetworkTransmission3Attack` |
+
+Attacks not listed in any group fall under "Other Attacks" in the detailed
+report. The canonical mapping lives in `src/utils/attack_groups.py` — update it
+there when adding a new attack so the reports pick the right metrics for it.
 
 ### 3. Quality Metrics (Optional)
 

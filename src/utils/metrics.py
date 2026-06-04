@@ -278,6 +278,15 @@ def visqol_wrapper(reference: np.ndarray, degraded: np.ndarray,
     """
     ViSQOL - Virtual Speech Quality Objective Listener.
 
+    ViSQOL only supports two rates exactly: 16 kHz (speech mode) and
+    48 kHz (audio mode). Anything else triggers a "rate above 16 kHz" /
+    "rate not 48 kHz" warning from the library and degrades scoring
+    accuracy. Since this benchmark works on speech, we always run ViSQOL
+    in speech mode at 16 kHz, resampling here when the caller supplies a
+    different rate. If the input is already at 48 kHz we use audio mode
+    (no resample needed); if it is exactly 16 kHz, neither resample nor
+    warning happens.
+
     Args:
         reference: Reference signal
         degraded: Degraded signal
@@ -287,11 +296,19 @@ def visqol_wrapper(reference: np.ndarray, degraded: np.ndarray,
         ViSQOL MOS score (1.0-5.0), ``None`` if the calculation fails
         or if the optional ``visqol`` package is not installed.
     """
-    mode = "audio" if fs >= 48000 else "speech"
+    if fs == 48000:
+        mode, target_fs = "audio", 48000
+    else:
+        mode, target_fs = "speech", 16000
+
+    if fs != target_fs:
+        reference = librosa.resample(reference, orig_sr=fs, target_sr=target_fs)
+        degraded = librosa.resample(degraded, orig_sr=fs, target_sr=target_fs)
+
     api = _get_visqol_api(mode)
     if api is None:
         return None
-    return api.measure_from_arrays(reference, degraded, fs).moslqo
+    return api.measure_from_arrays(reference, degraded, target_fs).moslqo
 
 
 @_safe_metric("SII")
@@ -604,8 +621,10 @@ METRIC_LABELS = {
     "nisqa_loud": "Loudness (1--5)",
 }
 
-# Metrics that require 8 kHz or 16 kHz and are resampled accordingly
-_NARROWBAND_METRICS = {"pesq", "stoi"}
+# Metrics that require 8 kHz or 16 kHz and are resampled accordingly.
+# ViSQOL is included because its "speech" mode is locked to 16 kHz; running
+# it at any other rate triggers a library warning and degrades the score.
+_NARROWBAND_METRICS = {"pesq", "stoi", "visqol"}
 
 
 def compute_metrics(
@@ -667,12 +686,20 @@ def compute_metrics(
             nisqa_cache.update(compute_nisqa(deg_trimmed, sr))
         return nisqa_cache[key]
 
+    # ViSQOL: audio mode at 48 kHz when input is already 48k, otherwise
+    # speech mode at 16 kHz reusing the narrowband-resampled buffers above
+    # so we don't resample the same signal twice.
+    if sr == 48000:
+        visqol_ref, visqol_deg, visqol_sr = ref_trimmed, deg_trimmed, 48000
+    else:
+        visqol_ref, visqol_deg, visqol_sr = ref_nb, deg_nb, nb_sr
+
     computations = {
         "pesq": lambda: pesq_wrapper(ref_nb, deg_nb, nb_sr, pesq_mode),
         "psnr": lambda: psnr(ref_trimmed, deg_trimmed),
         "si_sdr": lambda: si_sdr(ref_trimmed, deg_trimmed),
         "mcd": lambda: mcd(ref_trimmed, deg_trimmed, sr),
-        "visqol": lambda: visqol_wrapper(ref_trimmed, deg_trimmed, sr),
+        "visqol": lambda: visqol_wrapper(visqol_ref, visqol_deg, visqol_sr),
         "stoi": lambda: stoi_wrapper(ref_nb, deg_nb, nb_sr),
         "sii": lambda: sii(ref_trimmed, deg_trimmed, sr),
         "ncm": lambda: ncm(ref_trimmed, deg_trimmed, sr),

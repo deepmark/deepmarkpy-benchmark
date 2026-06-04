@@ -80,10 +80,22 @@ def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str
     Drops the trailing ``Attack`` suffix. When ``split_camel_case`` is
     ``True`` each interior uppercase boundary is expanded to a space,
     matching the style used by the basic benchmark report.
+
+    Known acronyms (e.g. ``LPC``) are kept as a single token rather than
+    split letter-by-letter, so the report shows ``LPC`` instead of
+    ``L P C``.
     """
     stripped = attack_name.replace("Attack", "").strip()
     if not split_camel_case:
         return stripped
+
+    # Treat known acronyms as a single token so the per-letter split
+    # below doesn't turn ``LPC`` into ``L P C``.
+    ACRONYMS = ("LPC",)
+    for acronym in ACRONYMS:
+        if stripped == acronym:
+            return acronym
+
     return "".join(
         " " + c if c.isupper() and i > 0 else c
         for i, c in enumerate(stripped)

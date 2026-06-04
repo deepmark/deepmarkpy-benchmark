@@ -6,6 +6,11 @@ into zero-bit and multi-bit groups, each with appropriate columns:
 
 Multi-bit:  Model | Mean Accuracy (%) | Mean Confidence
 Zero-bit:   Model | Mean Accuracy (%) | Positive Detections | Mean Confidence
+
+When the benchmark was run with ``--calculate_quality_metrics``, three
+extra tables are appended (one row per model): Audio quality, Speech
+intelligibility, and NISQA. They mirror the per-group layout used by
+the detailed report so the no-attacks report stays visually consistent.
 """
 
 import logging
@@ -14,8 +19,18 @@ import os
 import numpy as np
 
 from utils.latex_helpers import compile_latex, make_preamble
+from utils.metrics import (
+    INTELLIGIBILITY_METRICS,
+    METRIC_LABELS,
+    NISQA_METRICS,
+    QUALITY_METRICS,
+)
 
 logger = logging.getLogger(__name__)
+
+# Quality metrics minus NISQA -- NISQA gets its own table to keep the
+# audio-quality table narrow enough to fit the page.
+_QUALITY_AUDIO_METRICS = [m for m in QUALITY_METRICS if m not in NISQA_METRICS]
 
 
 def _summarize_model(results):
@@ -48,6 +63,24 @@ def _summarize_model(results):
         ]
         if confidences:
             summary["mean_confidence"] = float(np.mean(confidences))
+
+    # Aggregate per-file quality metrics into a single mean per metric
+    # when --calculate_quality_metrics produced them; otherwise leave the
+    # field absent so the report falls back to the original layout.
+    quality_files = [f.get("watermarked_audio_quality") for f in files]
+    quality_files = [q for q in quality_files if q]
+    if quality_files:
+        all_keys = set()
+        for q in quality_files:
+            all_keys.update(q.keys())
+        means = {}
+        for key in all_keys:
+            vals = [q.get(key) for q in quality_files]
+            vals = [v for v in vals if v is not None]
+            if vals:
+                means[key] = float(np.mean(vals))
+        if means:
+            summary["quality_metrics"] = means
 
     return summary
 
@@ -142,6 +175,57 @@ def _build_zerobit_table(models_data):
     )
 
 
+def _format_metric_value(metric, value):
+    """Format a metric value for the LaTeX table; ``N/A`` if missing."""
+    if value is None:
+        return "N/A"
+    if metric in ("stoi", "sii", "ncm"):
+        return f"{value:.4f}"
+    return f"{value:.2f}"
+
+
+def _build_metric_table(models_data, metric_keys, caption, label):
+    """Build a one-row-per-model table for the given metric subset.
+
+    Returns "" if no model has any of the requested metrics, so callers
+    can drop empty tables without an empty section header.
+    """
+    rows_data = []
+    for model_name, data in models_data.items():
+        q = data.get("quality_metrics") or {}
+        if any(k in q for k in metric_keys):
+            rows_data.append((model_name, q))
+    if not rows_data:
+        return ""
+
+    col_spec = "l" + "c" * len(metric_keys)
+    header_cells = " & ".join(METRIC_LABELS.get(m, m) for m in metric_keys)
+    header = f"    Model & {header_cells} \\\\"
+
+    rows = []
+    for model_name, q in rows_data:
+        display = _short_model_name(model_name)
+        cells = " & ".join(
+            _format_metric_value(m, q.get(m)) for m in metric_keys
+        )
+        rows.append(f"    {display} & {cells} \\\\")
+
+    return (
+        "\\begin{table}[H]\n"
+        "\\centering\n"
+        f"\\caption{{{caption}}}\n"
+        f"\\label{{{label}}}\n"
+        f"\\begin{{tabular}}{{{col_spec}}}\n"
+        "    \\toprule\n"
+        f"{header}\n"
+        "    \\midrule\n"
+        + "\n".join(rows) + "\n"
+        "    \\bottomrule\n"
+        "\\end{tabular}\n"
+        "\\end{table}"
+    )
+
+
 def generate_no_attacks_report(all_results, report_dir="report"):
     """Generate a baseline fidelity report for one or more models.
 
@@ -178,6 +262,42 @@ def generate_no_attacks_report(all_results, report_dir="report"):
     if zero_bit:
         tables.append(_build_zerobit_table(zero_bit))
 
+    # Quality metric tables only appear when --calculate_quality_metrics
+    # populated them. They mirror the per-group layout of the detailed
+    # report (audio quality + intelligibility + NISQA, separate tables)
+    # so the no-attacks report stays visually consistent.
+    has_quality = any("quality_metrics" in s for s in summaries.values())
+    quality_section = ""
+    if has_quality:
+        quality_tables = []
+        audio_table = _build_metric_table(
+            summaries, _QUALITY_AUDIO_METRICS,
+            "Audio quality of the watermarked signal (no attack).",
+            "tab:no_attacks_quality",
+        )
+        if audio_table:
+            quality_tables.append(audio_table)
+        intel_table = _build_metric_table(
+            summaries, list(INTELLIGIBILITY_METRICS),
+            "Speech intelligibility of the watermarked signal (no attack).",
+            "tab:no_attacks_intelligibility",
+        )
+        if intel_table:
+            quality_tables.append(intel_table)
+        nisqa_table = _build_metric_table(
+            summaries, list(NISQA_METRICS),
+            "NISQA non-intrusive quality dimensions of the "
+            "watermarked signal (no attack).",
+            "tab:no_attacks_nisqa",
+        )
+        if nisqa_table:
+            quality_tables.append(nisqa_table)
+        if quality_tables:
+            quality_section = (
+                "\n\n\\section{Watermark Audio Quality (No Attack)}\n\n"
+                + "\n\n".join(quality_tables)
+            )
+
     latex_content = (
         f"{preamble}\n\n"
         f"\\begin{{abstract}}\n"
@@ -188,8 +308,9 @@ def generate_no_attacks_report(all_results, report_dir="report"):
         f"{'file' if n_files == 1 else 'files'}.\n"
         f"\\end{{abstract}}\n\n"
         f"\\section{{Baseline Detection Performance}}\n\n"
-        + "\n\n".join(tables) + "\n\n"
-        f"\\end{{document}}"
+        + "\n\n".join(tables)
+        + quality_section
+        + "\n\n\\end{document}"
     )
 
     tex_path = os.path.join(report_dir, "no_attacks_report.tex")
