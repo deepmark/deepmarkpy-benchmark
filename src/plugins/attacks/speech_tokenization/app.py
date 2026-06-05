@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import traceback
 from typing import List
 
 import numpy as np
@@ -10,8 +11,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from xcodec import XCodec
 
-from utils.utils import load_config
+from utils.utils import load_config, resample_audio
 
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -35,12 +37,31 @@ class AttackRequest(BaseModel):
 
 @app.post("/attack")
 async def attack(request: AttackRequest):
-    sampling_rate = request.sampling_rate
-    audio = np.array(request.audio)
+    try:
+        sampling_rate = request.sampling_rate
+        logger.info(f"Received request: sampling_rate={sampling_rate}, audio_length={len(request.audio)}")
+        audio = np.array(request.audio)
 
-    audio = model.inference(audio, sampling_rate)
+        target_sr = 16000
+        if sampling_rate != target_sr:
+            logger.info(f"Resampling from {sampling_rate} to {target_sr}")
+            audio = resample_audio(audio, sampling_rate, target_sr)
+            logger.info(f"Resampled audio length: {len(audio)}")
 
-    return {"audio": audio.tolist()}
+        logger.info("Starting model inference...")
+        audio = model.inference(audio, target_sr)
+        logger.info(f"Inference complete. Output length: {len(audio)}")
+
+        if sampling_rate != target_sr:
+            logger.info(f"Resampling output from {target_sr} to {sampling_rate}")
+            audio = resample_audio(audio, target_sr, sampling_rate)
+            logger.info(f"Final output length: {len(audio)}")
+
+        return {"audio": audio.tolist()}
+    except Exception as e:
+        logger.error(f"Error in /attack: {e}")
+        logger.error(traceback.format_exc())
+        raise
 
 
 if __name__ == "__main__":

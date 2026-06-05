@@ -23,7 +23,7 @@ class SpeechEnhancement1Attack(BaseAttack):
         logger.info(f"SpeechEnhancement1Attack initialized. Target API: {self.endpoint}")
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
-        sampling_rate = kwargs.get("sampling_rate_se1", None)
+        sampling_rate = kwargs.get("sampling_rate", 16000)
         noise_strength = kwargs.get("noise_strength_se1", self.config.get("noise_strength_se1"))
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
@@ -41,4 +41,5 @@ class SpeechEnhancement1Attack(BaseAttack):
         if "audio" not in response_data:
              logger.error("'/apply' response does not contain 'audio' key.")
              raise KeyError("Missing 'audio' in response from /apply")
-        return np.array(response_data["audio"])
+        result = np.array(response_data["audio"])
+        return result

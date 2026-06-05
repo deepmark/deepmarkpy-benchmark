@@ -1,5 +1,4 @@
 {
     "model_name_speech_enh": "MossFormerGAN_SE_16K",
-    "sampling_rate_se2": 16000,
     "noise_strength_se2": 0.01
 }
