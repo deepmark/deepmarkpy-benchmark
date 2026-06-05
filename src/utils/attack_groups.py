@@ -98,8 +98,6 @@ ATTACK_GROUPS = {
         "attacks": [
             "ReplayAttack",
             "NetworkTransmissionAttack",
-            "NetworkTransmission2Attack",
-            "NetworkTransmission3Attack",
         ],
         "quality_metrics": ["pesq", "psnr", "si_sdr", "mcd", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],

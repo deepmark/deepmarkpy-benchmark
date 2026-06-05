@@ -1,8 +1,0 @@
-pydantic
-fastapi
-uvicorn
-numpy
-soundfile
-librosa
-opuslib
-noisereduce

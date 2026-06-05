@@ -2,9 +2,11 @@
 Pure Opus Codec Attack - FastAPI Server
 
 A lightweight service that only runs opusenc/opusdec -- no WebRTC noise
-suppression, no tc netem, no UDP packet simulation. The client (OpusCodecAttack)
-resamples to/from 16 kHz, so this server operates at whatever rate it receives
-(expected to be 16 kHz).
+suppression, no tc netem, no UDP packet simulation. The client sends
+audio at the model's sampling rate; ``opusenc`` silently remaps to its
+nearest internal rate (8/12/16/24/48 kHz) for compression, and
+``opusdec --rate <sampling_rate>`` decodes back to the original rate so
+the caller never sees a different sampling rate on the way out.
 """
 
 import logging

@@ -1,7 +1,17 @@
 {
-    "bitrate_opus_network": 16,
-    "framesize_opus_network": 20,
-    "delay_ms_opus_network": 50,
-    "jitter_ms_opus_network": 20,
-    "packet_loss_opus_network": 0
+    "bitrate_bps_netem": 24000,
+    "frame_duration_ms_netem": 20,
+    "delay_ms_netem": 50,
+    "jitter_ms_netem": 10,
+    "packet_loss_netem": 5,
+    "duplication_netem": 0,
+    "reorder_netem": 0,
+    "corruption_netem": 0,
+    "fec_enabled_netem": true,
+    "expected_loss_netem": 5,
+    "ns_enabled_netem": false,
+    "vad_enabled_netem": true,
+    "agc_enabled_netem": true,
+    "agc_target_lufs_netem": -18,
+    "playout_delay_ms_netem": 60
 }

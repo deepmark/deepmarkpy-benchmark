@@ -151,7 +151,7 @@ covers. Groups can be combined with `--attack_types` to add individual attacks.
 | `audio_distortion` | `GaussianNoiseAttack`, `PinkNoiseAttack`, `SignInversionAttack`, `LPCAttack` |
 | `desynchronization` | `TimeStretchAttack`, `PitchShiftAttack`, `InvertedTimeStretch`, `ZeroCrossInsertsAttack`, `FlipSamplesAttack`, `ReplacementAttack` |
 | `ai_attacks` | `SpeechEnhancement1Attack`, `SpeechEnhancement2Attack`, `SpeechTokenizationAttack`, `NeuralVocoderAttack`, `DiffusionAttack` |
-| `transmission` | `ReplayAttack`, `NetworkTransmissionAttack`, `NetworkTransmission2Attack`, `NetworkTransmission3Attack` |
+| `transmission` | `ReplayAttack`, `NetworkTransmissionAttack` |
 
 Attacks not listed in any group fall under "Other Attacks" in the detailed
 report. The canonical mapping lives in `src/utils/attack_groups.py` — update it
