@@ -119,3 +119,12 @@ services:
       - APP_PORT=${NETWORK_TRANSMISSION_PORT}
     cap_add:
       - NET_ADMIN
+
+  opus_codec:
+    build:
+      context: .
+      dockerfile: src/plugins/attacks/opus_codec/Dockerfile
+    ports:
+      - "${OPUS_CODEC_PORT}:${OPUS_CODEC_PORT}"
+    environment:
+      - APP_PORT=${OPUS_CODEC_PORT}

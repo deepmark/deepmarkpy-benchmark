@@ -137,7 +137,7 @@ class BenchmarkReportGenerator:
 
         table_rows = []
         for attack_name, value in sorted_attacks:
-            display_name = display_attack_name(attack_name, split_camel_case=True)
+            display_name = display_attack_name(attack_name)
             accuracy = self._accuracy_of(value)
             metric_cells = []
             for metric in _ALWAYS_ON_METRICS:

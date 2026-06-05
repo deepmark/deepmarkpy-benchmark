@@ -3,6 +3,3 @@ fastapi
 uvicorn
 numpy
 soundfile
-librosa
-opuslib
-pyloudnorm

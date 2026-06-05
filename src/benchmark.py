@@ -88,12 +88,18 @@ class Benchmark:
         watermark_data=None,
         sampling_rate=None,
         verbose=False,
+        calculate_quality_metrics=False,
         **kwargs,
     ):
         """Embed and detect without applying any attacks.
 
         Returns per-file accuracy (and confidence where available).
         Used with ``--no_attacks`` to measure baseline model fidelity.
+
+        When ``calculate_quality_metrics`` is True, also computes the full
+        metric suite (PESQ, PSNR, SI-SDR, MCD, ViSQOL, STOI, SII, NCM,
+        NISQA x5) on the watermarked-vs-original pair so the no-attacks
+        report can show how much the watermark itself perturbs the audio.
         """
         if isinstance(filepaths, str):
             filepaths = [filepaths]
@@ -152,6 +158,16 @@ class Benchmark:
             }
             if confidence is not None:
                 entry["confidence"] = confidence
+
+            if calculate_quality_metrics:
+                # Compare original vs watermarked (no attack between).
+                # Captures how much the watermark itself perturbs the
+                # signal -- the same baseline that ``run()`` records as
+                # ``watermarked_audio_quality``.
+                entry["watermarked_audio_quality"] = compute_metrics(
+                    audio, watermarked_audio, sampling_rate,
+                    metrics=ALL_METRICS,
+                )
 
             results.append(entry)
 

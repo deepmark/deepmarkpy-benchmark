@@ -46,6 +46,7 @@ ATTACK_GROUPS = {
             "Mp3CompressionAttack",
             "EncodecAttack",
             "DescriptAudioCodecAttack",
+            "OpusCodecAttack",
             "ResamplingPolyAttack",
             "MixingAttack",
         ],

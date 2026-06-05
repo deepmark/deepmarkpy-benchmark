@@ -278,6 +278,15 @@ def visqol_wrapper(reference: np.ndarray, degraded: np.ndarray,
     """
     ViSQOL - Virtual Speech Quality Objective Listener.
 
+    ViSQOL only supports two rates exactly: 16 kHz (speech mode) and
+    48 kHz (audio mode). Anything else triggers a "rate above 16 kHz" /
+    "rate not 48 kHz" warning from the library and degrades scoring
+    accuracy. Since this benchmark works on speech, we always run ViSQOL
+    in speech mode at 16 kHz, resampling here when the caller supplies a
+    different rate. If the input is already at 48 kHz we use audio mode
+    (no resample needed); if it is exactly 16 kHz, neither resample nor
+    warning happens.
+
     Args:
         reference: Reference signal
         degraded: Degraded signal
@@ -287,11 +296,19 @@ def visqol_wrapper(reference: np.ndarray, degraded: np.ndarray,
         ViSQOL MOS score (1.0-5.0), ``None`` if the calculation fails
         or if the optional ``visqol`` package is not installed.
     """
-    mode = "audio" if fs >= 48000 else "speech"
+    if fs == 48000:
+        mode, target_fs = "audio", 48000
+    else:
+        mode, target_fs = "speech", 16000
+
+    if fs != target_fs:
+        reference = librosa.resample(reference, orig_sr=fs, target_sr=target_fs)
+        degraded = librosa.resample(degraded, orig_sr=fs, target_sr=target_fs)
+
     api = _get_visqol_api(mode)
     if api is None:
         return None
-    return api.measure_from_arrays(reference, degraded, fs).moslqo
+    return api.measure_from_arrays(reference, degraded, target_fs).moslqo
 
 
 @_safe_metric("SII")
@@ -440,19 +457,15 @@ def _get_nisqa_model():
         return None
 
 
-def compute_nisqa(degraded: np.ndarray, sr: int) -> Dict[str, Optional[float]]:
-    """Run a single NISQA inference and return all five MOS dimensions.
+_NISQA_MAX_SEC = 12.0
+_NISQA_CHUNK_SEC = 10.0
+_NISQA_MIN_CHUNK_SEC = 3.0
 
-    NISQA is non-intrusive: it scores ``degraded`` alone, no reference
-    needed. The five dimensions (mos / noisiness / discontinuity /
-    coloration / loudness) are produced together in one forward pass, so
-    callers should request them as a group rather than five times.
-    """
+
+def _nisqa_predict_once(model, degraded: np.ndarray, sr: int
+                        ) -> Dict[str, Optional[float]]:
+    """Run NISQA on a single segment that fits in one forward pass."""
     none_result = {k: None for k in NISQA_METRICS}
-    model = _get_nisqa_model()
-    if model is None:
-        return none_result
-
     try:
         import contextlib
         import io
@@ -478,6 +491,55 @@ def compute_nisqa(degraded: np.ndarray, sr: int) -> Dict[str, Optional[float]]:
     except (RuntimeError, ValueError, KeyError) as e:
         logger.warning(f"NISQA prediction failed: {e}")
         return none_result
+
+
+def compute_nisqa(degraded: np.ndarray, sr: int) -> Dict[str, Optional[float]]:
+    """Run NISQA inference and return all five MOS dimensions.
+
+    NISQA is non-intrusive: it scores ``degraded`` alone, no reference
+    needed. The five dimensions (mos / noisiness / discontinuity /
+    coloration / loudness) are produced together in one forward pass, so
+    callers should request them as a group rather than five times.
+
+    NISQA's mel-spec window buffer caps inference at ~13 s; longer signals
+    are split into ~10 s chunks here and averaged so callers don't have to
+    care about duration.
+    """
+    none_result = {k: None for k in NISQA_METRICS}
+    model = _get_nisqa_model()
+    if model is None:
+        return none_result
+
+    duration = len(degraded) / sr
+    if duration <= _NISQA_MAX_SEC:
+        return _nisqa_predict_once(model, degraded, sr)
+
+    chunk_len = int(_NISQA_CHUNK_SEC * sr)
+    min_len = int(_NISQA_MIN_CHUNK_SEC * sr)
+    accum: Dict[str, list] = {k: [] for k in NISQA_METRICS}
+    failed = 0
+    for start in range(0, len(degraded), chunk_len):
+        chunk = degraded[start:start + chunk_len]
+        if len(chunk) < min_len:
+            continue
+        res = _nisqa_predict_once(model, chunk, sr)
+        if res["nisqa_mos"] is None:
+            failed += 1
+            continue
+        for k in NISQA_METRICS:
+            accum[k].append(res[k])
+
+    if not accum["nisqa_mos"]:
+        logger.warning(
+            f"NISQA: no successful chunks across {duration:.1f}s signal."
+        )
+        return none_result
+    if failed:
+        logger.info(
+            f"NISQA: {failed} chunk(s) failed out of "
+            f"{failed + len(accum['nisqa_mos'])} for {duration:.1f}s signal."
+        )
+    return {k: float(np.mean(accum[k])) for k in NISQA_METRICS}
 
 
 @_safe_metric("NCM")
@@ -559,8 +621,10 @@ METRIC_LABELS = {
     "nisqa_loud": "Loudness (1--5)",
 }
 
-# Metrics that require 8 kHz or 16 kHz and are resampled accordingly
-_NARROWBAND_METRICS = {"pesq", "stoi"}
+# Metrics that require 8 kHz or 16 kHz and are resampled accordingly.
+# ViSQOL is included because its "speech" mode is locked to 16 kHz; running
+# it at any other rate triggers a library warning and degrades the score.
+_NARROWBAND_METRICS = {"pesq", "stoi", "visqol"}
 
 
 def compute_metrics(
@@ -622,12 +686,20 @@ def compute_metrics(
             nisqa_cache.update(compute_nisqa(deg_trimmed, sr))
         return nisqa_cache[key]
 
+    # ViSQOL: audio mode at 48 kHz when input is already 48k, otherwise
+    # speech mode at 16 kHz reusing the narrowband-resampled buffers above
+    # so we don't resample the same signal twice.
+    if sr == 48000:
+        visqol_ref, visqol_deg, visqol_sr = ref_trimmed, deg_trimmed, 48000
+    else:
+        visqol_ref, visqol_deg, visqol_sr = ref_nb, deg_nb, nb_sr
+
     computations = {
         "pesq": lambda: pesq_wrapper(ref_nb, deg_nb, nb_sr, pesq_mode),
         "psnr": lambda: psnr(ref_trimmed, deg_trimmed),
         "si_sdr": lambda: si_sdr(ref_trimmed, deg_trimmed),
         "mcd": lambda: mcd(ref_trimmed, deg_trimmed, sr),
-        "visqol": lambda: visqol_wrapper(ref_trimmed, deg_trimmed, sr),
+        "visqol": lambda: visqol_wrapper(visqol_ref, visqol_deg, visqol_sr),
         "stoi": lambda: stoi_wrapper(ref_nb, deg_nb, nb_sr),
         "sii": lambda: sii(ref_trimmed, deg_trimmed, sr),
         "ncm": lambda: ncm(ref_trimmed, deg_trimmed, sr),

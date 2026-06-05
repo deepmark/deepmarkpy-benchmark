@@ -16,6 +16,7 @@ from utils.metrics import (
     ALL_METRICS,
     INTELLIGIBILITY_METRICS,
     METRIC_LABELS,
+    NISQA_METRICS,
     QUALITY_METRICS,
 )
 
@@ -102,6 +103,7 @@ AUDIO_EDITING_SUBGROUPS = {
             "Mp3CompressionAttack",
             "EncodecAttack",
             "DescriptAudioCodecAttack",
+            "OpusCodecAttack",
             "ResamplingPolyAttack",
         ],
         "quality_metrics": ["pesq", "psnr", "mcd", "visqol"],
@@ -546,10 +548,17 @@ class DetailedReportGenerator:
         # Handle attacks not in any known group
         if "other" in grouped:
             other_attacks = grouped["other"]["attacks"]
+            # Split quality metrics from NISQA so the audio-quality table
+            # stays narrow enough to fit the page; NISQA's five dimensions
+            # get their own table, matching every other group's layout.
+            other_quality_metrics = [
+                m for m in self.BASE_QUALITY_METRICS if m not in NISQA_METRICS
+            ]
+
             sections += "\\needspace{5\\baselineskip}\n"
             sections += "\\section{Other Attacks}\n\n"
             sections += self._metrics_table(
-                aggregated, other_attacks, self.BASE_QUALITY_METRICS,
+                aggregated, other_attacks, other_quality_metrics,
                 "attacked_audio_quality_wm",
                 "Audio quality --- other attacks.",
                 "tab:qual_other",
@@ -562,6 +571,14 @@ class DetailedReportGenerator:
                 "Speech intelligibility --- other attacks.",
                 "tab:intell_other",
                 baseline_data=aggregated["watermark_intelligibility"],
+            )
+            sections += "\n\n"
+            sections += self._metrics_table(
+                aggregated, other_attacks, list(NISQA_METRICS),
+                "attacked_audio_quality_wm",
+                "NISQA non-intrusive quality dimensions --- other attacks.",
+                "tab:nisqa_other",
+                baseline_data=aggregated["watermarked_audio_quality"],
             )
             sections += "\n\n"
 
