@@ -2,11 +2,13 @@
 Pure Opus Codec Attack - Client
 
 Applies only Opus encode/decode, with no WebRTC noise suppression and no
-network emulation. The audio is forwarded to the codec service at the
-benchmark's runtime sampling rate -- ``opusenc`` silently remaps to its
-nearest supported internal rate (8/12/16/24/48 kHz) for compression, and
-``opusdec --rate <model_sr>`` decodes back to the same rate the model
-expects, so the caller never sees a different sampling rate.
+network emulation. Audio is forwarded to the codec service at the
+benchmark's runtime sampling rate. The server uses ``opusenc`` (which
+silently remaps to its nearest supported internal rate -- 8/12/16/24/48
+kHz -- for compression) and ``opusdec`` to decode at that same Opus
+internal rate. The decoded audio comes back at the codec's internal rate
+and this client resamples it to the model's sampling rate with librosa,
+so the SR conversion uses our resampler instead of opusdec's.
 
 Talks to its own dedicated Docker service (port OPUS_CODEC_PORT, default
 10023) -- a lightweight server that only does opusenc/opusdec, no WebRTC
@@ -16,6 +18,7 @@ APM and no tc netem.
 import logging
 import os
 
+import librosa
 import numpy as np
 import requests
 
@@ -28,10 +31,10 @@ class OpusCodecAttack(BaseAttack):
     """
     Pure Opus codec attack — encode and decode only, no NS, no network.
 
-    The client does no resampling: audio is sent to the service at the
-    benchmark's sampling rate, ``opusenc`` handles the remap to its own
-    internal rate, and ``opusdec --rate <sampling_rate>`` brings the
-    decoded signal back to the same rate the model expects.
+    Audio is sent to the service at the benchmark's sampling rate;
+    ``opusenc`` handles the remap to its internal rate; ``opusdec``
+    returns the decoded signal at that same internal rate; this client
+    resamples it back to the benchmark sampling rate via librosa.
 
     Config parameters:
         - bitrate_opus_codec (int): Opus bitrate in kbps (default: 16)
@@ -91,8 +94,18 @@ class OpusCodecAttack(BaseAttack):
             raise KeyError("Missing 'audio' in response from service")
 
         attacked = np.asarray(response_data["audio"], dtype=np.float32)
+        decoded_sr = int(response_data.get("sampling_rate", sampling_rate))
 
-        # Lock to caller's length so any drift inside opusdec doesn't
+        # opusdec emits audio at its native 48 kHz output. Resample back
+        # to the benchmark sampling rate here (instead of letting opusdec
+        # do it), so the SR conversion uses librosa's polyphase resampler
+        # and stays the same algorithm we use everywhere else.
+        if decoded_sr != sampling_rate:
+            attacked = librosa.resample(
+                attacked, orig_sr=decoded_sr, target_sr=sampling_rate
+            )
+
+        # Lock to caller's length so any drift from resampling doesn't
         # leak out to downstream metrics that compare sample-by-sample.
         if len(attacked) > original_len:
             attacked = attacked[:original_len]
@@ -100,7 +113,8 @@ class OpusCodecAttack(BaseAttack):
             attacked = np.pad(attacked, (0, original_len - len(attacked)))
 
         logger.info(
-            f"OpusCodec attack: sr={sampling_rate}Hz, "
+            f"OpusCodec attack: sr {sampling_rate}Hz -> codec -> "
+            f"{decoded_sr}Hz -> {sampling_rate}Hz, "
             f"bitrate={bitrate}k, framesize={framesize}ms"
         )
         return attacked.astype(np.float32)

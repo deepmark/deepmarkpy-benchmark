@@ -5,8 +5,9 @@ A lightweight service that only runs opusenc/opusdec -- no WebRTC noise
 suppression, no tc netem, no UDP packet simulation. The client sends
 audio at the model's sampling rate; ``opusenc`` silently remaps to its
 nearest internal rate (8/12/16/24/48 kHz) for compression, and
-``opusdec --rate <sampling_rate>`` decodes back to the original rate so
-the caller never sees a different sampling rate on the way out.
+``opusdec`` decodes at that same internal rate. Resampling back to the
+model's sampling rate happens on the client side via librosa so the SR
+conversion stays under our control instead of being delegated to opusdec.
 """
 
 import logging
@@ -50,11 +51,33 @@ def encode_with_opus(input_wav: str, output_opus: str, bitrate: int, framesize: 
         raise RuntimeError(f"opusenc failed: {result.stderr}")
 
 
-def decode_with_opus(input_opus: str, output_wav: str, sampling_rate: int) -> None:
-    """Decode an Opus file back to WAV at the given sample rate."""
+OPUS_INTERNAL_RATES = (8000, 12000, 16000, 24000, 48000)
+
+
+def _opus_internal_rate(input_sr: int) -> int:
+    """Return the Opus internal rate that ``opusenc`` will pick for ``input_sr``.
+
+    Opus only supports those five rates internally, so any other input
+    is silently remapped to the nearest supported one. We mirror that
+    choice here so the server can ask ``opusdec`` to output at the same
+    rate the codec actually ran at, instead of letting opusdec resample
+    back to the originally-tagged input SR.
+    """
+    return min(OPUS_INTERNAL_RATES, key=lambda r: (abs(r - input_sr), -r))
+
+
+def decode_with_opus(input_opus: str, output_wav: str, decoded_sr: int) -> None:
+    """Decode an Opus file at the codec's internal sample rate.
+
+    ``decoded_sr`` should be the Opus internal rate the encoder used
+    (one of 8/12/16/24/48 kHz). Asking opusdec for that rate lets it
+    skip the WAV-header-driven resample to the originally-tagged input
+    SR, so the librosa resample on the client side is the only SR
+    conversion that happens after compression.
+    """
     cmd = [
         "opusdec",
-        "--rate", str(sampling_rate),
+        "--rate", str(decoded_sr),
         "--quiet",
         input_opus,
         output_wav,
@@ -66,8 +89,16 @@ def decode_with_opus(input_opus: str, output_wav: str, sampling_rate: int) -> No
 
 def process_opus_codec(
     audio: np.ndarray, sampling_rate: int, bitrate: int, framesize: float,
-) -> np.ndarray:
-    """Pure Opus encode -> decode round trip (no network, no preprocessing)."""
+):
+    """Pure Opus encode -> decode round trip (no network, no preprocessing).
+
+    Returns ``(decoded_audio, decoded_sr)``. ``decoded_sr`` is the Opus
+    internal rate the codec actually ran at (one of 8/12/16/24/48 kHz),
+    not the input rate. Resampling back to the model's SR is left to
+    the client.
+    """
+    decoded_sr = _opus_internal_rate(sampling_rate)
+
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f_in:
         input_wav = f_in.name
     with tempfile.NamedTemporaryFile(suffix=".opus", delete=False) as f_opus:
@@ -78,20 +109,16 @@ def process_opus_codec(
     try:
         sf.write(input_wav, audio, sampling_rate)
         encode_with_opus(input_wav, opus_file, bitrate, framesize)
-        decode_with_opus(opus_file, output_wav, sampling_rate)
+        decode_with_opus(opus_file, output_wav, decoded_sr)
 
-        decoded_audio, _ = sf.read(output_wav)
-
-        if len(decoded_audio) > len(audio):
-            decoded_audio = decoded_audio[:len(audio)]
-        elif len(decoded_audio) < len(audio):
-            decoded_audio = np.pad(decoded_audio, (0, len(audio) - len(decoded_audio)))
+        decoded_audio, file_sr = sf.read(output_wav)
 
         logger.info(
             f"Opus codec pass complete: bitrate={bitrate}k, framesize={framesize}ms, "
-            f"sr={sampling_rate}Hz"
+            f"input_sr={sampling_rate}Hz, decoded_sr={file_sr}Hz "
+            f"(opus internal rate)"
         )
-        return decoded_audio.astype(np.float32)
+        return decoded_audio.astype(np.float32), int(file_sr)
     finally:
         for f in [input_wav, opus_file, output_wav]:
             try:
@@ -103,16 +130,23 @@ def process_opus_codec(
 
 @app.post("/attack")
 async def attack(request: AttackRequest):
-    """Run a pure Opus encode/decode round trip on the supplied audio."""
+    """Run a pure Opus encode/decode round trip on the supplied audio.
+
+    Response includes ``sampling_rate`` so the client knows what rate the
+    decoded audio comes back at (always 48 kHz, Opus's native output).
+    """
     try:
         audio = np.array(request.audio, dtype=np.float32)
-        result = process_opus_codec(
+        result, decoded_sr = process_opus_codec(
             audio=audio,
             sampling_rate=request.sampling_rate,
             bitrate=request.bitrate,
             framesize=request.framesize,
         )
-        return {"audio": result.astype(np.float32).tolist()}
+        return {
+            "audio": result.astype(np.float32).tolist(),
+            "sampling_rate": decoded_sr,
+        }
     except Exception as e:
         logger.error(f"Attack failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
