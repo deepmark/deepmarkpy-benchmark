@@ -128,6 +128,17 @@ def main():
     )
 
     parser.add_argument(
+        "--crop_before_attack",
+        type=float,
+        default=None,
+        help=(
+            "Optional: crop this percentage from the beginning of the watermarked "
+            "audio before each attack is applied (uses CropBeginningAttack). "
+            "Disabled when not set."
+        ),
+    )
+
+    parser.add_argument(
         "--save_audio",
         action="store_true",
         default=False,
