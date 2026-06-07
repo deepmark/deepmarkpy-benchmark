@@ -6,7 +6,7 @@ from plugins.attacks.time_stretch.attack import TimeStretchAttack
 
 logger = logging.getLogger(__name__)
 
-class InvertedTimeStretch(BaseAttack):
+class InvertedTimeStretchAttack(BaseAttack):
 
     def __init__(self):
         super().__init__()
@@ -34,7 +34,7 @@ class InvertedTimeStretch(BaseAttack):
             raise ValueError("'sampling_rate' must be provided in kwargs.")
         
         stretch_rate = kwargs.get(
-            "inverted_stretch_rate", self.config.get("inverted_stretch_rate")
+            "rate_inverted_time_stretch", self.config.get("rate_inverted_time_stretch")
         )
         
         try:

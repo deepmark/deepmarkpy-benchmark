@@ -12,7 +12,7 @@ class EqualizerAttack(BaseAttack):
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the equalizer attack:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
-                - gains (np.ndarray): Specifies how much to boost or cut each of the 10 bands.
+                - gains_equalizer (np.ndarray): Specifies how much to boost or cut each of the 10 bands.
         Returns:
             np.ndarray: The processed audio signal.
 
@@ -22,7 +22,7 @@ class EqualizerAttack(BaseAttack):
         """
 
         sampling_rate = kwargs.get("sampling_rate", None)
-        gains = kwargs.get( "gains", self.config.get("gains"))
+        gains = kwargs.get( "gains_equalizer", self.config.get("gains_equalizer"))
 
         center_freqs = [31.5, 63, 125, 250, 500, 
                 1000, 2000, 4000, 8000, 16000] #add 8000, 16000 for higher sample rates

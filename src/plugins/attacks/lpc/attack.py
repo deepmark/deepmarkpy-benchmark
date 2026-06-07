@@ -37,8 +37,8 @@ class LPCAttack(BaseAttack):
         """
 
         sampling_rate = kwargs.get("sampling_rate", None)
-        order = kwargs.get("order",self.config.get("order"))
-        axis = kwargs.get("axis",self.config.get("axis", -1))
+        order = kwargs.get("order_lpc", self.config.get("order_lpc"))
+        axis = kwargs.get("axis_lpc", self.config.get("axis_lpc", -1))
 
 
         audio = audio.swapaxes(axis, 0)

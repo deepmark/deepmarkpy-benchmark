@@ -14,13 +14,13 @@ class ReplacementAttack(BaseAttack):
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the replacement attack:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
-                - replacement_block_size (int): Size of each block for processing in samples (default: 1024).
-                - replacement_overlap_factor (float): Overlap factor between consecutive blocks (default: 0.75).
+                - block_size_replacement (int): Size of each block for processing in samples (default: 1024).
+                - overlap_factor_replacement (float): Overlap factor between consecutive blocks (default: 0.75).
                 Must be in the range [0, 1), where 0 means no overlap and values closer to 1
                 indicate higher overlap.
-                - replacement_lower_bound (float): The lower bound of the similarity distance for considering a block as a candidate (default: 0).
-                - replacement_upper_bound (float): The upper bound of the similarity distance for considering a block as a candidate (default: 10).
-                - replacement_use_masking (bool): Whether to use psychoacoustic masking for distance calculation (default: False).
+                - lower_bound_replacement (float): The lower bound of the similarity distance for considering a block as a candidate (default: 0).
+                - upper_bound_replacement (float): The upper bound of the similarity distance for considering a block as a candidate (default: 10).
+                - use_masking_replacement (bool): Whether to use psychoacoustic masking for distance calculation (default: False).
 
         Returns:
             np.ndarray: The processed audio signal with the replacement attack applied.
@@ -31,19 +31,19 @@ class ReplacementAttack(BaseAttack):
         """
         sampling_rate = kwargs.get("sampling_rate", None)
         block_size = kwargs.get(
-            "replacement_block_size", self.config.get("replacement_block_size")
+            "block_size_replacement", self.config.get("block_size_replacement")
         )
         overlap_factor = kwargs.get(
-            "replacement_overlap_factor", self.config.get("replacement_overlap_factor")
+            "overlap_factor_replacement", self.config.get("overlap_factor_replacement")
         )
         lower_bound = kwargs.get(
-            "replacement_lower_bound", self.config.get("replacement_lower_bound")
+            "lower_bound_replacement", self.config.get("lower_bound_replacement")
         )
         upper_bound = kwargs.get(
-            "replacement_upper_bound", self.config.get("replacement_upper_bound")
+            "upper_bound_replacement", self.config.get("upper_bound_replacement")
         )
         use_masking = kwargs.get(
-            "replacement_use_masking", self.config.get("replacement_use_masking")
+            "use_masking_replacement", self.config.get("use_masking_replacement")
         )
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")

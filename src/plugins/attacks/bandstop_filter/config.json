@@ -1,7 +1,8 @@
 {
-    "order": 5,
-    "freq_range": [
+    "order_bandstop": 5,
+    "freq_range_bandstop": [
         350,
         500
-    ]
+    ],
+    "sampling_rate": 16000
 }

@@ -1,4 +1,4 @@
 {
     "cutoff_freq_lowpass": 7000,
-    "order": 5
+    "order_lowpass": 5
 }

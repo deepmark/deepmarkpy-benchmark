@@ -10,7 +10,7 @@ class QuantizationAttack(BaseAttack):
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the quantization attack:
-                - quantization_bit (tuple): Number of quantization levels (e.g., 256 for 8-bit).
+                - bit_quantization (tuple): Number of quantization levels (e.g., 256 for 8-bit).
         Returns:
             np.ndarray: The processed quantized audio signal.
 
@@ -19,7 +19,7 @@ class QuantizationAttack(BaseAttack):
 
         """
         quantization_bit = kwargs.get(
-            "quantization_bit", self.config.get("quantization_bit")
+            "bit_quantization", self.config.get("bit_quantization")
         )
 
         # Normalize to [0, 1]

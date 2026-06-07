@@ -13,14 +13,14 @@ class WaveletAttack(BaseAttack):
             audio (np.ndarray): Input audio signal.
             **kwargs: Additional parameters for the wavelet denoising.
                 - wavelet (str): Wavelet type (e.g., 'db1', 'sym5'). Default is 'db1'.
-                - wt_mode (str): Thresholding mode ('soft' or 'hard'). Default is 'soft'.
+                - wt_mode_wavelet (str): Thresholding mode ('soft' or 'hard'). Default is 'soft'.
 
         Returns:
             np.ndarray: The denoised audio signal.
         """
         wavelet = kwargs.get("wavelet", self.config.get("wavelet"))
-        mode = kwargs.get("wt_mode", self.config.get("wt_mode"))
-        threshold_factor = kwargs.get("threshold_factor", self.config.get("threshold_factor"))
+        mode = kwargs.get("wt_mode_wavelet", self.config.get("wt_mode_wavelet"))
+        threshold_factor = kwargs.get("threshold_factor_wavelet", self.config.get("threshold_factor_wavelet"))
 
         threshold = self.compute_threshold(audio, wavelet, threshold_factor)
 

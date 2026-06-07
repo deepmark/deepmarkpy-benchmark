@@ -13,11 +13,11 @@ class ChorusAttack(BaseAttack):
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the chorus attack:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
-                - start_delays (float): Starting amount of time (in seconds) that the input signal is delayed before modulation.
-                - w_delays (float): Controls how much the delay time is varied  by the sine wave.
-                - delay_rates (float): Frequency (Hz) of the modulation sine wave — typically a low frequency (e.g., 0.3-5 Hz).
-                - dry_gain (float): The amount of the original signal to keep (0.0 to 1.0).
-                - chorus_gains (float): The amount of the effected signal to add (0.0 to 1.0). 
+                - start_delays_chorus (float): Starting amount of time (in seconds) that the input signal is delayed before modulation.
+                - w_delays_chorus (float): Controls how much the delay time is varied  by the sine wave.
+                - delay_rates_chorus (float): Frequency (Hz) of the modulation sine wave — typically a low frequency (e.g., 0.3-5 Hz).
+                - dry_gain_chorus (float): The amount of the original signal to keep (0.0 to 1.0).
+                - chorus_gains_chorus (float): The amount of the effected signal to add (0.0 to 1.0). 
         Returns:
             np.ndarray: The processed audio signal.
 
@@ -26,11 +26,11 @@ class ChorusAttack(BaseAttack):
 
         """
         sampling_rate = kwargs.get("sampling_rate", None)
-        start_delays = kwargs.get( "start_delays", self.config.get("start_delays"))
-        w_delays = kwargs.get("w_delays",self.config.get("w_delays"))
-        delay_rates = kwargs.get("delay_rates",self.config.get("delay_rates"))
-        self.dry_gain = kwargs.get("dry_gain",self.config.get("dry_gain"))
-        self.chorus_gains = kwargs.get("chorus_gains",self.config.get("chorus_gains"))
+        start_delays = kwargs.get( "start_delays_chorus", self.config.get("start_delays_chorus"))
+        w_delays = kwargs.get("w_delays_chorus",self.config.get("w_delays_chorus"))
+        delay_rates = kwargs.get("delay_rates_chorus",self.config.get("delay_rates_chorus"))
+        self.dry_gain = kwargs.get("dry_gain_chorus",self.config.get("dry_gain_chorus"))
+        self.chorus_gains = kwargs.get("chorus_gains_chorus",self.config.get("chorus_gains_chorus"))
 
         self.chorus_count = len(self.chorus_gains)
 

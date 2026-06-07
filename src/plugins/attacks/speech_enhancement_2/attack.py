@@ -24,7 +24,7 @@ class SpeechEnhancement2Attack(BaseAttack):
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
         sampling_rate = kwargs.get("sampling_rate", 16000)
-        model_name = kwargs.get("model_name_speech_enh", self.config.get("model_name_speech_enh"))
+        model_name = kwargs.get("model_name_se2", self.config.get("model_name_se2"))
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
 

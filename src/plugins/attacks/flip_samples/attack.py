@@ -13,8 +13,8 @@ class FlipSamplesAttack(BaseAttack):
             audio (np.ndarray): Input audio signal.
             **kwargs: Additional parameters.
                 - sampling_rate (int): Sampling rate of the audio in Hz (required).
-                - num_flips (int): Number of sample pairs to flip in the selected segment. Default is 100 (Optional).
-                - flip_duration (float): Duration (in seconds) of the segment where flips should occur. Default is 0.5 seconds (Optional).
+                - num_flip_samples (int): Number of sample pairs to flip in the selected segment. Default is 100 (Optional).
+                - duration_flip_samples (float): Duration (in seconds) of the segment where flips should occur. Default is 0.5 seconds (Optional).
 
         Returns:
             np.ndarray: Audio signal with flipped sample positions.
@@ -23,8 +23,8 @@ class FlipSamplesAttack(BaseAttack):
             ValueError: If 'sampling_rate' is not provided in kwargs.
         """
         sampling_rate = kwargs.get("sampling_rate", None)
-        num_flips = kwargs.get("num_flips", self.config.get("num_flips"))
-        duration = kwargs.get("flip_duration", self.config.get("flip_duration"))
+        num_flips = kwargs.get("num_flip_samples", self.config.get("num_flip_samples"))
+        duration = kwargs.get("duration_flip_samples", self.config.get("duration_flip_samples"))
 
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
