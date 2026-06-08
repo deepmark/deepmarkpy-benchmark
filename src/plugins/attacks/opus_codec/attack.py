@@ -39,7 +39,6 @@ class OpusCodecAttack(BaseAttack):
     Config parameters:
         - bitrate_opus_codec (int): Opus bitrate in kbps (default: 16)
         - framesize_opus_codec (float): Frame size in ms (default: 20)
-        - sampling_rate_opus_codec (int): Opus working rate in Hz (default: 16000)
     """
 
     def __init__(self):
