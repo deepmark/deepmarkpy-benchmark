@@ -67,17 +67,7 @@ class OpusCodecAttack(BaseAttack):
             "framesize_opus_codec",
             self.config.get("framesize_opus_codec", 20),
         )
-        opus_sr = kwargs.get(
-            "sampling_rate_opus_codec",
-            self.config.get("sampling_rate_opus_codec"),
-        )
-        if opus_sr is None:
-            raise ValueError(
-                "'sampling_rate_opus_codec' must be set in config.json "
-                "(the Opus working rate, e.g. 16000)."
-            )
-        opus_sr = int(opus_sr)
-
+    
         audio = np.asarray(audio).astype(np.float32, copy=False)
         original_len = len(audio)
 
