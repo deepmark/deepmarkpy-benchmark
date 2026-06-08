@@ -260,7 +260,6 @@ class Benchmark:
             # Load audio
             audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
             logger.info(f"Sampling rate is: {sampling_rate}")
-            attack_kwargs["orig_audio"] = audio
 
             # Embed watermark
             watermarked_audio = model_instance.embed(
@@ -269,7 +268,10 @@ class Benchmark:
 
             # Optionally crop the beginning of the watermarked audio right
             # after embedding, so every downstream attack sees the cropped
-            # signal. The original audio is left untouched.
+            # signal. Apply the same crop to the original audio so quality
+            # metrics and attacks that splice samples by index between the
+            # two (CollusionAttack, ZeroBitCollusionAttack) stay length-
+            # matched and time-aligned.
             if crop_before_attack is not None and "CropBeginningAttack" in self.attacks:
                 pre_crop = self.attacks["CropBeginningAttack"]["class"]()
                 watermarked_audio = pre_crop.apply(
@@ -277,6 +279,12 @@ class Benchmark:
                     sampling_rate=sampling_rate,
                     crop_percentage_beginning=crop_before_attack,
                 )
+                audio = pre_crop.apply(
+                    audio,
+                    sampling_rate=sampling_rate,
+                    crop_percentage_beginning=crop_before_attack,
+                )
+            attack_kwargs["orig_audio"] = audio
 
             # Save watermarked audio
             if save_audio:
