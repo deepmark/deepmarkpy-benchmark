@@ -3,6 +3,5 @@
     "freq_range_bandstop": [
         350,
         500
-    ],
-    "sampling_rate": 16000
+    ]
 }
