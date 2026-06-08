@@ -362,7 +362,6 @@ class Benchmark:
                         logger.info(f"Saved attacked audio: {attacked_filename}")
                 
                 confidence = None
-                logger.info(f"Sampling rate before detection: {sampling_rate}")
                 if returns_confidence:
                     detected_message, confidence = model_instance.detect(attacked_audio, sampling_rate)
                 else:
