@@ -1,4 +1,9 @@
 {
-    "cutoff_freq_lowpass": 7000,
+    "cutoff_freq_per_sr_lowpass": {
+        "16000": 3500,
+        "32000": 5000,
+        "44100": 6000,
+        "48000": 6000
+    },
     "order_lowpass": 5
 }
