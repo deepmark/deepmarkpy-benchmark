@@ -128,6 +128,22 @@ def main():
     )
 
     parser.add_argument(
+        "--detection_reliability",
+        action="store_true",
+        default=False,
+        help=(
+            "Measure false positive (detection on clean audio) and false "
+            "negative (missed detection on watermarked audio) rates. "
+            "Currently supported only for zero-bit models and a single "
+            "model per run. Generates detection_reliability_report.pdf. "
+            "Combinable with --attack_types and --attack_groups: when "
+            "attacks are provided, FP/FN are also reported per attack "
+            "(attack applied to clean audio for FP, to watermarked audio "
+            "for FN)."
+        ),
+    )
+
+    parser.add_argument(
         "--save_audio",
         action="store_true",
         default=False,
@@ -198,6 +214,18 @@ def main():
         model_names = args.wm_models if args.wm_models else [args.wm_model]
         _clean_report_dir("report")
         run_no_attacks_mode(benchmark, filepaths, model_names, args)
+    elif args.detection_reliability:
+        # --- Detection reliability mode: FP/FN measurement ---
+        if args.wm_models and len(args.wm_models) > 1:
+            logger.error(
+                "--detection_reliability supports only a single model. "
+                "Use --wm_model instead of --wm_models, or pass exactly "
+                "one model name to --wm_models."
+            )
+            return
+        model_name = args.wm_models[0] if args.wm_models else args.wm_model
+        _clean_report_dir("report")
+        run_detection_reliability_mode(benchmark, filepaths, model_name, args)
     elif args.wm_models and len(args.wm_models) > 1:
         # --- Multi-model mode ---
         run_multiple_models(benchmark, filepaths, args.wm_models, args)
@@ -275,6 +303,73 @@ def run_no_attacks_mode(benchmark, filepaths, model_names, args):
 
     if not all_results:
         logger.error("No models completed successfully.")
+
+
+def run_detection_reliability_mode(benchmark, filepaths, model_name, args):
+    """Run the detection-reliability flow for a single zero-bit model.
+
+    Computes FP / FN both without attacks and (when attacks are
+    requested) with each attack applied, then writes a dedicated PDF
+    report. Lives in its own function so it doesn't clutter the
+    accuracy-driven ``run_single_model`` path.
+    """
+    from utils.detection_reliability import run_detection_reliability
+    from utils.detection_reliability_report_generator import (
+        generate_detection_reliability_report,
+    )
+
+    report_dir = "report"
+    os.makedirs(report_dir, exist_ok=True)
+
+    # Build the same ``args_dict`` plumbing the rest of the modes use --
+    # this is how attack-specific CLI overrides reach attack.apply().
+    args_dict = vars(args).copy()
+    # Drop keys that the orchestrator handles itself.
+    for key in (
+        "wm_model",
+        "wm_models",
+        "wav_files_dir",
+        "attack_types",
+        "attack_groups",
+        "no_attacks",
+        "detection_reliability",
+        "verbose",
+    ):
+        args_dict.pop(key, None)
+
+    attack_types = list(args.attack_types or [])
+
+    logger.info(
+        f"Running detection-reliability for {model_name} on "
+        f"{len(filepaths)} files; attacks={attack_types or 'none'}"
+    )
+    try:
+        result = run_detection_reliability(
+            benchmark,
+            filepaths,
+            wm_model=model_name,
+            attack_types=attack_types,
+            sampling_rate=None,
+            verbose=args.verbose,
+            **args_dict,
+        )
+    except ValueError as e:
+        logger.error(f"Detection reliability run failed: {e}")
+        return
+
+    # Persist raw result so later runs can inspect/regenerate the PDF.
+    result_path = os.path.join(report_dir, "detection_reliability.json")
+    with open(result_path, "w") as fp:
+        json.dump(to_json_safe(dict(result)), fp, indent=4)
+    logger.info(f"Detection reliability data saved to {result_path}")
+
+    try:
+        tex_path = generate_detection_reliability_report(
+            dict(result), report_dir=report_dir,
+        )
+        logger.info(f"Detection reliability report generated: {tex_path}")
+    except Exception as e:
+        logger.error(f"Failed to generate detection reliability report: {e}")
 
 
 def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
