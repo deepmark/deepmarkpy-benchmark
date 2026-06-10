@@ -272,18 +272,23 @@ class Benchmark:
             # metrics and attacks that splice samples by index between the
             # two (CollusionAttack, ZeroBitCollusionAttack) stay length-
             # matched and time-aligned.
-            if crop_before_attack is not None and "CropBeginningAttack" in self.attacks:
-                pre_crop = self.attacks["CropBeginningAttack"]["class"]()
-                watermarked_audio = pre_crop.apply(
-                    watermarked_audio,
-                    sampling_rate=sampling_rate,
-                    crop_percentage_beginning=crop_before_attack,
-                )
-                audio = pre_crop.apply(
-                    audio,
-                    sampling_rate=sampling_rate,
-                    crop_percentage_beginning=crop_before_attack,
-                )
+            if crop_before_attack is not None:
+                if "CropBeginningAttack" in self.attacks:
+                    pre_crop = self.attacks["CropBeginningAttack"]["class"]()
+                    watermarked_audio = pre_crop.apply(
+                        watermarked_audio,
+                        sampling_rate=sampling_rate,
+                        crop_percentage_beginning=crop_before_attack,
+                    )
+                    audio = pre_crop.apply(
+                        audio,
+                        sampling_rate=sampling_rate,
+                        crop_percentage_beginning=crop_before_attack,
+                    )
+                else:
+                    samples_to_crop = int(len(watermarked_audio) * (crop_before_attack / 100.0))
+                    watermarked_audio = watermarked_audio[samples_to_crop:]
+                    audio = audio[samples_to_crop:]
             attack_kwargs["orig_audio"] = audio
 
             # Save watermarked audio
