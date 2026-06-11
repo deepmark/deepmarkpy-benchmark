@@ -1,18 +1,39 @@
+import logging
+
 import numpy as np
 import torch
 
 from core.base_attack import BaseAttack
 
+logger = logging.getLogger(__name__)
+
 
 class EncodecAttack(BaseAttack):
+    # Class-level cache: the Encodec model is shared across every instance
+    # of this attack. benchmark.run creates a fresh attack instance per
+    # (file x attack), so without this the model would be loaded again for
+    # every single file. The model is read-only during inference
+    # (eval + no_grad), so sharing one instance across files is safe.
+    _cache = None  # holds the loaded model once ready
+
     def __init__(self):
         super().__init__()
         self.model = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def _load_model(self):
-        """Lazy load the Encodec model."""
+        """Lazy load the Encodec model.
+
+        Loads once per process and caches on the class; later instances
+        reuse the cached model instead of reloading it.
+        """
+        # Already populated on this instance.
         if self.model is not None:
+            return
+
+        # A previous instance already loaded the model -- reuse the cache.
+        if EncodecAttack._cache is not None:
+            self.model = EncodecAttack._cache
             return
 
         try:
@@ -25,11 +46,18 @@ class EncodecAttack(BaseAttack):
         model_name = self.config.get("model_name_encodec", "encodec_24khz")
         bandwidth = self.config.get("bandwidth_encodec", 6.0)
 
+        # First load in this process -- this is the only path that actually
+        # loads the model.
+        logger.info(f"Loading Encodec model: {model_name} (first run only)...")
+
         # Load pre-trained Encodec model, options: "encodec_24khz" or "encodec_48khz"
-        self.model = EncodecModel.encodec_model_24khz() if "24khz" in model_name else EncodecModel.encodec_model_48khz()
-        self.model.set_target_bandwidth(bandwidth)
-        self.model = self.model.to(self.device)
-        self.model.eval()
+        model = EncodecModel.encodec_model_24khz() if "24khz" in model_name else EncodecModel.encodec_model_48khz()
+        model.set_target_bandwidth(bandwidth)
+        model = model.to(self.device)
+        model.eval()
+
+        EncodecAttack._cache = model
+        self.model = model
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
         """

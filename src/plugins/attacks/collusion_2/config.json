@@ -1,0 +1,7 @@
+{
+    "target_ratio_collusion2": 0.5,
+    "min_segment_sec_collusion2": 0.5,
+    "max_segment_sec_collusion2": 2.0,
+    "crossfade_ms_collusion2": 50,
+    "silence_threshold_db_collusion2": -35
+}

@@ -146,7 +146,7 @@ covers. Groups can be combined with `--attack_types` to add individual attacks.
 
 | Tag | Attacks |
 |-----|---------|
-| `process_disruption` | `CrossModelAttack`, `CollusionAttack`, `ZeroBitCollusionAttack`, `SameModelAttack` |
+| `process_disruption` | `CrossModelAttack`, `CollusionAttack`, `ZeroBitCollusionAttack`, `Collusion2Attack`, `SameModelAttack` |
 | `audio_editing` | `CutSamplesAttack`, `CropBeginningAttack`, `CropRandomAttack`, `WaveletAttack`, `LowpassFilterAttack`, `HighpassFilterAttack`, `BandstopFilterAttack`, `SmoothingAttack`, `ChorusAttack`, `FlangerAttack`, `EchoAttack`, `EqualizerAttack`, `QuantizationAttack`, `STFTQuantizationAttack`, `PCMQuantizationAttack`, `Mp3CompressionAttack`, `EncodecAttack`, `DescriptAudioCodecAttack`, `OpusCodecAttack`, `ResamplingPolyAttack`, `MixingAttack` |
 | `audio_distortion` | `GaussianNoiseAttack`, `PinkNoiseAttack`, `SignInversionAttack`, `LPCAttack` |
 | `desynchronization` | `TimeStretchAttack`, `PitchShiftAttack`, `InvertedTimeStretch`, `ZeroCrossInsertsAttack`, `FlipSamplesAttack`, `ReplacementAttack` |
