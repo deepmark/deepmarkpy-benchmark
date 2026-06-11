@@ -263,7 +263,8 @@ class ComparativeReportGenerator:
     # ----------------------------------------------------------------
     # Full LaTeX report
     # ----------------------------------------------------------------
-    def generate_latex_report(self, all_stats, include_radar=True):
+    def generate_latex_report(self, all_stats, include_radar=True,
+                             crop_before_attack=None):
         """Generate complete comparative LaTeX document.
 
         The comparative report compares detection accuracy only. Per-
@@ -305,6 +306,17 @@ class ComparativeReportGenerator:
         attack_word = "attack type" if num_attacks == 1 else "attack types"
         model_word = "watermarking model" if num_models == 1 else "watermarking models"
 
+        crop_note = ""
+        if crop_before_attack is not None:
+            crop_note = (
+                f" \\textcolor{{red}}{{A crop of {crop_before_attack:.1f}\\% was applied to the "
+                f"beginning of the watermarked audio prior to each attack. "
+                f"The original (reference) audio was cropped identically, so "
+                f"quality metrics compare cropped original vs.\\ cropped attacked "
+                f"audio, and BER is measured by detecting the watermark from the "
+                f"cropped attacked signal.}}"
+            )
+
         return (
             f"{preamble}\n\n"
             f"\\begin{{abstract}}\n"
@@ -312,7 +324,8 @@ class ComparativeReportGenerator:
             f"({model_list}) "
             f"across {num_attacks} {attack_word}. "
             f"Detection accuracy is compared per attack, with "
-            f"row-wise color ranking highlighting relative performance.\n"
+            f"row-wise color ranking highlighting relative performance."
+            f"{crop_note}\n"
             f"\\end{{abstract}}\n\n"
             f"\\section{{Accuracy Comparison}}\n\n"
             f"{accuracy_table}\n\n"
@@ -322,7 +335,8 @@ class ComparativeReportGenerator:
         )
 
     def generate_full_report(self, all_results, all_stats,
-                              calculate_quality_metrics=False):
+                              calculate_quality_metrics=False,
+                              crop_before_attack=None):
         """Generate complete comparative report.
 
         Args:
@@ -333,6 +347,7 @@ class ComparativeReportGenerator:
             calculate_quality_metrics: Kept for API compatibility;
                 ignored — per-model quality details live in each
                 model's detailed report, not the comparative one.
+            crop_before_attack: If set, percentage cropped before attacks
         """
         del all_results, calculate_quality_metrics  # unused, see docstring
 
@@ -342,6 +357,7 @@ class ComparativeReportGenerator:
 
         latex_content = self.generate_latex_report(
             all_stats, include_radar=include_radar,
+            crop_before_attack=crop_before_attack,
         )
 
         latex_path = os.path.join(self.report_dir, "comparative_report.tex")

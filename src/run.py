@@ -335,6 +335,7 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
             stats_file=stats_path,
             model_name=model_name,
             report_dir=report_dir,
+            crop_before_attack=args.crop_before_attack,
         )
         logger.info(f"Benchmark report generated: {latex_path}")
     except Exception as e:
@@ -348,6 +349,7 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
             is_zero_bit = model_config.get("is_zero_bit", False)
             latex_path = detailed_generator.generate_full_report(
                 results, model_name=model_name, is_zero_bit=is_zero_bit,
+                crop_before_attack=args.crop_before_attack,
             )
             logger.info(f"Detailed report saved to: {latex_path}")
         except Exception as e:
@@ -421,6 +423,7 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
         comp_generator.generate_full_report(
             all_results, all_stats,
             calculate_quality_metrics=args.calculate_quality_metrics,
+            crop_before_attack=args.crop_before_attack,
         )
         logger.info(f"Comparative report saved to: {comp_dir}")
     except Exception as e:

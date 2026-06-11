@@ -178,7 +178,8 @@ class DetailedReportGenerator:
     # ------------------------------------------------------------------
 
     def _preamble(self, title, author):
-        return make_preamble(title, author, self._has_deepmark_cls)
+        return make_preamble(title, author, self._has_deepmark_cls,
+                             extra_packages=("xcolor",))
 
     def _format_val(self, stats):
         """Format mean value for display."""
@@ -588,12 +589,14 @@ class DetailedReportGenerator:
     # Main report assembly
     # ------------------------------------------------------------------
 
-    def generate_latex_report(self, aggregated, model_name="DeepMark"):
+    def generate_latex_report(self, aggregated, model_name="DeepMark",
+                             crop_before_attack=None):
         """Generate complete LaTeX document.
 
         Args:
             aggregated: Aggregated results from aggregate_results()
             model_name: Name of the watermarking model
+            crop_before_attack: If set, percentage cropped before attacks
         """
         num_attacks = len(aggregated["attacks"])
         all_attacks = list(aggregated["attacks"].keys())
@@ -609,6 +612,17 @@ class DetailedReportGenerator:
             "DeepMark Benchmark System",
         )
 
+        crop_note = ""
+        if crop_before_attack is not None:
+            crop_note = (
+                f" \\textcolor{{red}}{{A crop of {crop_before_attack:.1f}\\% was applied to the "
+                f"beginning of the watermarked audio prior to each attack. "
+                f"The original (reference) audio was cropped identically, so "
+                f"quality metrics compare cropped original vs.\\ cropped attacked "
+                f"audio, and BER is measured by detecting the watermark from the "
+                f"cropped attacked signal.}}"
+            )
+
         abstract = (
             f"\\begin{{abstract}}\n"
             f"This report presents a detailed evaluation of the "
@@ -616,7 +630,8 @@ class DetailedReportGenerator:
             f"It covers watermark detection robustness, audio quality "
             f"impact analysis, and speech intelligibility measures, comparing "
             f"the effects of watermark embedding and adversarial "
-            f"{'attack' if is_single else 'attacks'} on the audio signal.\n"
+            f"{'attack' if is_single else 'attacks'} on the audio signal."
+            f"{crop_note}\n"
             f"\\end{{abstract}}\n"
         )
 
@@ -658,7 +673,7 @@ class DetailedReportGenerator:
         )
 
     def generate_full_report(self, results, model_name="DeepMark",
-                              is_zero_bit=False):
+                              is_zero_bit=False, crop_before_attack=None):
         """
         Generate complete detailed report from raw benchmark results.
 
@@ -668,13 +683,15 @@ class DetailedReportGenerator:
             is_zero_bit: When True, render accuracy as "n/N" detection
                 counts (zero-bit detector returns 0/1 per file, so a
                 percentage column would only ever show 0 or 100).
+            crop_before_attack: If set, percentage cropped before attacks
 
         Returns:
             Path to the generated ``.tex`` file.
         """
         aggregated = self.aggregate_results(results, is_zero_bit=is_zero_bit)
 
-        latex_content = self.generate_latex_report(aggregated, model_name)
+        latex_content = self.generate_latex_report(aggregated, model_name,
+                                                   crop_before_attack=crop_before_attack)
         latex_path = os.path.join(self.report_dir, "detailed_report.tex")
         with open(latex_path, "w") as f:
             f.write(latex_content)
