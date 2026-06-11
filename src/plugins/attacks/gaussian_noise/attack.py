@@ -9,14 +9,14 @@ class GaussianNoiseAttack(BaseAttack):
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the Gaussian noise attack:
-                - snr_db (float): Desired Signal-to-Noise Ratio in dB
+                - snr_db_gaussian_noise (float): Desired Signal-to-Noise Ratio in dB
         Returns:
             np.ndarray: The processed audio signal with the Gaussian noise applied.
 
         """
 
         snr_db = kwargs.get(
-            "snr_db", self.config.get("snr_db")
+            "snr_db_gaussian_noise", self.config.get("snr_db_gaussian_noise")
         )
         signal_power = np.mean(audio ** 2)
         snr_linear = 10 ** (snr_db / 10.0)

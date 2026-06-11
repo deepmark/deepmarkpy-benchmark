@@ -17,18 +17,18 @@ class STFTQuantizationAttack(BaseAttack):
             Args:
                 audio (np.ndarray): Input audio signal.
                 **kwargs: Additional parameters for the PCM attack:
-                    - n_fft (int): Number of FFT points (window size). Default is 1024.
-                    - hop_length (int): Hop length between windows. Default is 512.
-                    - quantization_levels (int): Number of quantization levels for the STFT magnitude. Default is 256.
+                    - n_fft_stft_quantization (int): Number of FFT points (window size). Default is 1024.
+                    - hop_length_stft_quantization (int): Hop length between windows. Default is 512.
+                    - quantization_levels_stft_quantization (int): Number of quantization levels for the STFT magnitude. Default is 256.
 
             Returns:
                 np.ndarray: Time-domain audio signal after STFT magnitude quantization.
         """
 
         sr = kwargs.get("sampling_rate", None)
-        n_fft = kwargs.get("n_fft", self.config.get("n_fft"))
-        hop_length = kwargs.get("hop_length", self.config.get("hop_length"))
-        quantization_levels = kwargs.get("quantization_levels", self.config.get("quantization_levels"))
+        n_fft = kwargs.get("n_fft_stft_quantization", self.config.get("n_fft_stft_quantization"))
+        hop_length = kwargs.get("hop_length_stft_quantization", self.config.get("hop_length_stft_quantization"))
+        quantization_levels = kwargs.get("quantization_levels_stft_quantization", self.config.get("quantization_levels_stft_quantization"))
 
         # Compute STFT
         _, _, Zxx = stft(audio, fs=sr, nperseg=n_fft, noverlap=n_fft - hop_length, window='hann')

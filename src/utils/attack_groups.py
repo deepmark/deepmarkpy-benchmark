@@ -97,7 +97,7 @@ ATTACK_GROUPS = {
         "label": "Transmission Attacks",
         "attacks": [
             "ReplayAttack",
-            "NetworkTransmissionAttack",
+            "NetworkTransmissionAttack"
         ],
         "quality_metrics": ["pesq", "psnr", "si_sdr", "mcd", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],

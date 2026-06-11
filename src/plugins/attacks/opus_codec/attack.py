@@ -66,7 +66,7 @@ class OpusCodecAttack(BaseAttack):
             "framesize_opus_codec",
             self.config.get("framesize_opus_codec", 20),
         )
-
+    
         audio = np.asarray(audio).astype(np.float32, copy=False)
         original_len = len(audio)
 

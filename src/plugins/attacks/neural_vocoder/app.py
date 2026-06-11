@@ -25,7 +25,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info(f"Using device: {device}")
 
-model = BigVGAN(config["model_name"], device)
+model = BigVGAN(config["model_name_neural_vocoder"], device)
 
 
 class AttackRequest(BaseModel):

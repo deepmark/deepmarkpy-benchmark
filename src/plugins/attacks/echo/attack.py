@@ -12,8 +12,8 @@ class EchoAttack(BaseAttack):
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the echo attack:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
-                - volume_range (tuple): Min/max echo volume multiplier.
-                - duration_range (tuple): Min/max delay duration in seconds.
+                - volume_range_echo (tuple): Min/max echo volume multiplier.
+                - duration_range_echo (tuple): Min/max delay duration in seconds.
         Returns:
             np.ndarray: The processed echoed audio signal.
 
@@ -24,9 +24,9 @@ class EchoAttack(BaseAttack):
 
         sampling_rate = kwargs.get("sampling_rate", None)
         volume_range = kwargs.get(
-            "volume_range", self.config.get("volume_range")
+            "volume_range_echo", self.config.get("volume_range_echo")
         )
-        duration_range = kwargs.get("duration_range",self.config.get("duration_range"))
+        duration_range = kwargs.get("duration_range_echo", self.config.get("duration_range_echo"))
 
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")

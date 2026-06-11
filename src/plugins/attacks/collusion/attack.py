@@ -12,7 +12,7 @@ class CollusionAttack(BaseAttack):
                 - model (BaseModel): BaseModel instance of the watermarking model.
                 - orig_audio (np.ndarray): Original audio file.
                 - sampling_rate (int): Sampling rate of the audio.
-                - collusion_size(int): Size of the collusion segment.
+                - size_collusion(int): Size of the collusion segment.
         Returns:
             np.ndarray: The recombined audio after the collusion attack.
         """
@@ -33,7 +33,7 @@ class CollusionAttack(BaseAttack):
                 f"Check that the watermarking service is running and responding correctly."
             )
 
-        segment_size = kwargs.get("collusion_size", 25)
+        segment_size = kwargs.get("size_collusion", 25)
         num_segments = len(audio) // segment_size
         mixed_audio = np.zeros_like(audio)
         second_len = len(second_audio)

@@ -1,4 +1,4 @@
 {
-    "zero_cross_pause_length": 20,
-    "zero_cross_min_distance": 1.0
+    "pause_length_zero_cross_inserts": 20,
+    "min_distance_zero_cross_inserts": 1.0
 }
