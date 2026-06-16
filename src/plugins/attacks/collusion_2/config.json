@@ -3,5 +3,8 @@
     "min_segment_sec_collusion2": 0.5,
     "max_segment_sec_collusion2": 2.0,
     "crossfade_ms_collusion2": 50,
-    "silence_threshold_db_collusion2": -35
+    "silence_threshold_db_collusion2": -35,
+    "min_silence_ms_collusion2": 30,
+    "target_tolerance_collusion2": 0.02,
+    "log_splice_stats_collusion2": false
 }

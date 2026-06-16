@@ -2,46 +2,101 @@
 Collusion 2 / Montage-Splicing Attack
 
 Extended collusion attack that combines two differently-watermarked copies
-of the same audio by splicing segments at natural silence boundaries.
-Unlike the original CollusionAttack (fixed-size random segments), this
-variant:
-  - Detects silence/pause moments in the audio via short-term LUFS
-  - Uses those moments as splice points (cuts are less audible in silence)
-  - Picks random segment durations between 0.5s and 2s
-  - Applies a short crossfade at each boundary so transitions are smooth
+of the same audio by splicing segments from copy B into copy A. Unlike the
+original CollusionAttack (fixed-size random segments), this variant prefers
+to cut at natural pauses (silences) so the splices are less audible.
 
-The goal is to make the splicing as imperceptible as possible to a human
-listener while still disrupting watermark detection by mixing segments
-from two different watermark embeddings.
+Selection works in two phases against a target replacement ratio:
+
+  Phase 1 (silence-aligned): partition the speech between detected pauses
+  into candidate segments of length [min_seg, max_seg] and greedily pick
+  whole ones until adding another would overshoot the target. A single
+  final partial slice of an unused candidate may close the remaining gap;
+  that one slice is allowed to be shorter than min_seg.
+
+  Phase 2 (fill): only if phase 1 ends more than ``target_tolerance`` below
+  the target -- e.g. the audio has few or no usable pauses -- carve the
+  still-untouched audio into random-length segments in [min_seg, max_seg]
+  until the target is reached. Here too, only the very last piece may be
+  shorter than min_seg. These cuts don't fall on pauses, but the crossfade
+  smooths them and replacing more of the signal only strengthens the attack.
+
+We never overshoot the target: replacing slightly less than requested is
+preferable to more, so a low detection accuracy can't be blamed on
+accidentally replacing too much.
 """
 
+import logging
+from dataclasses import dataclass
+
+import librosa
 import numpy as np
-from scipy.ndimage import uniform_filter1d
-from scipy.signal import butter, sosfilt
 
 from core.base_attack import BaseAttack
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _SpliceParams:
+    """Resolved attack parameters.
+
+    Durations are pre-converted to samples so the rest of the pipeline works
+    in a single unit; only the ratio/tolerance stay fractions.
+    """
+
+    target_ratio: float
+    min_seg_samples: int
+    max_seg_samples: int
+    crossfade_samples: int
+    silence_thresh_db: float
+    min_silence_ms: float
+    target_tolerance: float
+    log_splice_stats: bool
 
 
 class Collusion2Attack(BaseAttack):
     """
-    Montage/splicing collusion attack — splice at silence boundaries.
+    Montage/splicing collusion attack -- prefers to splice at silences.
 
     Config parameters:
         - target_ratio_collusion2 (float): Target fraction (0-1) of the
-            audio to replace with the second watermarked copy (default: 0.3)
-        - min_segment_sec_collusion2 (float): Minimum splice segment
-            duration in seconds (default: 0.5)
-        - max_segment_sec_collusion2 (float): Maximum splice segment
-            duration in seconds (default: 2.0)
+            audio to replace with the second watermarked copy.
+        - min_segment_sec_collusion2 (float): Minimum segment duration in
+            seconds (only the final gap-closing slice may be shorter).
+        - max_segment_sec_collusion2 (float): Maximum segment duration in
+            seconds.
         - crossfade_ms_collusion2 (float): Crossfade duration at splice
-            boundaries in milliseconds (default: 50)
-        - silence_threshold_db_collusion2 (float): LUFS threshold below
-            max to consider as silence (default: -35)
+            boundaries in milliseconds.
+        - silence_threshold_db_collusion2 (float): level (dB below the peak)
+            under which audio counts as silence; passed to librosa as
+            top_db = abs(value).
+        - min_silence_ms_collusion2 (float): Minimum duration of a silent
+            stretch for it to be usable as a splice point.
+        - target_tolerance_collusion2 (float): Maximum acceptable shortfall
+            below target_ratio before the phase-2 fill kicks in. E.g. 0.02
+            means "stay within 2 percentage points of the target".
+        - log_splice_stats_collusion2 (bool): When true, log the per-splice
+            replacement statistics (counts, durations, each splice's span).
+            Defaults to false; intended for testing/inspection.
     """
 
+    # Built-in fallback defaults, used only when a key is absent from both
+    # kwargs and the plugin's config.json. Keeping them in one place avoids
+    # the same default drifting across the per-parameter lookups below.
+    _DEFAULTS = {
+        "target_ratio_collusion2": 0.3,
+        "min_segment_sec_collusion2": 0.5,
+        "max_segment_sec_collusion2": 2.0,
+        "crossfade_ms_collusion2": 50,
+        "silence_threshold_db_collusion2": -35,
+        "min_silence_ms_collusion2": 30,
+        "target_tolerance_collusion2": 0.02,
+        "log_splice_stats_collusion2": False,
+    }
+
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Perform montage/splicing collusion attack.
+        """Perform the montage/splicing collusion attack.
 
         Args:
             audio (np.ndarray): The first watermarked audio (watermark A).
@@ -49,308 +104,360 @@ class Collusion2Attack(BaseAttack):
                 - model: watermarking model instance
                 - orig_audio: original (clean) audio
                 - sampling_rate: sample rate in Hz
+                - any ``*_collusion2`` parameter override
+
         Returns:
-            np.ndarray: Spliced audio mixing segments from two watermarked copies.
+            np.ndarray: Spliced audio mixing segments from two watermarked
+            copies.
         """
+        model, orig_audio, sampling_rate = self._require_inputs(kwargs)
+        sr = int(sampling_rate)
+        params = self._resolve_params(kwargs, sr)
+
+        second_audio = self._create_second_copy(model, orig_audio, sampling_rate)
+
+        # Work with the shorter of the two signals so indices are valid in
+        # both; embed() may return a slightly different length than input.
+        min_len = min(len(audio), len(second_audio))
+        if min_len == 0:
+            logger.warning("Collusion2: empty audio, returning input unchanged.")
+            return audio.copy()
+
+        audio_a = audio[:min_len].copy()
+        audio_b = second_audio[:min_len]
+
+        rng = np.random.default_rng()
+        candidates = self._segments_between_pauses(audio_a, sr, params)
+        regions = self._select_regions(candidates, min_len, params, rng)
+
+        # Merge adjacent/touching regions before splicing. Two neighbouring
+        # regions spliced separately would crossfade B->A->B at their shared
+        # border -- a needless dip back to A inside a continuous B stretch.
+        # Merging first keeps the crossfade only at the true A<->B edges.
+        merged = self._merge_regions(sorted(regions))
+
+        result, splices = self._apply_splices(audio_a, audio_b, merged, params)
+        if params.log_splice_stats:
+            self._log_result(candidates, splices, min_len, sr)
+        return result
+
+    # ------------------------------------------------------------------
+    # Input validation and parameter resolution
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _require_inputs(kwargs):
+        """Pull and validate the mandatory model/audio inputs."""
         model = kwargs.get("model")
         orig_audio = kwargs.get("orig_audio")
         sampling_rate = kwargs.get("sampling_rate")
-
         if model is None or orig_audio is None or sampling_rate is None:
             raise ValueError(
                 "'model', 'orig_audio' and 'sampling_rate' must be provided."
             )
+        return model, orig_audio, sampling_rate
 
-        # Create second watermarked copy with a different watermark
+    def _param(self, kwargs, name):
+        """Resolve a parameter as kwargs > config.json > built-in default."""
+        config = self.config or {}
+        return kwargs.get(name, config.get(name, self._DEFAULTS[name]))
+
+    def _resolve_params(self, kwargs, sr):
+        """Build the :class:`_SpliceParams` for this run, in sample units."""
+        return _SpliceParams(
+            target_ratio=self._param(kwargs, "target_ratio_collusion2"),
+            min_seg_samples=int(self._param(kwargs, "min_segment_sec_collusion2") * sr),
+            max_seg_samples=int(self._param(kwargs, "max_segment_sec_collusion2") * sr),
+            crossfade_samples=int(
+                self._param(kwargs, "crossfade_ms_collusion2") * sr / 1000
+            ),
+            silence_thresh_db=self._param(kwargs, "silence_threshold_db_collusion2"),
+            min_silence_ms=self._param(kwargs, "min_silence_ms_collusion2"),
+            target_tolerance=self._param(kwargs, "target_tolerance_collusion2"),
+            log_splice_stats=self._param(kwargs, "log_splice_stats_collusion2"),
+        )
+
+    @staticmethod
+    def _create_second_copy(model, orig_audio, sampling_rate):
+        """Embed a second, differently-watermarked copy of the audio."""
         second_watermark = model.generate_watermark()
         second_audio = model.embed(orig_audio, second_watermark, sampling_rate)
-
         if second_audio is None or len(second_audio) == 0:
             raise ValueError(
                 "Collusion2 attack failed: model.embed() returned empty audio."
             )
+        return second_audio
 
-        # Read parameters from config or kwargs
-        target_ratio = kwargs.get(
-            "target_ratio_collusion2",
-            self.config.get("target_ratio_collusion2", 0.3),
-        )
-        min_seg_sec = kwargs.get(
-            "min_segment_sec_collusion2",
-            self.config.get("min_segment_sec_collusion2", 0.5),
-        )
-        max_seg_sec = kwargs.get(
-            "max_segment_sec_collusion2",
-            self.config.get("max_segment_sec_collusion2", 2.0),
-        )
-        crossfade_ms = kwargs.get(
-            "crossfade_ms_collusion2",
-            self.config.get("crossfade_ms_collusion2", 50),
-        )
-        silence_thresh_db = kwargs.get(
-            "silence_threshold_db_collusion2",
-            self.config.get("silence_threshold_db_collusion2", -35),
-        )
+    # ------------------------------------------------------------------
+    # Pause detection and candidate segments
+    # ------------------------------------------------------------------
 
-        sr = int(sampling_rate)
-        min_seg_samples = int(min_seg_sec * sr)
-        max_seg_samples = int(max_seg_sec * sr)
-        crossfade_samples = int(crossfade_ms * sr / 1000)
+    @staticmethod
+    def _pause_midpoints(audio, sr, params):
+        """Return the midpoint sample of every usable pause.
 
-        # Work with the shorter of the two signals
-        min_len = min(len(audio), len(second_audio))
-        audio_a = audio[:min_len].copy()
-        audio_b = second_audio[:min_len]
+        ``librosa.effects.split`` returns the non-silent intervals using an
+        energy threshold ``top_db`` dB below the peak; the pauses are simply
+        the gaps between (and around) those intervals. We compute pause
+        centres straight from those intervals -- no per-sample mask -- which
+        keeps this O(number of pauses) instead of O(number of samples). We
+        don't need a true speech/non-speech classifier here, only the pause
+        centres, which serve as splice points (any imprecision is hidden by
+        the crossfade). Only pauses lasting at least ``min_silence_ms``
+        qualify.
 
-        # Detect silence positions and use them as segment boundaries.
-        # This partitions the ENTIRE audio into contiguous segments
-        # that start/end at silence moments (natural speech pauses).
-        silence_mask = self._detect_silence(audio_a, sr, silence_thresh_db)
-        boundaries = self._find_segment_boundaries(
-            silence_mask, sr, min_seg_samples, max_seg_samples,
+        ``silence_thresh_db`` is the (negative) level below the peak that
+        counts as silence; librosa expects the positive magnitude ``top_db``.
+        """
+        top_db = abs(params.silence_thresh_db)
+        # Short frames/hop so brief pauses are resolved: a frame must fit
+        # inside a gap for its energy to register as silence, so keep the
+        # frame well under the minimum pause we care about (min_silence_ms,
+        # which defaults to 30ms). 20ms frame with a 10ms hop is fine-grained.
+        frame_length = max(int(0.02 * sr), 1)
+        hop_length = max(int(0.01 * sr), 1)
+        min_silence = int(params.min_silence_ms * sr / 1000)
+
+        intervals = librosa.effects.split(
+            audio, top_db=top_db,
+            frame_length=frame_length, hop_length=hop_length,
         )
 
-        # Build list of contiguous segments covering the whole audio
-        segments = []
-        for i in range(len(boundaries) - 1):
-            segments.append((boundaries[i], boundaries[i + 1]))
+        # Each pause is a gap [prev_end, next_start); the leading and trailing
+        # silences are bounded by 0 and len(audio). Take the centre of every
+        # gap long enough to count as a usable pause.
+        n = len(audio)
+        midpoints = []
+        prev_end = 0
+        for start, end in intervals:
+            if start - prev_end >= min_silence:
+                midpoints.append((prev_end + start) // 2)
+            prev_end = end
+        if n - prev_end >= min_silence:
+            midpoints.append((prev_end + n) // 2)
+        return midpoints
 
-        # Select segments to replace, targeting a fraction of the total
-        # DURATION (not segment count) so the replaced ratio is precise and
-        # the resulting accuracy is interpretable. We never overshoot the
-        # target -- it is better to replace slightly less than the requested
-        # ratio than more, so a low accuracy can't be blamed on accidentally
-        # replacing too much.
-        rng = np.random.default_rng()
-        target_samples = int(min_len * target_ratio)
+    def _segments_between_pauses(self, audio, sr, params):
+        """Candidate (start, end) segments of speech lying between pauses.
 
-        order = list(range(len(segments)))
-        rng.shuffle(order)
+        Cuts the audio at pause midpoints and keeps only the spans whose
+        length already falls within [min_seg, max_seg]. A span longer than
+        max_seg is a stretch of speech with no usable pause inside it (so it
+        can't be split on a pause); a span shorter than min_seg is too small
+        to be a segment. Both are intentionally left out of the candidate
+        list -- they become the "untouched" audio that the phase-2 fill may
+        carve up later. With no usable pauses the list is empty and phase 2
+        handles the whole signal.
+        """
+        min_seg = params.min_seg_samples
+        max_seg = params.max_seg_samples
+        n = len(audio)
 
-        regions = []          # (start, end) regions to splice with B
+        midpoints = self._pause_midpoints(audio, sr, params)
+
+        # Cut points partition [0, n] into spans between consecutive pauses
+        # (and the head/tail bounded by a pause on one side).
+        cuts = [0, *midpoints, n]
+        return [
+            (start, end)
+            for start, end in zip(cuts, cuts[1:])
+            if min_seg <= (end - start) <= max_seg
+        ]
+
+    # ------------------------------------------------------------------
+    # Region selection
+    # ------------------------------------------------------------------
+
+    def _select_regions(self, candidates, min_len, params, rng):
+        """Choose which audio to replace with copy B.
+
+        See the module docstring for the two-phase strategy. Targets a
+        fraction of the total DURATION (not segment count) and never
+        overshoots it.
+        """
+        target_samples = int(min_len * params.target_ratio)
+        regions = []
         replaced_total = 0
-        used = set()
 
-        # Phase 1: greedily take whole segments (in random order) as long as
-        # they don't push the total over the target. Picking the next random
-        # segment and, when it would overshoot, skipping ahead to a smaller
-        # one that still fits is exactly what this single pass does.
+        # --- Phase 1: silence-aligned segments ---
+        order = list(range(len(candidates)))
+        rng.shuffle(order)
+        used = set()
         for idx in order:
-            s, e = segments[idx]
-            seg_len = e - s
-            if replaced_total + seg_len <= target_samples:
+            s, e = candidates[idx]
+            if replaced_total + (e - s) <= target_samples:
                 regions.append((s, e))
                 used.add(idx)
-                replaced_total += seg_len
+                replaced_total += e - s
 
-        # Phase 2: close the remaining gap by taking a partial slice of one
-        # unused segment. After phase 1 no whole unused segment fits the gap
-        # (any that fit were already taken), so splitting a segment is the
-        # only way to reach the target exactly. The cut at ``s + gap`` is not
-        # on a silence boundary, but the crossfade smooths it. If the gap is
-        # too small for the crossfade to hide cleanly, skip the split and
-        # undershoot -- an inaudible undershoot beats an audible artifact.
+        # Close the remaining gap with a single partial slice of an unused
+        # candidate, keeping that cut on a silence-bounded span. This is the
+        # only phase-1 slice allowed to be shorter than min_seg (an inaudible
+        # tail on a pause). Skipped if the gap is too small for the crossfade.
         gap = target_samples - replaced_total
-        min_partial = max(2 * crossfade_samples, 1)
+        min_partial = max(2 * params.crossfade_samples, 1)
         if gap >= min_partial:
             for idx in order:
                 if idx in used:
                     continue
-                s, e = segments[idx]
+                s, e = candidates[idx]
                 if (e - s) >= gap:
                     regions.append((s, s + gap))
                     replaced_total += gap
                     break
 
-        result = audio_a.copy()
-        splices = []
-        for s, e in sorted(regions):
-            result = self._splice_with_crossfade(
-                result, audio_b, s, e, crossfade_samples,
-            )
-            splices.append((s, e, e - s))
+        # Within tolerance? Accept the small undershoot and keep every splice
+        # on a natural pause -- don't touch non-silence audio.
+        tolerance_samples = int(min_len * params.target_tolerance)
+        if replaced_total >= target_samples - tolerance_samples:
+            return regions
 
-        # Log splice details
-        import logging
-        logger = logging.getLogger(__name__)
-        total_dur = min_len / sr
-        replaced_total = sum(l for _, _, l in splices)
-        replaced_dur = replaced_total / sr
-        logger.info(
-            f"Collusion2: {len(segments)} total segments, "
-            f"{len(splices)} replaced, "
-            f"{replaced_dur:.2f}s / {total_dur:.2f}s "
-            f"({100*replaced_total/min_len:.1f}%)"
-        )
-        for i, (s, e, l) in enumerate(splices):
-            logger.info(
-                f"  splice {i+1}: {s/sr:.3f}s - {e/sr:.3f}s "
-                f"(duration: {l/sr:.3f}s = {l} samples)"
-            )
+        # --- Phase 2: fill from untouched (non-silence) audio ---
+        self._fill_to_target(regions, replaced_total, target_samples,
+                              params, min_len, rng)
+        return regions
 
-        return result
+    def _fill_to_target(self, regions, replaced_total, target_samples, params,
+                        min_len, rng):
+        """Carve untouched audio into [min,max] segments up to the target.
 
-    # ------------------------------------------------------------------
-    # Silence detection (adapted from MixingAttack VAD logic)
-    # ------------------------------------------------------------------
-
-    def _detect_silence(self, audio, sr, threshold_db=-35):
-        """Return a binary mask: 1 = silence, 0 = speech/sound.
-
-        Uses short-term LUFS with K-weighting, same approach as the
-        MixingAttack VAD but inverted (we want silence, not speech).
+        Mutates ``regions`` in place. Walks the free spans (audio not yet
+        selected) in random order and emits random-length segments in
+        [min_seg, max_seg]. The single piece that closes the gap may be
+        shorter than min_seg so the target is hit exactly; every other piece
+        is at least min_seg. Never overshoots.
         """
-        audio_k = self._k_weighting(audio, sr)
-        window_samples = int(0.05 * sr)  # 50ms window for fine granularity
-        if window_samples < 1:
-            window_samples = 1
+        min_seg = params.min_seg_samples
+        max_seg = params.max_seg_samples
+        for fs, fe in self._free_intervals(regions, min_len, rng):
+            cursor = fs
+            while cursor < fe:
+                need = target_samples - replaced_total
+                if need <= 0:
+                    return
+                span_left = fe - cursor
+                # Final piece: the whole remaining need fits in this span and
+                # in one segment. Place it exactly (may be < min_seg) and stop.
+                if need <= span_left and need <= max_seg:
+                    regions.append((cursor, cursor + need))
+                    return
+                # Otherwise take a full random-length chunk in [min_seg,
+                # max_seg], bounded by what's left in this span.
+                hi = min(max_seg, span_left)
+                if hi < min_seg:
+                    break  # leftover of this span too short for a valid segment
+                take = int(rng.integers(min_seg, hi + 1))
+                regions.append((cursor, cursor + take))
+                replaced_total += take
+                cursor += take
 
-        mean_square = uniform_filter1d(audio_k ** 2, size=window_samples, mode='constant')
-        mean_square = np.maximum(mean_square, 1e-10)
-        lufs = -0.691 + 10 * np.log10(mean_square)
+    @staticmethod
+    def _free_intervals(regions, min_len, rng):
+        """Return the (start, end) spans of [0, min_len) not in ``regions``.
 
-        max_lufs = np.max(lufs)
-        silence_boundary = max_lufs + threshold_db  # e.g. max - 35 dB
-
-        silence_mask = (lufs < silence_boundary).astype(np.int32)
-        return silence_mask
-
-    def _k_weighting(self, audio, sr):
-        """Simplified K-weighting: high-shelf boost + high-pass at 38 Hz."""
-        # High-shelf filter (+4 dB above 1500 Hz)
-        f0 = 1500.0
-        G = 4.0
-        Q = 0.707
-        A = 10 ** (G / 40)
-        w0 = 2 * np.pi * f0 / sr
-        alpha = np.sin(w0) / (2 * Q)
-
-        b0 = A * ((A + 1) + (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha)
-        b1 = -2 * A * ((A - 1) + (A + 1) * np.cos(w0))
-        b2 = A * ((A + 1) + (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha)
-        a0 = (A + 1) - (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha
-        a1 = 2 * ((A - 1) - (A + 1) * np.cos(w0))
-        a2 = (A + 1) - (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha
-
-        from scipy.signal import lfilter
-        b = np.array([b0/a0, b1/a0, b2/a0])
-        a = np.array([1, a1/a0, a2/a0])
-        audio_hs = lfilter(b, a, audio)
-
-        # High-pass at 38 Hz
-        hp_freq = 38.0
-        nyquist = sr / 2
-        if hp_freq < nyquist:
-            sos_hp = butter(2, hp_freq / nyquist, btype='high', output='sos')
-            return sosfilt(sos_hp, audio_hs).astype(np.float32)
-        return audio_hs.astype(np.float32)
-
-    def _find_segment_boundaries(self, silence_mask, sr, min_seg, max_seg):
-        """Partition the audio into contiguous segments using silence as boundaries.
-
-        Finds all silence midpoints, then builds boundary list so segments:
-          - Cover the entire audio (no gaps)
-          - Start/end at silence moments where possible
-          - Stay between min_seg and max_seg in length
-          - If no silence is available, splits at regular intervals
-
-        Returns sorted list of boundary positions including 0 and len(audio).
+        These are the parts of the audio still showing copy A. Returned in
+        random order so the fill pass spreads its forced splices around
+        rather than always biasing toward the start of the file.
         """
-        n = len(silence_mask)
-        min_silence_ms = 30
-        min_silence_samples = int(min_silence_ms * sr / 1000)
+        occupied = Collusion2Attack._merge_regions(sorted(regions))
+        free = []
+        cursor = 0
+        for s, e in occupied:
+            if s > cursor:
+                free.append((cursor, s))
+            cursor = max(cursor, e)
+        if cursor < min_len:
+            free.append((cursor, min_len))
+        rng.shuffle(free)
+        return free
 
-        # Find midpoints of all silence regions
-        silence_midpoints = []
-        i = 0
-        while i < n:
-            if silence_mask[i] == 1:
-                j = i
-                while j < n and silence_mask[j] == 1:
-                    j += 1
-                if (j - i) >= min_silence_samples:
-                    silence_midpoints.append((i + j) // 2)
-                i = j
+    @staticmethod
+    def _merge_regions(sorted_regions):
+        """Merge overlapping or touching (start, end) regions into one.
+
+        Expects ``sorted_regions`` sorted by start. Two regions are merged
+        when the next one starts at or before the current one's end, so a
+        run of adjacent segments becomes a single contiguous region.
+        """
+        if not sorted_regions:
+            return []
+        merged = [list(sorted_regions[0])]
+        for s, e in sorted_regions[1:]:
+            if s <= merged[-1][1]:        # touches/overlaps previous region
+                merged[-1][1] = max(merged[-1][1], e)
             else:
-                i += 1
-
-        # Build boundaries: start with 0, end with n
-        boundaries = [0]
-
-        if not silence_midpoints:
-            # No silence found — split at regular intervals
-            step = (min_seg + max_seg) // 2
-            pos = step
-            while pos < n - min_seg // 2:
-                boundaries.append(pos)
-                pos += step
-        else:
-            # Use silence midpoints as boundaries, respecting min/max segment
-            last_boundary = 0
-            for mid in sorted(silence_midpoints):
-                dist = mid - last_boundary
-                if dist < min_seg:
-                    continue  # too close to previous boundary
-                if dist > max_seg:
-                    # Force a boundary even without silence (segment too long)
-                    # Place it at max_seg from last boundary
-                    forced = last_boundary + max_seg
-                    boundaries.append(forced)
-                    last_boundary = forced
-                    # Re-check this silence midpoint
-                    if mid - last_boundary >= min_seg:
-                        boundaries.append(mid)
-                        last_boundary = mid
-                else:
-                    boundaries.append(mid)
-                    last_boundary = mid
-
-            # If last segment would be too long, force extra boundaries
-            while n - last_boundary > max_seg:
-                forced = last_boundary + max_seg
-                boundaries.append(forced)
-                last_boundary = forced
-
-        boundaries.append(n)
-
-        # Remove duplicates and sort
-        boundaries = sorted(set(boundaries))
-        return boundaries
+                merged.append([s, e])
+        return [(s, e) for s, e in merged]
 
     # ------------------------------------------------------------------
     # Splicing with crossfade
     # ------------------------------------------------------------------
 
-    def _splice_with_crossfade(self, audio_a, audio_b, start, end, fade_len):
+    def _apply_splices(self, audio_a, audio_b, regions, params):
+        """Splice every region from B into A, returning (result, splices)."""
+        result = audio_a.copy()
+        splices = []
+        for s, e in regions:
+            result = self._splice_with_crossfade(
+                result, audio_b, s, e, params.crossfade_samples,
+            )
+            splices.append((s, e, e - s))
+        return result, splices
+
+    @staticmethod
+    def _splice_with_crossfade(audio_a, audio_b, start, end, fade_len):
         """Replace audio_a[start:end] with audio_b[start:end], crossfading.
 
-        Applies a linear crossfade of ``fade_len`` samples at both the
-        entry and exit boundaries so the transition is smooth and less
-        audible than a hard cut.
+        Applies a linear crossfade of ``fade_len`` samples at both the entry
+        and exit boundaries so the transition is smooth and less audible than
+        a hard cut.
         """
         result = audio_a.copy()
         seg_len = end - start
 
-        # Clamp fade to half the segment (can't fade more than we have)
+        # Clamp fade to half the segment (can't fade more than we have).
         fade = min(fade_len, seg_len // 2)
 
-        if fade > 0:
-            # Entry crossfade: A fades out, B fades in
-            fade_in = np.linspace(0.0, 1.0, fade, dtype=np.float32)
-            fade_out = 1.0 - fade_in
-            result[start:start + fade] = (
-                audio_a[start:start + fade] * fade_out
-                + audio_b[start:start + fade] * fade_in
-            )
-            # Middle: pure B
-            result[start + fade:end - fade] = audio_b[start + fade:end - fade]
-            # Exit crossfade: B fades out, A fades in
-            result[end - fade:end] = (
-                audio_b[end - fade:end] * fade_out
-                + audio_a[end - fade:end] * fade_in
-            )
-        else:
-            # No crossfade possible — hard splice
+        if fade <= 0:
+            # No crossfade possible -- hard splice.
             result[start:end] = audio_b[start:end]
+            return result
 
+        fade_in = np.linspace(0.0, 1.0, fade, dtype=np.float32)
+        fade_out = 1.0 - fade_in
+
+        # Entry crossfade: A fades out, B fades in.
+        result[start:start + fade] = (
+            audio_a[start:start + fade] * fade_out
+            + audio_b[start:start + fade] * fade_in
+        )
+        # Middle: pure B.
+        result[start + fade:end - fade] = audio_b[start + fade:end - fade]
+        # Exit crossfade: B fades out, A fades in.
+        result[end - fade:end] = (
+            audio_b[end - fade:end] * fade_out
+            + audio_a[end - fade:end] * fade_in
+        )
         return result
+
+    # ------------------------------------------------------------------
+    # Logging
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _log_result(candidates, splices, min_len, sr):
+        """Log a summary of which audio was replaced."""
+        replaced_total = sum(length for _, _, length in splices)
+        total_dur = min_len / sr
+        replaced_dur = replaced_total / sr
+        pct = 100 * replaced_total / min_len if min_len else 0.0
+        logger.info(
+            f"Collusion2: {len(candidates)} pause-aligned candidates, "
+            f"{len(splices)} spliced, "
+            f"{replaced_dur:.2f}s / {total_dur:.2f}s ({pct:.1f}%)"
+        )
+        for i, (s, e, length) in enumerate(splices):
+            logger.info(
+                f"  splice {i + 1}: {s / sr:.3f}s - {e / sr:.3f}s "
+                f"(duration: {length / sr:.3f}s = {length} samples)"
+            )

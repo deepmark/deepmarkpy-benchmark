@@ -2,6 +2,7 @@ import functools
 import logging
 import os
 import tempfile
+import warnings
 from typing import Dict, Iterable, Optional
 
 import librosa
@@ -392,8 +393,18 @@ def mcd(reference: np.ndarray, degraded: np.ndarray,
     Returns:
         MCD value in dB (lower is better), or None if calculation fails
     """
-    mfcc_ref = librosa.feature.mfcc(y=reference, sr=sr, n_mfcc=n_mfcc)[1:, :]
-    mfcc_deg = librosa.feature.mfcc(y=degraded, sr=sr, n_mfcc=n_mfcc)[1:, :]
+    # librosa's default mel basis leaves some upper channels empty at low
+    # sample rates and warns once per call. The empty channels contribute
+    # ~zero to the MFCCs, so the MCD value is unaffected -- silence only this
+    # cosmetic warning without touching any parameter or the computation.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Empty filters detected in mel frequency basis",
+            category=UserWarning,
+        )
+        mfcc_ref = librosa.feature.mfcc(y=reference, sr=sr, n_mfcc=n_mfcc)[1:, :]
+        mfcc_deg = librosa.feature.mfcc(y=degraded, sr=sr, n_mfcc=n_mfcc)[1:, :]
     min_len = min(mfcc_ref.shape[1], mfcc_deg.shape[1])
     diff = mfcc_ref[:, :min_len] - mfcc_deg[:, :min_len]
     return float(_MCD_FACTOR * np.mean(np.sqrt(np.sum(diff ** 2, axis=0))))
@@ -474,7 +485,18 @@ def _nisqa_predict_once(model, degraded: np.ndarray, sr: int
         try:
             sf.write(tmp_path, degraded, sr)
             model.args["deg"] = tmp_path
-            with contextlib.redirect_stdout(io.StringIO()):
+            # NISQA builds its mel-spectrogram via librosa, whose default mel
+            # basis leaves some upper channels empty at low sample rates and
+            # warns once per call. Those empty channels contribute ~zero to
+            # the features, so the MOS scores are unaffected -- silence only
+            # this cosmetic warning without touching the computation.
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="Empty filters detected in mel frequency basis",
+                    category=UserWarning,
+                )
                 model._loadDatasets()
                 df = model.predict()
             row = df.iloc[0]
