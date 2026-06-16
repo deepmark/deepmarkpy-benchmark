@@ -5,6 +5,7 @@ import os
 
 import pytest
 
+from utils.latex_helpers import display_attack_name
 from utils.report_generator import BenchmarkReportGenerator, generate_benchmark_report
 
 
@@ -47,9 +48,9 @@ class TestLatexTable:
         gen = BenchmarkReportGenerator()
         table = gen.generate_latex_table(sample_stats)
         for name in sample_stats:
-            # The generator removes "Attack" and adds spaces before uppercase letters
-            display = name.replace("Attack", "").strip()
-            display = ''.join([' ' + c if c.isupper() and i > 0 else c for i, c in enumerate(display)]).strip()
+            # The table renders names via display_attack_name, so use the
+            # same helper here rather than re-deriving the format.
+            display = display_attack_name(name)
             assert display in table, f"'{display}' not found in table"
 
     def test_contains_accuracy_values(self, sample_stats):

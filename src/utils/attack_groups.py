@@ -72,7 +72,7 @@ ATTACK_GROUPS = {
         "attacks": [
             "TimeStretchAttack",
             "PitchShiftAttack",
-            "InvertedTimeStretch",
+            "InvertedTimeStretchAttack",
             "ZeroCrossInsertsAttack",
             "FlipSamplesAttack",
             "ReplacementAttack",

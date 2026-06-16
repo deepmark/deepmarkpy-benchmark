@@ -252,9 +252,20 @@ def run_no_attacks_mode(benchmark, filepaths, model_names, args):
 
     from utils.no_attacks_report_generator import generate_no_attacks_report
 
+    # Audio goes in a dedicated subfolder; use a per-model subfolder when
+    # several models run so their watermarked files don't collide.
+    multi_model = len(model_names) > 1
+
     all_results = {}
     for model_name in model_names:
         logger.info(f"Running no-attacks baseline for: {model_name}")
+        audio_dir = None
+        if args.save_audio:
+            audio_dir = (
+                os.path.join(report_dir, model_name, "audio")
+                if multi_model
+                else os.path.join(report_dir, "audio")
+            )
         try:
             results = benchmark.run_no_attacks(
                 filepaths=filepaths,
@@ -262,6 +273,8 @@ def run_no_attacks_mode(benchmark, filepaths, model_names, args):
                 sampling_rate=None,
                 verbose=args.verbose,
                 calculate_quality_metrics=args.calculate_quality_metrics,
+                save_audio=args.save_audio,
+                output_dir=audio_dir,
             )
             all_results[model_name] = results
         except (MemoryError, ConnectionError, OSError) as e:

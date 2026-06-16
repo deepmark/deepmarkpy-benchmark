@@ -54,20 +54,20 @@ class TestGaussianNoiseAttack:
     def test_output_differs_from_input(self, attacks, sample_audio):
         atk = _make_attack(attacks, "GaussianNoiseAttack")
         audio, sr = sample_audio
-        result = atk.apply(audio, snr_db=20, sampling_rate=sr)
+        result = atk.apply(audio, snr_db_gaussian_noise=20, sampling_rate=sr)
         assert not np.array_equal(result, audio)
 
     def test_preserves_shape(self, attacks, sample_audio):
         atk = _make_attack(attacks, "GaussianNoiseAttack")
         audio, sr = sample_audio
-        result = atk.apply(audio, snr_db=20, sampling_rate=sr)
+        result = atk.apply(audio, snr_db_gaussian_noise=20, sampling_rate=sr)
         assert result.shape == audio.shape
 
     def test_higher_snr_less_noise(self, attacks, sample_audio):
         atk = _make_attack(attacks, "GaussianNoiseAttack")
         audio, sr = sample_audio
-        noisy_low = atk.apply(audio, snr_db=10, sampling_rate=sr)
-        noisy_high = atk.apply(audio, snr_db=40, sampling_rate=sr)
+        noisy_low = atk.apply(audio, snr_db_gaussian_noise=10, sampling_rate=sr)
+        noisy_high = atk.apply(audio, snr_db_gaussian_noise=40, sampling_rate=sr)
         noise_low = np.mean((audio - noisy_low) ** 2)
         noise_high = np.mean((audio - noisy_high) ** 2)
         assert noise_low > noise_high
@@ -149,7 +149,7 @@ class TestQuantizationAttack:
     def test_output_shape(self, attacks, sample_audio):
         atk = _make_attack(attacks, "QuantizationAttack")
         audio, sr = sample_audio
-        result = atk.apply(audio, sampling_rate=sr, quantization_bit=256)
+        result = atk.apply(audio, sampling_rate=sr, bit_quantization=256)
         assert result.shape == audio.shape
 
     def test_fewer_levels_more_distortion(self, attacks):
@@ -157,8 +157,8 @@ class TestQuantizationAttack:
         np.random.seed(42)
         audio = np.random.randn(16000).astype(np.float32)
         atk = _make_attack(attacks, "QuantizationAttack")
-        q_fine = atk.apply(audio, sampling_rate=16000, quantization_bit=1024)
-        q_coarse = atk.apply(audio, sampling_rate=16000, quantization_bit=4)
+        q_fine = atk.apply(audio, sampling_rate=16000, bit_quantization=1024)
+        q_coarse = atk.apply(audio, sampling_rate=16000, bit_quantization=4)
         err_fine = np.mean((audio - q_fine) ** 2)
         err_coarse = np.mean((audio - q_coarse) ** 2)
         assert err_coarse > err_fine
@@ -217,11 +217,11 @@ class TestLPCAttack:
     def test_output_shape(self, attacks, sample_audio):
         atk = _make_attack(attacks, "LPCAttack")
         audio, sr = sample_audio
-        result = atk.apply(audio, sampling_rate=sr, order=12)
+        result = atk.apply(audio, sampling_rate=sr, order_lpc=12)
         assert result.shape == audio.shape
 
     def test_modifies_signal(self, attacks, sample_audio):
         atk = _make_attack(attacks, "LPCAttack")
         audio, sr = sample_audio
-        result = atk.apply(audio, sampling_rate=sr, order=12)
+        result = atk.apply(audio, sampling_rate=sr, order_lpc=12)
         assert not np.array_equal(result, audio)
