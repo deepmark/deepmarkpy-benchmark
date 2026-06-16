@@ -2,9 +2,7 @@ import logging
 import numpy as np
 import os
 import random
-import tempfile
 import librosa
-import soundfile as sf
 from scipy.signal import butter, sosfilt
 
 from core.base_attack import BaseAttack
@@ -42,12 +40,6 @@ class ReplayAttack(BaseAttack):
 
         convolved = np.convolve(audio, ir, mode='full')
         convolved = convolved[:len(audio)]
-
-        # Save to temp file, read back to verify sample rate, then delete
-        temp_path = tempfile.mktemp(suffix='.wav')
-        sf.write(temp_path, convolved, audio_sr)
-        convolved, verified_sr = librosa.load(temp_path, sr=None)
-        os.remove(temp_path)
 
         max_val = np.max(np.abs(convolved))
         if max_val > 0:

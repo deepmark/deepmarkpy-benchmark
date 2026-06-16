@@ -8,7 +8,7 @@ class SmoothingAttack(BaseAttack):
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the smoothing attack:
-                - window_size (int): Smoothing window size.
+                - window_size_smoothing (int): Smoothing window size.
         Returns:
             np.ndarray: The processed audio signal with the smoothing filtering applied.
 
@@ -16,7 +16,7 @@ class SmoothingAttack(BaseAttack):
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
         window_size = kwargs.get(
-            "window_size", self.config.get("window_size")
+            "window_size_smoothing", self.config.get("window_size_smoothing")
         )
         window_size = int(window_size)
         kernel = np.ones(window_size) / window_size  # uniform smoothing kernel

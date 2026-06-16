@@ -13,7 +13,7 @@ class PCMQuantizationAttack(BaseAttack):
             Args:
                 audio (np.ndarray): Input audio signal.
                 **kwargs: Additional parameters for the PCM attack:
-                    - quantization_bit (int): Number of quantization levels (e.g., 256 for 8-bit).
+                    - pcm_quantization (int): Number of quantization levels (e.g., 256 for 8-bit).
                     Defaults to the class configuration if not provided.
 
             Returns:
@@ -24,7 +24,7 @@ class PCMQuantizationAttack(BaseAttack):
         """
 
         sr = kwargs.get("sampling_rate", None)
-        pcm = kwargs.get("pcm",self.config.get("pcm"))
+        pcm = kwargs.get("pcm_quantization",self.config.get("pcm_quantization"))
         # Convert to specified PCM bit depth and back (simulates quantization)
         if pcm == 8:
             # 8-bit signed: -128 to 127

@@ -27,7 +27,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info(f"Using device: {device}")
 
-model = XCodec(config["model_name"], device)
+model = XCodec(config["model_name_speech_tokenization"], device)
 
 
 class AttackRequest(BaseModel):

@@ -188,6 +188,7 @@ class Benchmark:
         save_audio=False,
         output_dir="audio_processed",
         calculate_quality_metrics=True,
+        crop_before_attack=None,
         **kwargs,
     ):
         """
@@ -259,12 +260,36 @@ class Benchmark:
             # Load audio
             audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
             logger.info(f"Sampling rate is: {sampling_rate}")
-            attack_kwargs["orig_audio"] = audio
 
             # Embed watermark
             watermarked_audio = model_instance.embed(
                 audio=audio, watermark_data=file_watermark, sampling_rate=sampling_rate
             )
+
+            # Optionally crop the beginning of the watermarked audio right
+            # after embedding, so every downstream attack sees the cropped
+            # signal. Apply the same crop to the original audio so quality
+            # metrics and attacks that splice samples by index between the
+            # two (CollusionAttack, ZeroBitCollusionAttack) stay length-
+            # matched and time-aligned.
+            if crop_before_attack is not None:
+                if "CropBeginningAttack" in self.attacks:
+                    pre_crop = self.attacks["CropBeginningAttack"]["class"]()
+                    watermarked_audio = pre_crop.apply(
+                        watermarked_audio,
+                        sampling_rate=sampling_rate,
+                        crop_percentage_beginning=crop_before_attack,
+                    )
+                    audio = pre_crop.apply(
+                        audio,
+                        sampling_rate=sampling_rate,
+                        crop_percentage_beginning=crop_before_attack,
+                    )
+                else:
+                    samples_to_crop = int(len(watermarked_audio) * (crop_before_attack / 100.0))
+                    watermarked_audio = watermarked_audio[samples_to_crop:]
+                    audio = audio[samples_to_crop:]
+            attack_kwargs["orig_audio"] = audio
 
             # Save watermarked audio
             if save_audio:
@@ -298,8 +323,8 @@ class Benchmark:
                 attack_instance = self.attacks[attack_name]["class"]()
 
                 if (attack_name =="CrossModelAttack"):
-                    
-                    different_model_name = kwargs.get("different_model_name")
+
+                    different_model_name = kwargs.get("different_model_name_cross_model")
                     logger.info(f"Different model is chosen and it's {different_model_name}")
                     different_model_cls = self.models[different_model_name]["class"]
                     different_model_instance = different_model_cls()
@@ -310,6 +335,7 @@ class Benchmark:
 
                 #in case of the collusion mod attack
                 elif (attack_name == "ZeroBitCollusionAttack"):
+
                     attack_kwargs["original_audio_collusion"] = audio
 
                     attacked_audio = attack_instance.apply(

@@ -26,7 +26,7 @@ class DiffusionAttack(BaseAttack):
         """Applies the Diffusion attack using the backend service."""
         sampling_rate = kwargs.get("sampling_rate", None)
         diffusion_steps = kwargs.get(
-            "diffusion_steps", self.config.get("diffusion_steps")
+            "steps_diffusion", self.config.get("steps_diffusion")
         )
         assert diffusion_steps <= 150, "number of steps is too large."
         if sampling_rate is None:

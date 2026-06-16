@@ -11,13 +11,13 @@ class PinkNoiseAttack(BaseAttack):
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the pink noise attack:
-                - snr_db_pn (float): Desired Signal-to-Noise Ratio in dB
+                - snr_db_pink_noise (float): Desired Signal-to-Noise Ratio in dB
         Returns:
             np.ndarray: The processed audio signal with the pink noise applied.
         """
 
         snr_db = kwargs.get(
-            "snr_db_pn", self.config.get("snr_db_pn")
+            "snr_db_pink_noise", self.config.get("snr_db_pink_noise")
         )
 
         n_samples = len(audio)

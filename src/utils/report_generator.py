@@ -33,7 +33,8 @@ class BenchmarkReportGenerator:
 
     def _preamble(self, title, author):
         """Generate LaTeX preamble with deepmark class fallback."""
-        return make_preamble(title, author, self._has_deepmark_cls)
+        return make_preamble(title, author, self._has_deepmark_cls,
+                             extra_packages=("xcolor",))
 
     @staticmethod
     def _accuracy_of(value: StatsValue) -> float:
@@ -181,7 +182,8 @@ class BenchmarkReportGenerator:
         return sum(accuracies) / len(accuracies)
 
     def generate_latex_report(self, stats: Dict[str, StatsValue], model_name: str = "DeepMark",
-                            chart_filename: str = "benchmark_chart.png") -> str:
+                            chart_filename: str = "benchmark_chart.png",
+                            crop_before_attack: float = None) -> str:
         """
         Generate complete LaTeX report content.
 
@@ -209,11 +211,21 @@ class BenchmarkReportGenerator:
             else f"{num_attacks} {attack_word}"
         )
 
+        crop_note = ""
+        if crop_before_attack is not None:
+            crop_note = (
+                f" \\textcolor{{red}}{{A crop of {crop_before_attack:.1f}\\% was applied to the beginning of "
+                f"the watermarked audio prior to each attack. The original (reference) "
+                f"audio was cropped identically, so quality metrics compare cropped "
+                f"original vs.\\ cropped attacked audio, and BER is measured by detecting "
+                f"the watermark from the cropped attacked signal.}}"
+            )
+
         latex_content = f"""{preamble}
 
         % -------------------- Abstract --------------------
         \\begin{{abstract}}
-        This report presents the benchmark results for the {model_name} watermarking model across various attack scenarios. The evaluation covers {coverage_phrase}, measuring the robustness of watermark detection under adversarial conditions using the DeepMark benchmark framework.
+        This report presents the benchmark results for the {model_name} watermarking model across various attack scenarios. The evaluation covers {coverage_phrase}, measuring the robustness of watermark detection under adversarial conditions using the DeepMark benchmark framework.{crop_note}
         \\end{{abstract}}
 
         % -------------------- Results --------------------
@@ -267,13 +279,15 @@ class BenchmarkReportGenerator:
         return latex_content
 
     def generate_full_report(self, stats_file: str = "benchmark_stats.json",
-                           model_name: str = "DeepMark"):
+                           model_name: str = "DeepMark",
+                           crop_before_attack: float = None):
         """
         Generate complete benchmark report with chart and LaTeX document.
 
         Args:
             stats_file: Path to the benchmark statistics JSON file
             model_name: Name of the watermarking model
+            crop_before_attack: If set, percentage cropped before attacks
         """
         try:
             with open(stats_file, 'r') as f:
@@ -284,7 +298,8 @@ class BenchmarkReportGenerator:
             chart_path = os.path.join(self.report_dir, "benchmark_chart.png")
             self.create_gradient_bar_chart(stats, chart_path)
 
-            latex_content = self.generate_latex_report(stats, model_name, "benchmark_chart.png")
+            latex_content = self.generate_latex_report(stats, model_name, "benchmark_chart.png",
+                                                       crop_before_attack=crop_before_attack)
 
             latex_path = os.path.join(self.report_dir, "benchmark_report.tex")
             with open(latex_path, 'w') as f:
@@ -320,7 +335,8 @@ class BenchmarkReportGenerator:
 
 def generate_benchmark_report(stats_file: str = "benchmark_stats.json",
                             model_name: str = "DeepMark",
-                            report_dir: str = "report"):
+                            report_dir: str = "report",
+                            crop_before_attack: float = None):
     """
     Convenience function to generate a complete benchmark report.
 
@@ -328,9 +344,11 @@ def generate_benchmark_report(stats_file: str = "benchmark_stats.json",
         stats_file: Path to the benchmark statistics JSON file
         model_name: Name of the watermarking model
         report_dir: Directory to save the report files
+        crop_before_attack: If set, percentage cropped before attacks
 
     Returns:
         Tuple of (latex_path, chart_path)
     """
     generator = BenchmarkReportGenerator(report_dir)
-    return generator.generate_full_report(stats_file, model_name)
+    return generator.generate_full_report(stats_file, model_name,
+                                          crop_before_attack=crop_before_attack)

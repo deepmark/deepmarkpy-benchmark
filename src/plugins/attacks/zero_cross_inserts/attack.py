@@ -12,8 +12,8 @@ class ZeroCrossInsertsAttack(BaseAttack):
             audio (np.ndarray): Input audio signal.
             **kwargs: Additional parameters for the operation.
                 - sampling_rate (int): Sampling rate of the audio in Hz (required).
-                - zero_cross_pause_length (int): Number of zeros to insert at each zero-crossing point. Default is 20.
-                - zero_cross_min_distance (float): Minimum distance between pauses in seconds. Default is 1.0.
+                - pause_length_zero_cross_inserts (int): Number of zeros to insert at each zero-crossing point. Default is 20.
+                - min_distance_zero_cross_inserts (float): Minimum distance between pauses in seconds. Default is 1.0.
 
         Returns:
             np.ndarray: Audio signal with inserted pauses at zero-crossing points.
@@ -24,10 +24,10 @@ class ZeroCrossInsertsAttack(BaseAttack):
 
         sampling_rate = kwargs.get("sampling_rate")
         pause_length = kwargs.get(
-            "zero_cross_pause_length", self.config.get("zero_cross_pause_length")
+            "pause_length_zero_cross_inserts", self.config.get("pause_length_zero_cross_inserts")
         )
         min_distance = kwargs.get(
-            "zero_cross_min_distance", self.config.get("zero_cross_pause_length")
+            "min_distance_zero_cross_inserts", self.config.get("min_distance_zero_cross_inserts")
         )
 
         if sampling_rate is None:

@@ -13,8 +13,8 @@ class ZeroBitCollusionAttack(BaseAttack):
             **kwargs: Additional parameters for the collusion modification attack:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
                 - original_audio_collusion (np.ndarray): The original audio signal, that's not watermarked.
-                - x (int): percentage of the non_watermarked_audio.
-                - position (string): possibilities are ['random_samples','random_segment','front','end']. This explains how parts of the watermarked signal are replaced by using the original signal.
+                - x_zero_bit_collusion (int): percentage of the non_watermarked_audio.
+                - position_zero_bit_collusion (string): possibilities are ['random_samples','random_segment','front','end']. This explains how parts of the watermarked signal are replaced by using the original signal.
                     - 'random_samples': replaces random individual samples
                     - 'random_segment': replaces a contiguous segment at a random position
                     - 'front': replaces samples from the beginning
@@ -31,9 +31,9 @@ class ZeroBitCollusionAttack(BaseAttack):
         original_audio=kwargs.get("original_audio_collusion",None)
         # original_audio=original_audio.copy()
         x = kwargs.get(
-            "x", self.config.get("x")
+            "x_zero_bit_collusion", self.config.get("x_zero_bit_collusion")
         )
-        position = kwargs.get("position", self.config.get("position"))
+        position = kwargs.get("position_zero_bit_collusion", self.config.get("position_zero_bit_collusion"))
 
         if position not in ["random_samples", "random_segment", "front", "end"]:
             raise ValueError(f"Invalid position: '{position}'. Must be one of 'random_samples', 'random_segment', 'front', or 'end'.")

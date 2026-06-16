@@ -11,8 +11,8 @@ class HighpassFilterAttack(BaseAttack):
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the highpass attack:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
-                - cutoff_freq (float): The cutoff frequency of the high-pass filter in Hz.    
-                - order (int): The order of the Butterworth filter. Higher order means a steeper
+                - cutoff_freq_highpass (float): The cutoff frequency of the high-pass filter in Hz.    
+                - order_highpass (int): The order of the Butterworth filter. Higher order means a steeper
                      roll-off but can introduce more phase distortion.
         Returns:
             np.ndarray: The processed audio signal with the high-pass filtering applied.
@@ -25,7 +25,7 @@ class HighpassFilterAttack(BaseAttack):
         cutoff_freq = kwargs.get(
             "cutoff_freq_highpass", self.config.get("cutoff_freq_highpass")
         )
-        order = kwargs.get("order",self.config.get("order"))
+        order = kwargs.get("order_highpass",self.config.get("order_highpass", 4))
 
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")

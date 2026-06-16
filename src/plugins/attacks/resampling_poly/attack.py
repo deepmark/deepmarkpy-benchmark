@@ -9,18 +9,18 @@ class ResamplingPolyAttack(BaseAttack):
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the resampling attack:
-                - down_factor (int): The downsampling factor, which is the same as upsampling factor.
+                - down_factor_resampling_poly (int): The downsampling factor, which is the same as upsampling factor.
         Returns:
             np.ndarray: The processed audio signal with the high-pass filtering applied.
 
         Raises:
-            TypeError: If the `down_factor` is not int.
+            TypeError: If the `down_factor_resampling_poly` is not int.
 
     """
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
         down_factor = kwargs.get(
-            "down_factor", self.config.get("down_factor")
+            "down_factor_resampling_poly", self.config.get("down_factor_resampling_poly")
         )
         if not isinstance(down_factor, int):
             raise TypeError("'down_factor' must be the integer value.")

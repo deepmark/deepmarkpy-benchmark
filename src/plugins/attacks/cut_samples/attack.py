@@ -13,10 +13,10 @@ class CutSamplesAttack(BaseAttack):
             audio (np.ndarray): Input audio signal.
             **kwargs: Additional parameters.
                 - sampling_rate (int): Sampling rate of the audio in Hz (required).
-                - cut_max_sequence_length (int): Maximum length of each cut sequence. Default is 50 samples (Optional).
-                - cut_num_sequences (int): Number of sequences to cut in the specified duration. Default is 20 (Optional).
-                - cut_duration (float): Duration (in seconds) over which cuts should occur. Default is 0.5 seconds (Optional).
-                - cut_max_value_difference (float): Maximum allowed difference between start and end sample of a cut. Default is 0.1 (Optional).
+                - max_sequence_length_cut (int): Maximum length of each cut sequence. Default is 50 samples (Optional).
+                - num_sequences_cut (int): Number of sequences to cut in the specified duration. Default is 20 (Optional).
+                - duration_cut (float): Duration (in seconds) over which cuts should occur. Default is 0.5 seconds (Optional).
+                - max_value_difference_cut (float): Maximum allowed difference between start and end sample of a cut. Default is 0.1 (Optional).
 
         Returns:
             np.ndarray: Audio signal with random samples cut.
@@ -26,14 +26,14 @@ class CutSamplesAttack(BaseAttack):
         """
         sampling_rate = kwargs.get("sampling_rate", None)
         max_sequence_length = kwargs.get(
-            "cut_max_sequence_length", self.config.get("cut_max_sequence_length")
+            "max_sequence_length_cut", self.config.get("max_sequence_length_cut")
         )
         num_sequences = kwargs.get(
-            "cut_num_sequences", self.config.get("cut_num_sequences")
+            "num_sequences_cut", self.config.get("num_sequences_cut")
         )
-        duration = kwargs.get("cut_duration", self.config.get("cut_duration"))
+        duration = kwargs.get("duration_cut", self.config.get("duration_cut"))
         max_value_difference = kwargs.get(
-            "cut_max_value_difference", self.config.get("cut_max_value_difference")
+            "max_value_difference_cut", self.config.get("max_value_difference_cut")
         )
 
         if sampling_rate is None:

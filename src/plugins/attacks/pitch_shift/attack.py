@@ -18,7 +18,7 @@ class PitchShiftAttack(BaseAttack):
             audio (np.ndarray): Input audio signal.
             **kwargs: Additional parameters for pitch shifting.
                 - sampling_rate (int): Sampling rate of the audio in Hz (optional).
-                - cents (float): Pitch shift in cents (1 cent = 1/100 of a semitone) (optional).
+                - cents_pitch_shift (float): Pitch shift in cents (1 cent = 1/100 of a semitone) (optional).
 
         Returns:
             np.ndarray: The pitch-shifted audio signal.
@@ -31,7 +31,7 @@ class PitchShiftAttack(BaseAttack):
         """
 
         sampling_rate = kwargs.get("sampling_rate", None)
-        cents = kwargs.get("cents", self.config.get("cents"))
+        cents = kwargs.get("cents_pitch_shift", self.config.get("cents_pitch_shift"))
 
         if sampling_rate is None or cents is None:
             raise ValueError(

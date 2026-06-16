@@ -16,7 +16,7 @@ class Mp3CompressionAttack(BaseAttack):
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the mp3 compression:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
-                - quality: MP3 quality (0=best, 9=worst) 
+                - quality_mp3: MP3 quality (0=best, 9=worst) 
         Returns:
             np.ndarray: The processed mp3 signal.
 
@@ -26,7 +26,7 @@ class Mp3CompressionAttack(BaseAttack):
         """
         sampling_rate = kwargs.get("sampling_rate", None)
         quality = kwargs.get(
-            "quality", self.config.get("quality")
+            "quality_mp3", self.config.get("quality_mp3")
         )
 
         try:

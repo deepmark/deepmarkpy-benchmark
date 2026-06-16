@@ -13,10 +13,10 @@ class FlangerAttack(BaseAttack):
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the flanger attack:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
-                - start_delay (float): Starting amount of time (in seconds) that the input signal is delayed before modulation.
-                - w_delay (float): Controls how much the delay time is varied by the sine wave (amplitude).
-                - delay_rate (float): Frequency (Hz) of the modulation sine wave — typically a low frequency (e.g., 0.3-5 Hz).
-                - gain (float): Strength of the flanger effect.
+                - start_delay_flanger (float): Starting amount of time (in seconds) that the input signal is delayed before modulation.
+                - w_delay_flanger (float): Controls how much the delay time is varied by the sine wave (amplitude).
+                - delay_rate_flanger (float): Frequency (Hz) of the modulation sine wave — typically a low frequency (e.g., 0.3-5 Hz).
+                - gain_flanger (float): Strength of the flanger effect.
         Returns:
             np.ndarray: The processed audio signal.
 
@@ -25,10 +25,10 @@ class FlangerAttack(BaseAttack):
 
         """
         sampling_rate = kwargs.get("sampling_rate", None)
-        start_delay = kwargs.get( "start_delay", self.config.get("start_delay"))
-        w_delay = kwargs.get("w_delay",self.config.get("w_delay"))
-        delay_rate = kwargs.get("delay_rate",self.config.get("delay_rate"))
-        self.gain = kwargs.get("gain",self.config.get("gain"))
+        start_delay = kwargs.get( "start_delay_flanger", self.config.get("start_delay_flanger"))
+        w_delay = kwargs.get("w_delay_flanger",self.config.get("w_delay_flanger"))
+        delay_rate = kwargs.get("delay_rate_flanger",self.config.get("delay_rate_flanger"))
+        self.gain = kwargs.get("gain_flanger",self.config.get("gain_flanger"))
 
         self.avg_delay = math.floor(sampling_rate * start_delay)
         width = math.floor(sampling_rate * w_delay)

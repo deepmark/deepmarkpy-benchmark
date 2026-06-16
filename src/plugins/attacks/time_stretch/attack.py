@@ -18,7 +18,7 @@ class TimeStretchAttack(BaseAttack):
             audio (np.ndarray): Input audio signal to be stretched.
             **kwargs: Additional parameters for time stretching.
                 - sampling_rate (int): Sampling rate of the audio in Hz (required).
-                - stretch_rate (float): Stretching factor (>1 for slower, <1 for faster) (optional).
+                - stretch_rate_time_stretch (float): Stretching factor (>1 for slower, <1 for faster) (optional).
 
         Returns:
             np.ndarray: The time-stretched audio signal.
@@ -36,7 +36,7 @@ class TimeStretchAttack(BaseAttack):
         """
         sampling_rate = kwargs.get("sampling_rate", None)
 
-        stretch_rate = kwargs.get("stretch_rate", self.config.get("stretch_rate"))
+        stretch_rate = kwargs.get("stretch_rate_time_stretch", self.config.get("stretch_rate_time_stretch"))
 
         if sampling_rate is None:
             raise ValueError(

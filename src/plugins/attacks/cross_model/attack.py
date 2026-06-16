@@ -14,7 +14,7 @@ class CrossModelAttack(BaseAttack):
             **kwargs: Additional parameters for the watermarking process.
                 - model (BaseModel): Model currently benchmarked.
                 - models (dict): Dictionary of all available models.
-                - different_model_name (str): Name of the model to use for re-embedding.
+                - different_model_name_cross_model (str): Name of the model to use for re-embedding.
                 - sampling_rate (int): The sampling rate of the audio signal.
 
         Returns:
@@ -22,7 +22,7 @@ class CrossModelAttack(BaseAttack):
                    the watermark used by the different model.
         """
         models = kwargs.get("models", None)
-        different_model_name = kwargs.get("different_model_name", None)
+        different_model_name = kwargs.get("different_model_name_cross_model", None)
         sampling_rate = kwargs.get("sampling_rate", None)
 
         if models is None or sampling_rate is None:

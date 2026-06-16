@@ -26,7 +26,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info(f"Using device: {device}")
 
-model = VAE(config["model_name"], device)
+model = VAE(config["model_name_vae"], device)
 
 
 class AttackRequest(BaseModel):
