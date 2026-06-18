@@ -86,6 +86,10 @@ def snr(signal, noisy_signal):
 
     if noise_power == 0:
         return np.inf
+    if signal_power == 0:
+        # All-zero signal: SNR is -inf. Return it directly to avoid a
+        # log10(0) RuntimeWarning; the value is unchanged.
+        return -np.inf
 
     snr_value = 10 * np.log10(signal_power / noise_power)
 

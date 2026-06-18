@@ -19,6 +19,7 @@ ATTACK_GROUPS = {
             "CrossModelAttack",
             "CollusionAttack",
             "ZeroBitCollusionAttack",
+            "Collusion2Attack",
             "SameModelAttack",
         ],
         "quality_metrics": ["pesq", "psnr", "si_sdr", "mcd", "visqol"],
@@ -71,7 +72,7 @@ ATTACK_GROUPS = {
         "attacks": [
             "TimeStretchAttack",
             "PitchShiftAttack",
-            "InvertedTimeStretch",
+            "InvertedTimeStretchAttack",
             "ZeroCrossInsertsAttack",
             "FlipSamplesAttack",
             "ReplacementAttack",

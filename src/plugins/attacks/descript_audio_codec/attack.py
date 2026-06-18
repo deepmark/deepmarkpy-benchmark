@@ -9,6 +9,13 @@ logger = logging.getLogger(__name__)
 
 
 class DescriptAudioCodecAttack(BaseAttack):
+    # Class-level cache: the DAC model and its derived properties are
+    # shared across every instance of this attack. benchmark.run creates a
+    # fresh attack instance per (file x attack), so without this the model
+    # would be downloaded/loaded again for every single file. Caching on
+    # the class means the heavy load happens exactly once per process.
+    _cache = None  # holds the loaded model + derived properties once ready
+
     def __init__(self):
         super().__init__()
         self.model = None
@@ -21,8 +28,19 @@ class DescriptAudioCodecAttack(BaseAttack):
         self.bandwith_to_ncodebook = None
 
     def _load_model(self):
-        """Lazy load the DAC model and calculate bandwidth properties."""
+        """Lazy load the DAC model and calculate bandwidth properties.
+
+        Loads once per process and caches on the class; later instances
+        reuse the cached model instead of downloading/reloading it.
+        """
+        # Already populated on this instance.
         if self.model is not None:
+            return
+
+        # A previous instance already loaded the model -- reuse the cache
+        # and skip the download/load entirely (and its log line).
+        if DescriptAudioCodecAttack._cache is not None:
+            self._apply_cache(DescriptAudioCodecAttack._cache)
             return
 
         try:
@@ -36,40 +54,66 @@ class DescriptAudioCodecAttack(BaseAttack):
 
         # Get codec sample rate
         type_to_sr = {'44khz': 44100, '24khz': 24000, '16khz': 16000}
-        self.codec_sr = type_to_sr[model_type]
+        codec_sr = type_to_sr[model_type]
 
-        # Load pre-trained DAC model, options: "16khz", "24khz", "44khz"
+        # First load in this process -- this is the only path that actually
+        # downloads/loads, so the log lives here (after the cache check)
+        # rather than on every call, to avoid suggesting a repeat download.
         logger.info(f"Downloading DAC model: {model_type} (this may take a few minutes on first run)...")
 
         model_path = dac.utils.download(model_type=model_type)
 
         logger.info(f"Download complete. Loading model from {model_path}")
 
-        self.model = dac.DAC.load(model_path)
-        self.model = self.model.to(self.device)
-        self.model.eval()
+        model = dac.DAC.load(model_path)
+        model = model.to(self.device)
+        model.eval()
 
         # Calculate codebook properties
-        self.codebook_size = self.model.codebook_size
-        self.downsampling_ratio = math.prod(
+        codebook_size = model.codebook_size
+        downsampling_ratio = math.prod(
             [block.block[-1].stride[0]
-             for block in self.model.encoder.block
+             for block in model.encoder.block
              if 'EncoderBlock' in str(block.__class__)]
         )
 
         # Set supported number of codebooks and bandwidths
-        self.n_codebooks = self.model.n_codebooks
-        self.supported_n_codebooks = [i + 1 for i in range(self.model.n_codebooks)]
-        self.supported_bandwidths = [
-            self.codec_sr / self.downsampling_ratio * math.log2(self.codebook_size) * i
-            for i in self.supported_n_codebooks
+        n_codebooks = model.n_codebooks
+        supported_n_codebooks = [i + 1 for i in range(model.n_codebooks)]
+        supported_bandwidths = [
+            codec_sr / downsampling_ratio * math.log2(codebook_size) * i
+            for i in supported_n_codebooks
         ]
 
         # Map bandwidth to the number of codebooks
-        self.bandwith_to_ncodebook = {
+        bandwith_to_ncodebook = {
             bandwidth: n_codebook
-            for bandwidth, n_codebook in zip(self.supported_bandwidths, self.supported_n_codebooks)
+            for bandwidth, n_codebook in zip(supported_bandwidths, supported_n_codebooks)
         }
+
+        # Store everything in the class cache, then apply to this instance.
+        DescriptAudioCodecAttack._cache = {
+            "model": model,
+            "codec_sr": codec_sr,
+            "codebook_size": codebook_size,
+            "downsampling_ratio": downsampling_ratio,
+            "n_codebooks": n_codebooks,
+            "supported_n_codebooks": supported_n_codebooks,
+            "supported_bandwidths": supported_bandwidths,
+            "bandwith_to_ncodebook": bandwith_to_ncodebook,
+        }
+        self._apply_cache(DescriptAudioCodecAttack._cache)
+
+    def _apply_cache(self, cache):
+        """Copy cached model + derived properties onto this instance."""
+        self.model = cache["model"]
+        self.codec_sr = cache["codec_sr"]
+        self.codebook_size = cache["codebook_size"]
+        self.downsampling_ratio = cache["downsampling_ratio"]
+        self.n_codebooks = cache["n_codebooks"]
+        self.supported_n_codebooks = cache["supported_n_codebooks"]
+        self.supported_bandwidths = cache["supported_bandwidths"]
+        self.bandwith_to_ncodebook = cache["bandwith_to_ncodebook"]
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
         """

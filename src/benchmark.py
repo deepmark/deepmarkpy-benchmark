@@ -89,6 +89,8 @@ class Benchmark:
         sampling_rate=None,
         verbose=False,
         calculate_quality_metrics=False,
+        save_audio=False,
+        output_dir=None,
         **kwargs,
     ):
         """Embed and detect without applying any attacks.
@@ -100,7 +102,13 @@ class Benchmark:
         metric suite (PESQ, PSNR, SI-SDR, MCD, ViSQOL, STOI, SII, NCM,
         NISQA x5) on the watermarked-vs-original pair so the no-attacks
         report can show how much the watermark itself perturbs the audio.
+
+        When ``save_audio`` is True, the watermarked audio for each file is
+        written to ``output_dir``. Since this mode applies no attacks, only
+        the watermarked signal is saved (no attacked variants).
         """
+        if save_audio and output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         if isinstance(filepaths, str):
             filepaths = [filepaths]
 
@@ -135,6 +143,15 @@ class Benchmark:
             watermarked_audio = model_instance.embed(
                 audio=audio, watermark_data=file_watermark, sampling_rate=sampling_rate,
             )
+
+            # Save the watermarked audio. No attacks run in this mode, so the
+            # watermarked signal is the only variant worth writing.
+            if save_audio and output_dir:
+                base_filename = os.path.splitext(os.path.basename(filepath))[0]
+                watermarked_path = os.path.join(
+                    output_dir, f"{base_filename}_watermarked.wav"
+                )
+                sf.write(watermarked_path, watermarked_audio, sampling_rate)
 
             confidence = None
             if returns_confidence:
