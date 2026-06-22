@@ -165,6 +165,66 @@ class TestQuantizationAttack:
 
 
 # ---------------------------------------------------------------------------
+# Replacement2Attack (fast, scalable variant of ReplacementAttack)
+# ---------------------------------------------------------------------------
+class TestReplacement2Attack:
+    @staticmethod
+    def _noisy_signal(sr=16000, dur=1.0, seed=0):
+        rng = np.random.default_rng(seed)
+        t = np.linspace(0, dur, int(sr * dur), endpoint=False)
+        sig = 0.3 * np.sin(2 * np.pi * 300 * t) + 0.05 * rng.standard_normal(t.size)
+        return sig.astype(np.float32), sr
+
+    def test_preserves_length(self, attacks):
+        atk = _make_attack(attacks, "Replacement2Attack")
+        audio, sr = self._noisy_signal()
+        result = atk.apply(audio, sampling_rate=sr)
+        assert result.shape == audio.shape
+
+    def test_requires_sampling_rate(self, attacks):
+        atk = _make_attack(attacks, "Replacement2Attack")
+        audio, _ = self._noisy_signal()
+        with pytest.raises(ValueError, match="sampling_rate"):
+            atk.apply(audio)
+
+    def test_matches_original_with_defaults(self, attacks):
+        """With default params the fast variant reproduces the original
+        ReplacementAttack output (up to float rounding)."""
+        from plugins.attacks.replacement.replacement_attack import (
+            replacement_attack,
+        )
+
+        audio, sr = self._noisy_signal()
+        fast = _make_attack(attacks, "Replacement2Attack").apply(
+            audio, sampling_rate=sr
+        )
+        ref = replacement_attack(audio, sampling_rate=sr)
+        np.testing.assert_allclose(fast, ref, atol=1e-6)
+
+    def test_masking_runs(self, attacks):
+        atk = _make_attack(attacks, "Replacement2Attack")
+        audio, sr = self._noisy_signal()
+        result = atk.apply(audio, sampling_rate=sr, use_masking_replacement2=True)
+        assert result.shape == audio.shape
+
+    def test_search_window_runs(self, attacks):
+        atk = _make_attack(attacks, "Replacement2Attack")
+        audio, sr = self._noisy_signal()
+        result = atk.apply(
+            audio, sampling_rate=sr, search_window_sec_replacement2=0.2
+        )
+        assert result.shape == audio.shape
+
+    def test_tile_size_invariant(self, attacks):
+        """Tile size is a memory/speed knob and must not change the result."""
+        atk = _make_attack(attacks, "Replacement2Attack")
+        audio, sr = self._noisy_signal()
+        a = atk.apply(audio, sampling_rate=sr, tile_size_replacement2=256)
+        b = atk.apply(audio, sampling_rate=sr, tile_size_replacement2=64)
+        np.testing.assert_allclose(a, b, atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
 # WaveletAttack (requires pywt — skip if not installed)
 # ---------------------------------------------------------------------------
 pywt = pytest.importorskip("pywt", reason="pywt not installed")

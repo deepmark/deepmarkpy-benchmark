@@ -1,0 +1,11 @@
+{
+    "block_size_replacement2": 1024,
+    "overlap_factor_replacement2": 0.75,
+    "lower_bound_replacement2": 0,
+    "upper_bound_replacement2": 10,
+    "k_replacement2": 100,
+    "use_masking_replacement2": false,
+    "search_window_sec_replacement2": 0.0,
+    "search_dims_replacement2": 0,
+    "tile_size_replacement2": 256
+}
