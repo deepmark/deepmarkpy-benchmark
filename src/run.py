@@ -145,8 +145,9 @@ def main():
         help=(
             "Measure false positive (detection on clean audio) and false "
             "negative (missed detection on watermarked audio) rates. "
-            "Currently supported only for zero-bit models and a single "
-            "model per run. Generates detection_reliability_report.pdf. "
+            "Supported for zero-bit models and confidence-based models "
+            "(using detection_threshold from config.json). Single model "
+            "per run. Generates detection_reliability_report.pdf. "
             "Combinable with --attack_types and --attack_groups: when "
             "attacks are provided, FP/FN are also reported per attack "
             "(attack applied to clean audio for FP, to watermarked audio "
@@ -220,7 +221,20 @@ def main():
         logger.error(f"Error accessing audio directory {args.wav_files_dir}: {e}")
         return
 
-    if args.no_attacks:
+    if args.no_attacks and args.detection_reliability:
+        # --- Combined mode: no-attacks baseline + FP/FN reliability ---
+        if args.wm_models and len(args.wm_models) > 1:
+            logger.error(
+                "--detection_reliability supports only a single model. "
+                "Use --wm_model instead of --wm_models, or pass exactly "
+                "one model name to --wm_models."
+            )
+            return
+        model_name = args.wm_models[0] if args.wm_models else args.wm_model
+        _clean_report_dir("report")
+        run_no_attacks_mode(benchmark, filepaths, [model_name], args)
+        run_detection_reliability_mode(benchmark, filepaths, model_name, args)
+    elif args.no_attacks:
         # --- No-attacks mode: embed + detect only ---
         model_names = args.wm_models if args.wm_models else [args.wm_model]
         _clean_report_dir("report")
@@ -330,12 +344,11 @@ def run_no_attacks_mode(benchmark, filepaths, model_names, args):
 
 
 def run_detection_reliability_mode(benchmark, filepaths, model_name, args):
-    """Run the detection-reliability flow for a single zero-bit model.
+    """Run detection-reliability for a single zero-bit or confidence-based model.
 
     Computes FP / FN both without attacks and (when attacks are
     requested) with each attack applied, then writes a dedicated PDF
-    report. Lives in its own function so it doesn't clutter the
-    accuracy-driven ``run_single_model`` path.
+    report.
     """
     from utils.detection_reliability import run_detection_reliability
     from utils.detection_reliability_report_generator import (
@@ -358,10 +371,18 @@ def run_detection_reliability_mode(benchmark, filepaths, model_name, args):
         "no_attacks",
         "detection_reliability",
         "verbose",
+        "calculate_quality_metrics",
+        "crop_before_attack",
+        "save_audio",
+        "output_dir",
     ):
         args_dict.pop(key, None)
 
     attack_types = list(args.attack_types or [])
+
+    audio_dir = None
+    if args.save_audio:
+        audio_dir = os.path.join(report_dir, "audio")
 
     logger.info(
         f"Running detection-reliability for {model_name} on "
@@ -375,6 +396,9 @@ def run_detection_reliability_mode(benchmark, filepaths, model_name, args):
             attack_types=attack_types,
             sampling_rate=None,
             verbose=args.verbose,
+            calculate_quality_metrics=args.calculate_quality_metrics,
+            save_audio=args.save_audio,
+            output_dir=audio_dir,
             **args_dict,
         )
     except ValueError as e:

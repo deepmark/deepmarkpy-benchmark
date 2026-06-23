@@ -36,6 +36,10 @@ rezultati/
 weights/
 report_examples/
 trump/
+chinese-test/
+chinese-test-60s/
+chinese-test-combined/
+report_baseline_replacement/
 CHANGELOG_DPM-1576.md
 CODE_EXPLANATION.md
 benchmark.md
