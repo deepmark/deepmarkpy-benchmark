@@ -231,7 +231,51 @@ If NISQA is not installed or the weights file is missing, the metric is silently
 > instructions at https://github.com/google/visqol and install the
 > resulting Python package into the same environment.
 
-### 4. View Results
+### 4. Detection Reliability (Optional)
+
+Use `--detection_reliability` to measure false positive and false negative rates. This mode supports a **single model** per run (zero-bit or confidence-based).
+
+```bash
+python src/run.py --wav_files_dir /path/to/audio \
+                  --wm_model PerthModel \
+                  --detection_reliability
+```
+
+Without attacks the mode measures:
+- **False positive**: detection on clean (unwatermarked) audio reports a watermark present.
+- **False negative**: detection on watermarked audio fails to find the watermark.
+
+When combined with `--attack_types` or `--attack_groups`, FP/FN are additionally reported per attack (attack applied to clean audio for FP, attack applied to watermarked audio for FN).
+
+```bash
+python src/run.py --wav_files_dir /path/to/audio \
+                  --wm_model AudioSealModel \
+                  --detection_reliability \
+                  --attack_types GaussianNoiseAttack LowpassFilterAttack
+```
+
+Results are saved to `report/detection_reliability.json` and a dedicated `detection_reliability_report.pdf` is generated.
+
+### 5. Save Audio (Optional)
+
+Use `--save_audio` to write intermediate audio files to disk for manual inspection. Files are saved to `<report_dir>/audio/`.
+
+```bash
+python src/run.py --wav_files_dir /path/to/audio \
+                  --wm_model AudioSealModel \
+                  --detection_reliability \
+                  --attack_types GaussianNoiseAttack \
+                  --save_audio
+```
+
+In detection reliability mode the following files are saved per input file:
+- `{filename}_watermarked.wav` — watermarked audio (before any attack)
+- `{filename}_{AttackName}_clean.wav` — attack applied to the clean (unwatermarked) audio
+- `{filename}_{AttackName}.wav` — attack applied to the watermarked audio
+
+In the standard benchmark mode, watermarked and attacked-watermarked files are saved.
+
+### 6. View Results
 
 The benchmark generates the following outputs in the `report/` directory:
 

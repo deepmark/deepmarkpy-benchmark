@@ -12,7 +12,7 @@ accuracy. The flow is:
     4. attack() on the watermarked audio, then detect() -> false_negative_with_attack
 
 Supports two model types:
-  - Zero-bit models (Perth, StariVigil): detect() returns binary 0/1.
+  - Zero-bit models (Perth): detect() returns binary 0/1.
   - Confidence-based models (AudioSeal, AWARE): detect() returns
     (watermark, confidence). Detection is positive when confidence
     exceeds the model's detection_threshold (set in config.json).
@@ -75,7 +75,7 @@ class DetectionReliabilityResult(dict):
 def _detect_is_positive_zero_bit(detect_output: Any) -> bool:
     """Return True when a zero-bit detector says 'watermark detected'.
 
-    Perth returns 0 or 1; StariVigil returns the same shape.
+    Perth returns 0 or 1.
     Accept either int or numpy array; treat any non-zero value as positive.
     """
     if isinstance(detect_output, np.ndarray):
@@ -268,6 +268,13 @@ def run_detection_reliability(
                     f"{filepath}: {e}. Skipping this attack for this file."
                 )
                 continue
+
+            if save_audio and output_dir:
+                base = os.path.splitext(os.path.basename(filepath))[0]
+                sf.write(
+                    os.path.join(output_dir, f"{base}_{attack_name}_clean.wav"),
+                    attacked_clean, sr,
+                )
 
             attack_state[attack_name]["fp_attempts"] += 1
             if _detect(model_instance, attacked_clean, sr, returns_confidence, detection_threshold):
