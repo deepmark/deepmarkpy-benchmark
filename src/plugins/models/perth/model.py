@@ -37,6 +37,10 @@ class PerthModel(BaseModel):
         return np.array(response_data["watermarked_audio"])
     
     
+    def is_watermarked(self, detect_output) -> bool:
+        """Perth is zero-bit: detect returns 0 (not found) or 1 (found)."""
+        return bool(np.any(detect_output)) if detect_output is not None else False
+
     def detect(self, audio: np.ndarray, sampling_rate: int) -> np.ndarray:
         """Detects a watermark using the Perth service."""
         payload = {"audio": audio.tolist(), "sampling_rate": sampling_rate}

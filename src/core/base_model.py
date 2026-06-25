@@ -115,6 +115,18 @@ class BaseModel(abc.ABC):
         """
         pass
 
+    def is_watermarked(self, detect_output) -> bool:
+        """Determine whether a watermark is present based on detect() output.
+
+        Models that support --detection_reliability must override this method.
+        The default implementation raises NotImplementedError so that
+        detection_reliability can check support at runtime.
+        """
+        raise NotImplementedError(
+            f"{self.name} does not implement is_watermarked(). "
+            f"Cannot use --detection_reliability with this model."
+        )
+
     def generate_watermark(self) -> np.ndarray:
         """
         Generates a sample watermark.

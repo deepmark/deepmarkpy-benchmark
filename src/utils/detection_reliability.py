@@ -11,18 +11,16 @@ accuracy. The flow is:
     3. attack() on the clean audio, then detect()   -> false_positive_with_attack
     4. attack() on the watermarked audio, then detect() -> false_negative_with_attack
 
-Supports two model types:
-  - Zero-bit models (Perth): detect() returns binary 0/1.
-  - Confidence-based models (AudioSeal, AWARE): detect() returns
-    (watermark, confidence). Detection is positive when confidence
-    exceeds the model's detection_threshold (set in config.json).
+Each model that supports this mode must implement ``is_watermarked()``
+which takes the raw output of ``detect()`` and returns a boolean
+indicating whether a watermark is present.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 import soundfile as sf
@@ -69,37 +67,13 @@ class DetectionReliabilityResult(dict):
 
 
 # ---------------------------------------------------------------------------
-# Detection helpers
+# Detection helper
 # ---------------------------------------------------------------------------
 
-def _detect_is_positive_zero_bit(detect_output: Any) -> bool:
-    """Return True when a zero-bit detector says 'watermark detected'.
-
-    Perth returns 0 or 1.
-    Accept either int or numpy array; treat any non-zero value as positive.
-    """
-    if isinstance(detect_output, np.ndarray):
-        detect_output = detect_output.tolist()
-    if isinstance(detect_output, list):
-        return bool(detect_output[0]) if detect_output else False
-    return bool(detect_output)
-
-
-def _detect(model_instance, audio: np.ndarray, sampling_rate: int,
-            returns_confidence: bool, detection_threshold: Optional[float] = None) -> bool:
-    """Run detect() and reduce to a positive/negative boolean.
-
-    For confidence-based models, compares confidence against detection_threshold.
-    For zero-bit models, uses binary output directly.
-    """
-    if returns_confidence:
-        _watermark, confidence = model_instance.detect(audio, sampling_rate)
-        if detection_threshold is not None:
-            return float(confidence) >= detection_threshold
-        return _detect_is_positive_zero_bit(_watermark)
-    else:
-        detected = model_instance.detect(audio, sampling_rate)
-        return _detect_is_positive_zero_bit(detected)
+def _detect(model_instance, audio: np.ndarray, sampling_rate: int) -> bool:
+    """Run detect() and delegate the decision to the model's is_watermarked()."""
+    detect_output = model_instance.detect(audio, sampling_rate)
+    return model_instance.is_watermarked(detect_output)
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +113,7 @@ def run_detection_reliability(
         FP/FN counts plus accuracy and quality metric means.
 
     Raises:
-        ValueError: if ``wm_model`` is neither zero-bit nor confidence-based,
-            or if it returns confidence but has no detection_threshold configured.
+        ValueError: if ``wm_model`` does not implement ``is_watermarked()``.
     """
     if wm_model not in benchmark.models:
         raise ValueError(
@@ -150,18 +123,21 @@ def run_detection_reliability(
 
     model_config = benchmark.models[wm_model]["config"] or {}
     is_zero_bit = model_config.get("is_zero_bit", False)
-    returns_confidence = model_config.get("returns_confidence", False)
     detection_threshold = model_config.get("detection_threshold", None)
 
-    if not is_zero_bit and not returns_confidence:
+    model_cls = benchmark.models[wm_model]["class"]
+    model_instance = model_cls()
+
+    if not hasattr(model_instance, "is_watermarked"):
         raise ValueError(
-            "--detection_reliability requires either a zero-bit model or a "
-            f"confidence-based model. '{wm_model}' supports neither."
+            f"Model '{wm_model}' does not implement is_watermarked(). "
+            f"Cannot use --detection_reliability with this model."
         )
-    if returns_confidence and detection_threshold is None and not is_zero_bit:
+    from core.base_model import BaseModel
+    if isinstance(model_instance, BaseModel) and type(model_instance).is_watermarked is BaseModel.is_watermarked:
         raise ValueError(
-            f"Model '{wm_model}' returns confidence but has no "
-            f"'detection_threshold' in config.json. Cannot determine FP/FN."
+            f"Model '{wm_model}' does not implement is_watermarked(). "
+            f"Cannot use --detection_reliability with this model."
         )
 
     if sampling_rate is None:
@@ -169,9 +145,6 @@ def run_detection_reliability(
         logger.info(
             f"Using default sampling rate {sampling_rate} for model {wm_model}"
         )
-
-    model_cls = benchmark.models[wm_model]["class"]
-    model_instance = model_cls()
 
     attack_types = list(attack_types or [])
     n_files = len(filepaths)
@@ -216,7 +189,7 @@ def run_detection_reliability(
         audio, sr = load_audio(filepath, target_sr=sampling_rate)
 
         # --- Step 1: FP without attack (detect on clean audio) ---
-        if _detect(model_instance, audio, sr, returns_confidence, detection_threshold):
+        if _detect(model_instance, audio, sr):
             fp_no_attack += 1
 
         # --- Step 2: embed + detect (FN without attack) ---
@@ -224,7 +197,7 @@ def run_detection_reliability(
         watermarked_audio = model_instance.embed(
             audio=audio, watermark_data=watermark, sampling_rate=sr,
         )
-        if not _detect(model_instance, watermarked_audio, sr, returns_confidence, detection_threshold):
+        if not _detect(model_instance, watermarked_audio, sr):
             fn_no_attack += 1
 
         if save_audio and output_dir:
@@ -277,7 +250,7 @@ def run_detection_reliability(
                 )
 
             attack_state[attack_name]["fp_attempts"] += 1
-            if _detect(model_instance, attacked_clean, sr, returns_confidence, detection_threshold):
+            if _detect(model_instance, attacked_clean, sr):
                 attack_state[attack_name]["fp_count"] += 1
 
             # Step 4: attack the watermarked audio, then detect.
@@ -300,9 +273,7 @@ def run_detection_reliability(
                 )
 
             attack_state[attack_name]["fn_attempts"] += 1
-            wm_detected = _detect(
-                model_instance, attacked_wm, sr, returns_confidence, detection_threshold,
-            )
+            wm_detected = _detect(model_instance, attacked_wm, sr)
             if not wm_detected:
                 attack_state[attack_name]["fn_count"] += 1
 

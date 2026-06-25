@@ -5,7 +5,6 @@ import pytest
 
 from utils.detection_reliability import (
     _detect,
-    _detect_is_positive_zero_bit,
     run_detection_reliability,
 )
 from utils.detection_reliability_report_generator import (
@@ -18,37 +17,8 @@ from utils.detection_reliability_report_generator import (
 )
 
 
-class TestDetectIsPositiveZeroBit:
-    def test_scalar_true(self):
-        assert _detect_is_positive_zero_bit(1) is True
-
-    def test_scalar_false(self):
-        assert _detect_is_positive_zero_bit(0) is False
-
-    def test_numpy_array_positive(self):
-        assert _detect_is_positive_zero_bit(np.array(1)) is True
-
-    def test_numpy_array_zero(self):
-        assert _detect_is_positive_zero_bit(np.array(0)) is False
-
-    def test_list_positive(self):
-        assert _detect_is_positive_zero_bit([1]) is True
-
-    def test_list_zero(self):
-        assert _detect_is_positive_zero_bit([0]) is False
-
-    def test_empty_list(self):
-        assert _detect_is_positive_zero_bit([]) is False
-
-    def test_numpy_array_1d(self):
-        assert _detect_is_positive_zero_bit(np.array([1, 0, 1])) is True
-
-    def test_numpy_array_all_zeros(self):
-        assert _detect_is_positive_zero_bit(np.array([0, 0, 0])) is False
-
-
 class TestDetect:
-    """Tests for _detect with mocked models."""
+    """Tests for _detect with mocked models using is_watermarked()."""
 
     class _ZeroBitModel:
         def __init__(self, returns):
@@ -57,37 +27,41 @@ class TestDetect:
         def detect(self, audio, sr):
             return self._returns
 
+        def is_watermarked(self, detect_output):
+            return bool(np.any(detect_output)) if detect_output is not None else False
+
     class _ConfidenceModel:
-        def __init__(self, watermark, confidence):
+        def __init__(self, watermark, confidence, threshold=0.5):
             self._watermark = watermark
             self._confidence = confidence
+            self._threshold = threshold
 
         def detect(self, audio, sr):
             return self._watermark, self._confidence
 
+        def is_watermarked(self, detect_output):
+            _wm, conf = detect_output
+            return float(conf) >= self._threshold
+
     def test_zero_bit_positive(self):
         model = self._ZeroBitModel(np.array(1))
-        assert _detect(model, np.zeros(100), 16000, False) is True
+        assert _detect(model, np.zeros(100), 16000) is True
 
     def test_zero_bit_negative(self):
         model = self._ZeroBitModel(np.array(0))
-        assert _detect(model, np.zeros(100), 16000, False) is False
+        assert _detect(model, np.zeros(100), 16000) is False
 
     def test_confidence_above_threshold(self):
-        model = self._ConfidenceModel(np.array([1, 0, 1]), 0.8)
-        assert _detect(model, np.zeros(100), 16000, True, 0.5) is True
+        model = self._ConfidenceModel(np.array([1, 0, 1]), 0.8, threshold=0.5)
+        assert _detect(model, np.zeros(100), 16000) is True
 
     def test_confidence_below_threshold(self):
-        model = self._ConfidenceModel(np.array([1, 0, 1]), 0.3)
-        assert _detect(model, np.zeros(100), 16000, True, 0.5) is False
+        model = self._ConfidenceModel(np.array([1, 0, 1]), 0.3, threshold=0.5)
+        assert _detect(model, np.zeros(100), 16000) is False
 
     def test_confidence_at_threshold(self):
-        model = self._ConfidenceModel(np.array([1, 0, 1]), 0.5)
-        assert _detect(model, np.zeros(100), 16000, True, 0.5) is True
-
-    def test_confidence_no_threshold_falls_back_to_zero_bit(self):
-        model = self._ConfidenceModel(np.array([0]), 0.9)
-        assert _detect(model, np.zeros(100), 16000, True, None) is False
+        model = self._ConfidenceModel(np.array([1, 0, 1]), 0.5, threshold=0.5)
+        assert _detect(model, np.zeros(100), 16000) is True
 
 
 class TestFormatHelpers:
@@ -134,10 +108,7 @@ class TestFormatHelpers:
 class TestRunDetectionReliability:
     """Integration tests with a mocked benchmark."""
 
-    class _MockModel:
-        def __init__(self, is_zero_bit=True):
-            self._is_zero_bit = is_zero_bit
-
+    class _MockZeroBitModel:
         def generate_watermark(self):
             return np.array([1, 0, 1, 0])
 
@@ -145,21 +116,44 @@ class TestRunDetectionReliability:
             return audio + 0.001
 
         def detect(self, audio, sampling_rate):
-            if self._is_zero_bit:
-                return np.array(1)
+            return np.array(1)
+
+        def is_watermarked(self, detect_output):
+            return bool(np.any(detect_output)) if detect_output is not None else False
+
+    class _MockConfidenceModel:
+        def generate_watermark(self):
+            return np.array([1, 0, 1, 0])
+
+        def embed(self, audio, watermark_data, sampling_rate):
+            return audio + 0.001
+
+        def detect(self, audio, sampling_rate):
             return np.array([1, 0, 1, 0]), 0.8
+
+        def is_watermarked(self, detect_output):
+            _wm, confidence = detect_output
+            return float(confidence) >= 0.5
+
+    class _MockUnsupportedModel:
+        def generate_watermark(self):
+            return np.array([1, 0, 1, 0])
+
+        def embed(self, audio, watermark_data, sampling_rate):
+            return audio + 0.001
+
+        def detect(self, audio, sampling_rate):
+            return np.array([1, 0, 1, 0])
 
     class _MockBenchmark:
         ALWAYS_ON_METRICS = ("pesq", "visqol", "stoi")
 
-        def __init__(self, is_zero_bit=True, returns_confidence=False,
-                     detection_threshold=None):
+        def __init__(self, model_cls, is_zero_bit=True, detection_threshold=None):
             self.models = {
                 "TestModel": {
-                    "class": lambda: TestRunDetectionReliability._MockModel(is_zero_bit),
+                    "class": model_cls,
                     "config": {
                         "is_zero_bit": is_zero_bit,
-                        "returns_confidence": returns_confidence,
                         "detection_threshold": detection_threshold,
                         "sampling_rate": 16000,
                     },
@@ -174,7 +168,9 @@ class TestRunDetectionReliability:
         audio = np.sin(np.linspace(0, 1, sr)).astype(np.float32)
         sf.write(str(audio_file), audio, sr)
 
-        benchmark = self._MockBenchmark(is_zero_bit=True)
+        benchmark = self._MockBenchmark(
+            model_cls=self._MockZeroBitModel, is_zero_bit=True,
+        )
         result = run_detection_reliability(
             benchmark, [str(audio_file)], "TestModel",
         )
@@ -193,8 +189,8 @@ class TestRunDetectionReliability:
         sf.write(str(audio_file), audio, sr)
 
         benchmark = self._MockBenchmark(
-            is_zero_bit=False, returns_confidence=True,
-            detection_threshold=0.5,
+            model_cls=self._MockConfidenceModel,
+            is_zero_bit=False, detection_threshold=0.5,
         )
         result = run_detection_reliability(
             benchmark, [str(audio_file)], "TestModel",
@@ -211,29 +207,16 @@ class TestRunDetectionReliability:
         sf.write(str(audio_file), np.zeros(16000), 16000)
 
         benchmark = self._MockBenchmark(
-            is_zero_bit=False, returns_confidence=False,
+            model_cls=self._MockUnsupportedModel,
+            is_zero_bit=False,
         )
-        with pytest.raises(ValueError, match="requires either"):
-            run_detection_reliability(
-                benchmark, [str(audio_file)], "TestModel",
-            )
-
-    def test_rejects_confidence_without_threshold(self, tmp_path):
-        audio_file = tmp_path / "test.wav"
-        import soundfile as sf
-        sf.write(str(audio_file), np.zeros(16000), 16000)
-
-        benchmark = self._MockBenchmark(
-            is_zero_bit=False, returns_confidence=True,
-            detection_threshold=None,
-        )
-        with pytest.raises(ValueError, match="detection_threshold"):
+        with pytest.raises(ValueError, match="does not implement is_watermarked"):
             run_detection_reliability(
                 benchmark, [str(audio_file)], "TestModel",
             )
 
     def test_model_not_found(self):
-        benchmark = self._MockBenchmark()
+        benchmark = self._MockBenchmark(model_cls=self._MockZeroBitModel)
         with pytest.raises(ValueError, match="not found"):
             run_detection_reliability(
                 benchmark, ["fake.wav"], "NonExistentModel",

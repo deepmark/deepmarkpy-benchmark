@@ -41,6 +41,12 @@ class AudioSealModel(BaseModel):
         
         return np.array(response_data["watermarked_audio"])
 
+    def is_watermarked(self, detect_output) -> bool:
+        """AudioSeal returns (watermark, confidence). Compare confidence to threshold."""
+        _watermark, confidence = detect_output
+        threshold = self._config.get("detection_threshold", 0.5)
+        return float(confidence) >= threshold
+
     def detect(self, audio: np.ndarray, sampling_rate: int) -> np.ndarray:
         """Detects a watermark in the audio using the AudioSeal service."""
         # Sanitize audio: replace NaN with 0 and clip Inf to valid float range

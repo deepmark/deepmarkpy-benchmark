@@ -9,7 +9,7 @@ Open-source benchmarking framework for evaluating audio watermarking robustness.
 - **Plugin-based**: Models and attacks auto-discovered from `src/plugins/models/` and `src/plugins/attacks/` via `PluginManager`
 - **Client-server**: Complex ML models/attacks run in Docker containers, accessed via HTTP (FastAPI). Simple attacks run natively
 - **Base classes**: `BaseModel` (embed/detect) in `src/core/base_model.py`, `BaseAttack` (apply) in `src/core/base_attack.py`
-- **Config-driven**: Each plugin has a `config.json` with defaults. Model configs include `returns_confidence` and `is_zero_bit` flags for dispatch
+- **Config-driven**: Each plugin has a `config.json` with defaults. Model configs include `returns_confidence` and `is_zero_bit` flags. Detection reliability uses `is_watermarked()` on the model class
 
 ## Key Files
 
@@ -43,7 +43,7 @@ python src/run.py --wav_files_dir /path/to/wavs --wm_model AudioSealModel --atta
 ## Development Conventions
 
 - **Attack parameter names must be unique across all attacks** — they share a flat CLI namespace. Suffix with attack name (e.g., `snr_db_replay`, `order_bandstop`). The system warns on collisions but doesn't prevent them
-- **Model capabilities declared in config.json** — use `returns_confidence: true/false` and `is_zero_bit: true/false` instead of hardcoding model names in benchmark.py
+- **Model capabilities declared in config.json** — use `returns_confidence: true/false` and `is_zero_bit: true/false` for general dispatch. For detection reliability, models must implement `is_watermarked(detect_output) -> bool` in `model.py`
 - **Native attacks** need only `attack.py` + `config.json` in their directory
 - **Dockerized attacks/models** additionally need `app.py`, `Dockerfile`, `requirements.txt`
 - **Use `logger` not `print()`** for all output. Use `logging.getLogger(__name__)` (never overwrite the `logging` module)

@@ -233,7 +233,7 @@ If NISQA is not installed or the weights file is missing, the metric is silently
 
 ### 4. Detection Reliability (Optional)
 
-Use `--detection_reliability` to measure false positive and false negative rates. This mode supports a **single model** per run (zero-bit or confidence-based).
+Use `--detection_reliability` to measure false positive and false negative rates. This mode supports a **single model** per run and requires the model to implement `is_watermarked()` (see [Adding a New Watermarking Model](#adding-a-new-watermarking-model)).
 
 ```bash
 python src/run.py --wav_files_dir /path/to/audio \
@@ -255,6 +255,12 @@ python src/run.py --wav_files_dir /path/to/audio \
 ```
 
 Results are saved to `report/detection_reliability.json` and a dedicated `detection_reliability_report.pdf` is generated.
+
+> **Note:** Only models that implement `is_watermarked()` support this mode.
+> Each model defines its own detection logic — zero-bit models check the
+> binary output directly, while confidence-based models compare against a
+> threshold. If a model does not implement this method, a clear error is
+> raised at runtime.
 
 ### 5. Save Audio (Optional)
 
@@ -367,7 +373,21 @@ class NewModel(BaseModel):
     def detect(self, audio: np.ndarray, sampling_rate: int) -> np.ndarray:
         """Detects watermark from the audio."""
         return np.random.randint(0, 2, size=16)
+
+    def is_watermarked(self, detect_output) -> bool:
+        """Decide whether a watermark is present based on detect() output.
+
+        Required for --detection_reliability support. Each model defines
+        its own logic here. Examples:
+          - Zero-bit model: return bool(detect_output)
+          - Confidence model: return confidence >= threshold
+        """
+        return bool(np.any(detect_output))
 ```
+
+> **`is_watermarked()` is optional** — only needed if you want the model to
+> support `--detection_reliability`. Models without it work normally in the
+> standard benchmark mode.
 
 3.	Add config.json
 ```json
