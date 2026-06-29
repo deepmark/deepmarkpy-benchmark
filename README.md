@@ -1,4 +1,4 @@
-# DeepMarkPy Benchmark
+# DeepMark Benchmark
 
 DeepMark Benchmark is a modular and scalable Python platform for evaluating the robustness of audio watermarking systems. It enables testing against various attacks, including both simple signal manipulations and advanced AI-based disruptions, using a containerized architecture for consistency and ease of use.
 
@@ -25,7 +25,7 @@ This benchmark uses a client-server architecture. Core watermarking models and c
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/deepmarkpy/deepmarkpy-benchmark.git
+git clone https://github.com/deepmark/deepmarkpy-benchmark.git
 cd deepmarkpy-benchmark
 ```
 
@@ -231,7 +231,57 @@ If NISQA is not installed or the weights file is missing, the metric is silently
 > instructions at https://github.com/google/visqol and install the
 > resulting Python package into the same environment.
 
-### 4. View Results
+### 4. Detection Reliability (Optional)
+
+Use `--detection_reliability` to measure false positive and false negative rates. This mode supports a **single model** per run and requires the model to implement `is_watermarked()` (see [Adding a New Watermarking Model](#adding-a-new-watermarking-model)).
+
+```bash
+python src/run.py --wav_files_dir /path/to/audio \
+                  --wm_model PerthModel \
+                  --detection_reliability
+```
+
+Without attacks the mode measures:
+- **False positive**: detection on clean (unwatermarked) audio reports a watermark present.
+- **False negative**: detection on watermarked audio fails to find the watermark.
+
+When combined with `--attack_types` or `--attack_groups`, FP/FN are additionally reported per attack (attack applied to clean audio for FP, attack applied to watermarked audio for FN).
+
+```bash
+python src/run.py --wav_files_dir /path/to/audio \
+                  --wm_model AudioSealModel \
+                  --detection_reliability \
+                  --attack_types GaussianNoiseAttack LowpassFilterAttack
+```
+
+Results are saved to `report/detection_reliability.json` and a dedicated `detection_reliability_report.pdf` is generated.
+
+> **Note:** Only models that implement `is_watermarked()` support this mode.
+> Each model defines its own detection logic — zero-bit models check the
+> binary output directly, while confidence-based models compare against a
+> threshold. If a model does not implement this method, a clear error is
+> raised at runtime.
+
+### 5. Save Audio (Optional)
+
+Use `--save_audio` to write intermediate audio files to disk for manual inspection. Files are saved to `<report_dir>/audio/`.
+
+```bash
+python src/run.py --wav_files_dir /path/to/audio \
+                  --wm_model AudioSealModel \
+                  --detection_reliability \
+                  --attack_types GaussianNoiseAttack \
+                  --save_audio
+```
+
+In detection reliability mode the following files are saved per input file:
+- `{filename}_watermarked.wav` — watermarked audio (before any attack)
+- `{filename}_{AttackName}_clean.wav` — attack applied to the clean (unwatermarked) audio
+- `{filename}_{AttackName}.wav` — attack applied to the watermarked audio
+
+In the standard benchmark mode, watermarked and attacked-watermarked files are saved.
+
+### 6. View Results
 
 The benchmark generates the following outputs in the `report/` directory:
 
@@ -323,7 +373,21 @@ class NewModel(BaseModel):
     def detect(self, audio: np.ndarray, sampling_rate: int) -> np.ndarray:
         """Detects watermark from the audio."""
         return np.random.randint(0, 2, size=16)
+
+    def is_watermarked(self, detect_output) -> bool:
+        """Decide whether a watermark is present based on detect() output.
+
+        Required for --detection_reliability support. Each model defines
+        its own logic here. Examples:
+          - Zero-bit model: return bool(detect_output)
+          - Confidence model: return confidence >= threshold
+        """
+        return bool(np.any(detect_output))
 ```
+
+> **`is_watermarked()` is optional** — only needed if you want the model to
+> support `--detection_reliability`. Models without it work normally in the
+> standard benchmark mode.
 
 3.	Add config.json
 ```json
@@ -365,9 +429,9 @@ If you use DeepMark Benchmark in your research, please cite our paper:
   journal={IEEE Access}, 
   title={DeepMark Benchmark: Redefining Audio Watermarking Robustness}, 
   year={2026},
-  volume={},
+  volume={14},
   number={},
-  pages={1-1},
+  pages={62031-62044},
   keywords={Digital audio players;Digital audio broadcasting;Radio broadcasting;Frequency modulation;Filtering;Filters;Equalizers;Low-pass filters;Notch filters;Circuits and systems;Audio watermarking;benchmarking;deep learning;generative AI;robustness evaluation;watermark removal},
   doi={10.1109/ACCESS.2026.3685903}}
 ```

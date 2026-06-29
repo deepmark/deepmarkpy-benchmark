@@ -5,5 +5,6 @@
     "sampling_rate": 16000,
     "watermark_size": 16,
     "returns_confidence": true,
-    "is_zero_bit": false
+    "is_zero_bit": false,
+    "detection_threshold": 0.5
 }
