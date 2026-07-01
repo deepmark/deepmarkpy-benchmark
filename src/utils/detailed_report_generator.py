@@ -104,6 +104,7 @@ AUDIO_EDITING_SUBGROUPS = {
             "EncodecAttack",
             "DescriptAudioCodecAttack",
             "OpusCodecAttack",
+            "Codec2VocoderAttack",
             "ResamplingPolyAttack",
         ],
         "quality_metrics": ["pesq", "psnr", "mcd", "visqol"],
@@ -433,10 +434,11 @@ class DetailedReportGenerator:
 
         # Sub-sections
         for sub_key, sub_info in AUDIO_EDITING_SUBGROUPS.items():
-            sub_attacks = [
-                a for a in sub_info["attacks"]
-                if a in aggregated["attacks"]
-            ]
+            sub_attacks = []
+            for base_name in sub_info["attacks"]:
+                for result_name in aggregated["attacks"]:
+                    if result_name == base_name or result_name.startswith(base_name + "_"):
+                        sub_attacks.append(result_name)
             if not sub_attacks:
                 continue
 

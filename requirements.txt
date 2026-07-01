@@ -75,3 +75,4 @@ visqol-python==3.4.0
 encodec==0.1.1
 descript-audio-codec==1.0.0
 audiocomplib==0.2.0
+pycodec2>=4.0.0

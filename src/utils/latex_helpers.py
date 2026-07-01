@@ -86,6 +86,7 @@ def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str
     ``L P C``.
     """
     stripped = attack_name.replace("Attack", "").strip()
+    stripped = stripped.replace("_", "\\_")
     if not split_camel_case:
         return stripped
 
