@@ -147,7 +147,7 @@ covers. Groups can be combined with `--attack_types` to add individual attacks.
 | Tag | Attacks |
 |-----|---------|
 | `process_disruption` | `CrossModelAttack`, `CollusionAttack`, `ZeroBitCollusionAttack`, `Collusion2Attack`, `SameModelAttack` |
-| `audio_editing` | `CutSamplesAttack`, `CropBeginningAttack`, `CropRandomAttack`, `WaveletAttack`, `LowpassFilterAttack`, `HighpassFilterAttack`, `BandstopFilterAttack`, `SmoothingAttack`, `ChorusAttack`, `FlangerAttack`, `EchoAttack`, `EqualizerAttack`, `QuantizationAttack`, `STFTQuantizationAttack`, `PCMQuantizationAttack`, `Mp3CompressionAttack`, `EncodecAttack`, `DescriptAudioCodecAttack`, `OpusCodecAttack`, `ResamplingPolyAttack`, `MixingAttack` |
+| `audio_editing` | `CutSamplesAttack`, `CropBeginningAttack`, `CropRandomAttack`, `WaveletAttack`, `LowpassFilterAttack`, `HighpassFilterAttack`, `BandstopFilterAttack`, `SmoothingAttack`, `ChorusAttack`, `FlangerAttack`, `EchoAttack`, `EqualizerAttack`, `QuantizationAttack`, `STFTQuantizationAttack`, `PCMQuantizationAttack`, `Mp3CompressionAttack`, `EncodecAttack`, `DescriptAudioCodecAttack`, `OpusCodecAttack`, `Codec2VocoderAttack`, `ResamplingPolyAttack`, `MixingAttack` |
 | `audio_distortion` | `GaussianNoiseAttack`, `PinkNoiseAttack`, `SignInversionAttack`, `LPCAttack` |
 | `desynchronization` | `TimeStretchAttack`, `PitchShiftAttack`, `InvertedTimeStretchAttack`, `ZeroCrossInsertsAttack`, `FlipSamplesAttack`, `ReplacementAttack`, `Replacement2Attack` |
 | `ai_attacks` | `SpeechEnhancement1Attack`, `SpeechEnhancement2Attack`, `SpeechTokenizationAttack`, `NeuralVocoderAttack`, `DiffusionAttack` |
@@ -156,6 +156,28 @@ covers. Groups can be combined with `--attack_types` to add individual attacks.
 Attacks not listed in any group fall under "Other Attacks" in the detailed
 report. The canonical mapping lives in `src/utils/attack_groups.py` — update it
 there when adding a new attack so the reports pick the right metrics for it.
+
+**Codec2 Vocoder Attack:**
+
+`Codec2VocoderAttack` simulates transmission through a low-bitrate voice channel
+(similar to MELP/MELPe military vocoders). It encodes audio at a given bitrate
+using the Codec2 codec and decodes it back to PCM. The `bitrate_codec2` parameter
+in `config.json` accepts either a single value or a list of bitrates:
+
+```json
+{"bitrate_codec2": [700, 1200, 2400]}
+```
+
+When a list is provided, the benchmark automatically expands it into separate
+runs — one per bitrate — and reports results as `Codec2VocoderAttack_700`,
+`Codec2VocoderAttack_1200`, etc. Supported bitrates: 700, 1200, 1300, 1400,
+1600, 2400, 3200 bps. Unsupported values are skipped with a warning.
+
+> **Attack naming convention:** Attack class names must not contain underscores.
+> The benchmark uses underscores as a separator between the base attack name and
+> a parameter suffix (e.g. `Codec2VocoderAttack_700`). If an attack name contains
+> an underscore, the group lookup will incorrectly treat the part after the last
+> underscore as a suffix.
 
 ### 3. Quality Metrics (Optional)
 
