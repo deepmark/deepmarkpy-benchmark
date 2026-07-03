@@ -48,6 +48,7 @@ ATTACK_GROUPS = {
             "EncodecAttack",
             "DescriptAudioCodecAttack",
             "OpusCodecAttack",
+            "Codec2VocoderAttack",
             "ResamplingPolyAttack",
             "MixingAttack",
         ],
@@ -149,10 +150,20 @@ def get_attacks_for_groups(group_names):
 
 
 def get_group_for_attack(attack_name):
-    """Return the group key for a given attack name, or None."""
+    """Return the group key for a given attack name, or None.
+
+    Handles expanded names like Codec2VocoderAttack_700 by stripping
+    the trailing _<number> suffix when no exact match is found.
+    """
     for group_key, group in ATTACK_GROUPS.items():
         if attack_name in group["attacks"]:
             return group_key
+    # Try stripping bitrate suffix (e.g. Codec2VocoderAttack_700 -> Codec2VocoderAttack)
+    base_name = "_".join(attack_name.rsplit("_", 1)[:-1]) if "_" in attack_name else None
+    if base_name:
+        for group_key, group in ATTACK_GROUPS.items():
+            if base_name in group["attacks"]:
+                return group_key
     return None
 
 

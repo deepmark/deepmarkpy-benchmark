@@ -235,6 +235,35 @@ class Benchmark:
 
         # If user doesn't specify attacks, use them all
         attack_types = attack_types or list(self.attacks.keys())
+
+        # Expand attacks whose config has a bitrate list into separate entries.
+        # E.g. Codec2VocoderAttack with bitrate_codec2=[700,1300,2400] becomes
+        # three entries: Codec2VocoderAttack_700, Codec2VocoderAttack_1300, ...
+        expanded_attacks = []
+        for atk_name in attack_types:
+            if atk_name not in self.attacks:
+                expanded_attacks.append((atk_name, atk_name, {}))
+                continue
+            config = self.attacks[atk_name].get("config") or {}
+            bitrate_key = next(
+                (k for k in config if k == "bitrate_codec2" and isinstance(config[k], list)),
+                None,
+            )
+            if bitrate_key:
+                _CODEC2_SUPPORTED = {700, 1200, 1300, 1400, 1600, 2400, 3200}
+                for val in config[bitrate_key]:
+                    if val not in _CODEC2_SUPPORTED:
+                        logger.warning(
+                            f"Skipping unsupported Codec2 bitrate: {val}. "
+                            f"Supported: {sorted(_CODEC2_SUPPORTED)}"
+                        )
+                        continue
+                    expanded_attacks.append(
+                        (atk_name, f"{atk_name}_{val}", {bitrate_key: val})
+                    )
+            else:
+                expanded_attacks.append((atk_name, atk_name, {}))
+
         results = {}
 
         if wm_model not in self.models:
@@ -329,17 +358,21 @@ class Benchmark:
             )
 
             # Apply each attack and compute metrics
-            for attack_name in attack_types:
-                if attack_name not in self.attacks:
-                    logger.warning(f"Attack '{attack_name}' not found. Skipping.")
+            for attack_class_name, attack_display_name, attack_overrides in expanded_attacks:
+                if attack_class_name not in self.attacks:
+                    logger.warning(f"Attack '{attack_class_name}' not found. Skipping.")
                     continue
 
                 if verbose:
-                    logger.info(f"  Applying attack: {attack_name}")
+                    logger.info(f"  Applying attack: {attack_display_name}")
 
-                attack_instance = self.attacks[attack_name]["class"]()
+                attack_instance = self.attacks[attack_class_name]["class"]()
+                attack_name = attack_display_name
 
-                if (attack_name =="CrossModelAttack"):
+                # Merge bitrate overrides into kwargs for this attack
+                current_attack_kwargs = {**attack_kwargs, **attack_overrides}
+
+                if (attack_class_name == "CrossModelAttack"):
 
                     different_model_name = kwargs.get("different_model_name_cross_model")
                     logger.info(f"Different model is chosen and it's {different_model_name}")
@@ -347,21 +380,21 @@ class Benchmark:
                     different_model_instance = different_model_cls()
 
                     attacked_audio, different_watermark = attack_instance.apply(
-                        watermarked_audio, **attack_kwargs
+                        watermarked_audio, **current_attack_kwargs
                     )
 
                 #in case of the collusion mod attack
-                elif (attack_name == "ZeroBitCollusionAttack"):
+                elif (attack_class_name == "ZeroBitCollusionAttack"):
 
-                    attack_kwargs["original_audio_collusion"] = audio
+                    current_attack_kwargs["original_audio_collusion"] = audio
 
                     attacked_audio = attack_instance.apply(
-                        watermarked_audio, **attack_kwargs
+                        watermarked_audio, **current_attack_kwargs
                     )
 
                 else:
                     attacked_audio = attack_instance.apply(
-                        watermarked_audio, **attack_kwargs
+                        watermarked_audio, **current_attack_kwargs
                     )
 
                 # Ensure consistent shape for all attacks
