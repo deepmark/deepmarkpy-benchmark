@@ -1,9 +1,11 @@
 """Tests for src/utils/attack_groups.py."""
 
+import re
+from pathlib import Path
+
 import pytest
 
-from plugin_manager import PluginManager
-from utils.attack_groups import (
+from deepmarkpy.utils.attack_groups import (
     ATTACK_GROUPS,
     get_attacks_for_groups,
     get_group_for_attack,
@@ -17,7 +19,17 @@ class TestGroupedAttacksMatchPlugins:
 
     @pytest.fixture(autouse=True)
     def _discover(self):
-        self.available = set(PluginManager().get_attacks().keys())
+        attacks_dir = (
+            Path(__file__).parents[1]
+            / "src"
+            / "deepmarkpy"
+            / "plugins"
+            / "attacks"
+        )
+        self.available = set()
+        for attack_py in attacks_dir.glob("*/attack.py"):
+            source = attack_py.read_text()
+            self.available.update(re.findall(r"class\s+(\w+Attack)\(", source))
 
     def test_all_grouped_attacks_exist(self):
         for group_key, group in ATTACK_GROUPS.items():
@@ -76,5 +88,5 @@ class TestGetMetricsForAttack:
         assert "nisqa_mos" in metrics
 
     def test_unknown_attack_returns_all_metrics(self):
-        from utils.metrics import ALL_METRICS
+        from deepmarkpy.utils.metrics import ALL_METRICS
         assert set(get_metrics_for_attack("FakeAttack")) == set(ALL_METRICS)

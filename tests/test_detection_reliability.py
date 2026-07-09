@@ -3,11 +3,11 @@
 import numpy as np
 import pytest
 
-from utils.detection_reliability import (
+from deepmarkpy.utils.detection_reliability import (
     _detect,
     run_detection_reliability,
 )
-from utils.detection_reliability_report_generator import (
+from deepmarkpy.utils.detection_reliability_report_generator import (
     _format_count,
     _format_metric,
     _format_pct,

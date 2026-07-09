@@ -1,0 +1,7 @@
+{
+    "start_delays": [0.02,0.06,0.14],
+    "w_delays": [0.03,0.03,0.03],
+    "delay_rates": [2,1.2,1.2],
+    "dry_gain": 1,
+    "chorus_gains": [0.05,0.05,0.05]
+}

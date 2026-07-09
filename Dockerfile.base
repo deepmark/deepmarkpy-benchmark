@@ -23,8 +23,8 @@ RUN pip install --no-cache-dir \
 # Set up working directory
 WORKDIR /app
 
-# Copy shared utilities (this appears in all your dockerfiles)
-COPY src/utils ./utils
+# Copy the installable package source for service containers.
+COPY src/deepmarkpy /app/deepmarkpy
 
 # Set up Python path
 ENV PYTHONPATH=/app:$PYTHONPATH

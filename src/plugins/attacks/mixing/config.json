@@ -1,8 +1,0 @@
-{
-    "music_folder_mixing": "music",
-    "music_volume_high_mixing": 0.3,
-    "music_volume_low_mixing": 0.1,
-    "smoothing_window_mixing": 0.5,
-    "eq_gains_mixing": [-10, -5, 5, 4, -1, -10, 1, 2, 2, -10],
-    "highpass_cutoff_mixing": 50
-}

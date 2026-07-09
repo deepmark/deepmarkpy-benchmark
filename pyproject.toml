@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepmarkpy"
+dynamic = ["version"]
+description = "DeepMark audio watermark benchmark and attack plugin framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "DeepMark" }
+]
+dependencies = [
+  "numpy>=2.0",
+  "scipy>=1.11",
+  "soundfile>=0.12",
+  "librosa>=0.11",
+  "numba>=0.61",
+  "requests>=2.31",
+  "matplotlib>=3.8",
+  "tqdm>=4.66",
+  "PyWavelets>=1.6",
+]
+
+[project.optional-dependencies]
+metrics = [
+  "pesq>=0.0.4",
+  "pystoi>=0.4.1",
+  "visqol-python>=3.4.0",
+]
+native = [
+  "pyrubberband>=0.4",
+  "audiocomplib>=0.2.0",
+  "pycodec2>=4.0.0",
+]
+torch = [
+  "torch>=2.7",
+  "torchaudio>=2.7",
+  "transformers>=4.53",
+]
+encodec = [
+  "deepmarkpy[torch]",
+  "encodec>=0.1.1",
+]
+dac = [
+  "deepmarkpy[torch]",
+  "descript-audio-codec>=1.0.0",
+]
+speech = [
+  "deepmarkpy[torch,server]",
+  "speechbrain>=1.0",
+  "accelerate>=1.1",
+  "datasets>=3.0",
+  "sentencepiece>=0.2",
+]
+models = [
+  "deepmarkpy[torch]",
+  "resemble-perth>=1.0.1",
+]
+server = [
+  "fastapi>=0.115",
+  "uvicorn>=0.35",
+  "pydantic>=2.11",
+]
+dev = [
+  "deepmarkpy[metrics,native,server]",
+  "pytest>=8",
+]
+all = [
+  "deepmarkpy[dev,encodec,dac,speech,models]",
+]
+
+[project.scripts]
+deepmark-benchmark = "deepmarkpy.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "deepmarkpy.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+deepmarkpy = ["**/*.json"]

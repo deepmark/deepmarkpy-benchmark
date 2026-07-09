@@ -1,0 +1,17 @@
+{
+    "bitrate_bps": 24000,
+    "frame_duration_ms": 20,
+    "delay_ms": 50,
+    "jitter_ms": 10,
+    "packet_loss": 5,
+    "duplication": 0,
+    "reorder": 0,
+    "corruption": 0,
+    "fec_enabled": true,
+    "expected_loss": 5,
+    "ns_enabled": false,
+    "vad_enabled": true,
+    "agc_enabled": true,
+    "agc_target_lufs": -18,
+    "playout_delay_ms": 60
+}

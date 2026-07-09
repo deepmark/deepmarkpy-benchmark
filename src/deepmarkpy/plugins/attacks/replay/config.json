@@ -1,0 +1,10 @@
+{
+    "air_folder": "AIR_wav_files",
+    "air_sampling_rate": 48000,
+    "bandpass": true,
+    "low_freq": 50,
+    "high_freq": 8000,
+    "filter_order": 4,
+    "add_noise": true,
+    "snr_db": 50
+}

@@ -1,4 +1,0 @@
-{
-    "_comment": "Supported bitrates: 700, 1200, 1300, 1400, 1600, 2400, 3200. Single value or list.",
-    "bitrate_codec2": [700,1200,2400]
-}

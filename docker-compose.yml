@@ -2,7 +2,7 @@ services:
   audioseal:
     build:
       context: .
-      dockerfile: src/plugins/models/audio_seal/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/models/audio_seal/Dockerfile
     ports:
       - "${AUDIOSEAL_PORT}:${AUDIOSEAL_PORT}" # Reads from .env
     environment:
@@ -11,7 +11,7 @@ services:
   silentcipher:
     build:
       context: .
-      dockerfile: src/plugins/models/silent_cipher/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/models/silent_cipher/Dockerfile
     ports:
       - "${SILENTCIPHER_PORT}:${SILENTCIPHER_PORT}"
     environment:
@@ -20,7 +20,7 @@ services:
   wavmark:
     build:
       context: .
-      dockerfile: src/plugins/models/wavmark/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/models/wavmark/Dockerfile
     ports:
       - "${WAVMARK_PORT}:${WAVMARK_PORT}"
     environment:
@@ -29,7 +29,7 @@ services:
   aware:
     build:
       context: .
-      dockerfile: src/plugins/models/aware/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/models/aware/Dockerfile
     ports:
       - "${AWARE_PORT}:${AWARE_PORT}"
     environment:
@@ -38,7 +38,7 @@ services:
   vae:
     build:
       context: .
-      dockerfile: src/plugins/attacks/vae/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/attacks/vae/Dockerfile
     ports:
       - "${VAE_PORT}:${VAE_PORT}"
     environment:
@@ -47,7 +47,7 @@ services:
   diffusion:
     build:
       context: .
-      dockerfile: src/plugins/attacks/diffusion/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/attacks/diffusion/Dockerfile
     ports:
       - "${DIFFUSION_PORT}:${DIFFUSION_PORT}"
     environment:
@@ -56,7 +56,7 @@ services:
   speech_tokenization:
     build:
       context: .
-      dockerfile: src/plugins/attacks/speech_tokenization/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/attacks/speech_tokenization/Dockerfile
     ports:
       - "${SPEECH_TOKENIZATION_PORT}:${SPEECH_TOKENIZATION_PORT}"
     environment:
@@ -65,7 +65,7 @@ services:
   neural_vocoder:
     build:
       context: .
-      dockerfile: src/plugins/attacks/neural_vocoder/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/attacks/neural_vocoder/Dockerfile
     ports:
       - "${NEURAL_VOCODER_PORT}:${NEURAL_VOCODER_PORT}"
     environment:
@@ -74,7 +74,7 @@ services:
   speech_enhancement1:
     build:
       context: .
-      dockerfile: src/plugins/attacks/speech_enhancement_1/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/attacks/speech_enhancement_1/Dockerfile
     ports:
       - "${SPEECH_ENHANCEMENT_PORT1}:${SPEECH_ENHANCEMENT_PORT1}"
     environment:
@@ -83,7 +83,7 @@ services:
   speech_enhancement2:
     build:
       context: .
-      dockerfile: src/plugins/attacks/speech_enhancement_2/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/attacks/speech_enhancement_2/Dockerfile
     ports:
       - "${SPEECH_ENHANCEMENT_PORT2}:${SPEECH_ENHANCEMENT_PORT2}"
     environment:
@@ -94,7 +94,7 @@ services:
   timbrewm:
     build:
       context: .
-      dockerfile: src/plugins/models/timbrewm/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/models/timbrewm/Dockerfile
     ports:
       - "${TIMBREWM_PORT}:${TIMBREWM_PORT}"
     environment:
@@ -103,7 +103,7 @@ services:
   perth:
     build:
       context: .
-      dockerfile: src/plugins/models/perth/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/models/perth/Dockerfile
     ports:
       - "${PERTH_PORT}:${PERTH_PORT}"
     environment:
@@ -112,7 +112,7 @@ services:
   network_transmission:
     build:
       context: .
-      dockerfile: src/plugins/attacks/network_transmission/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/attacks/network_transmission/Dockerfile
     ports:
       - "${NETWORK_TRANSMISSION_PORT}:${NETWORK_TRANSMISSION_PORT}"
     environment:
@@ -123,7 +123,7 @@ services:
   opus_codec:
     build:
       context: .
-      dockerfile: src/plugins/attacks/opus_codec/Dockerfile
+      dockerfile: src/deepmarkpy/plugins/attacks/opus_codec/Dockerfile
     ports:
       - "${OPUS_CODEC_PORT}:${OPUS_CODEC_PORT}"
     environment:
