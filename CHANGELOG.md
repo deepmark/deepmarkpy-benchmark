@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.1.0 - 2026-07-17
+
+- Replaced the HTTP proxy implementations for VAE, diffusion, speech tokenization,
+  neural vocoder, and both speech-enhancement attacks with direct, lazily loaded
+  packaged implementations suitable for in-process and SageMaker execution.
+- Added per-attack optional dependency groups for the packaged AI attacks.
+- Split the core PyTorch runtime from the optional modern Transformers stack so
+  XCodec2 can retain its older, image-specific Transformers dependency.
+- Broadened the torch runtime range to include XCodec2's tested torch 2.4 line;
+  standard attack images continue to preinstall torch 2.7.1 in the base layer.
+- Kept XCodec2 as an image-specific no-dependencies install because its pinned
+  Transformers requirement conflicts with the shared torch dependency group.
+- Kept ClearVoice image-specific because its NumPy `<2.0` constraint conflicts
+  with newer NumPy releases; broadened the core NumPy range so the Python 3.11
+  ClearVoice image and NumPy 2.x consumers are both supported.
+- Preserved the existing canonical parameter contract and legacy aliases.
+
 ## v1.0.0 - 2026-07-09
 
 - Canonicalized attack parameter configs to use clean attack-local names.

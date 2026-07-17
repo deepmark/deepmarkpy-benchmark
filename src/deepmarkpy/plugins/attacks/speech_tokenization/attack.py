@@ -1,49 +1,42 @@
 import logging
-import os
 
 import numpy as np
-import requests
 
 from deepmarkpy.core.base_attack import BaseAttack
 
+
 logger = logging.getLogger(__name__)
 
+
 class SpeechTokenizationAttack(BaseAttack):
+    """Round-trip speech through XCodec2 discrete tokens."""
+
+    _cache: dict[str, object] = {}
+
     def __init__(self):
         super().__init__()
+        import torch
 
-        host = "localhost" # Client always connects to localhost
-        # Read the specific port variable for this attack service
-        port = os.getenv("SPEECH_TOKENIZATION_PORT", "10003") # Default specific to SpeechTokenization
-        if not port:
-             logging.error("SPEECH_TOKENIZATION_PORT environment variable not set.")
-             raise ValueError("SPEECH_TOKENIZATION_PORT must be set for SpeechTokenizationAttack")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.endpoint = f"http://{host}:{port}"
-        logging.info(f"SpeechTokenizationAttack initialized. Target API: {self.endpoint}")
+    def _load_model(self, model_name: str):
+        model = self._cache.get(model_name)
+        if model is None:
+            from deepmarkpy.plugins.attacks.speech_tokenization.xcodec import XCodec
+
+            logger.info("Loading speech-tokenization model %s", model_name)
+            model = XCodec(model_name, self.device)
+            self._cache[model_name] = model
+        return model
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
-        sampling_rate = kwargs.get("sampling_rate", 16000)
-        logger.info(f"[SpeechTokenization] Using sampling_rate={sampling_rate}")
+        sampling_rate = kwargs.get("sampling_rate")
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
 
-        try:
-            response = requests.post(
-                self.endpoint + "/attack",
-                json={"audio": audio.tolist(), "sampling_rate": sampling_rate},
-                timeout=600,
-            )
-            response.raise_for_status()
-            response_data = response.json()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"SpeechTokenizationAttack request failed: {e}")
-            raise
-        
-        if "audio" not in response_data:
-             logger.error("'/apply' response does not contain 'audio' key.")
-             raise KeyError("Missing 'audio' in response from /apply")
-        result = np.array(response_data["audio"])
-        logger.info(f"[SpeechTokenization] Output length={len(result)}, sampling_rate={sampling_rate}")
-        return result
-
+        model_name = str(kwargs.get("model_name", self.config.get("model_name")))
+        result = self._load_model(model_name).inference(
+            np.asarray(audio, dtype=np.float32),
+            int(sampling_rate),
+        )
+        return np.asarray(result, dtype=np.float32)

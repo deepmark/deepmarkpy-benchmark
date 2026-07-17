@@ -2,7 +2,7 @@ import os
 import sys
 
 import torch
-from app_utils.utils import resample_audio
+from deepmarkpy.utils.utils import resample_audio
 
 sys.path.append("BigVGAN")
 

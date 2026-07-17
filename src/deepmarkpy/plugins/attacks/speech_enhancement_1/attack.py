@@ -1,45 +1,40 @@
 import logging
-import os
 
 import numpy as np
-import requests
 
 from deepmarkpy.core.base_attack import BaseAttack
 
+
 logger = logging.getLogger(__name__)
 
+
 class SpeechEnhancement1Attack(BaseAttack):
-    def __init__(self):
-        super().__init__()
+    """Enhance noisy speech with a SpeechBrain model."""
 
-        host = "localhost" # Client always connects to localhost
-        # Read the specific port variable for this attack service
-        port = os.getenv("SPEECH_ENHANCEMENT_PORT1", "10005") # Default specific to VAE
-        if not port:
-             logger.error("SPEECH_ENHANCEMENT_PORT1 environment variable not set.")
-             raise ValueError("SPEECH_ENHANCEMENT_PORT1 must be set for SpeechEnhancement1Attack")
+    _cache: dict[str, object] = {}
 
-        self.endpoint = f"http://{host}:{port}"
-        logger.info(f"SpeechEnhancement1Attack initialized. Target API: {self.endpoint}")
+    def _load_model(self, enhancement_type: str):
+        model = self._cache.get(enhancement_type)
+        if model is None:
+            from deepmarkpy.plugins.attacks.speech_enhancement_1.speech_brain import SpeechBrain
+
+            logger.info("Loading SpeechBrain enhancement model type=%s", enhancement_type)
+            model = SpeechBrain(enhancement_type)
+            self._cache[enhancement_type] = model
+        return model
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
-        sampling_rate = kwargs.get("sampling_rate", 16000)
-        noise_strength = kwargs.get("noise_strength", self.config.get("noise_strength"))
+        sampling_rate = kwargs.get("sampling_rate")
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
 
-        response = requests.post(
-            self.endpoint + "/attack",
-            json={
-                "audio": audio.tolist(),
-                "sampling_rate": sampling_rate,
-                "noise_strength": noise_strength,
-            },
+        enhancement_type = str(kwargs.get("type", self.config.get("type", "waveform")))
+        noise_strength = float(
+            kwargs.get("noise_strength", self.config.get("noise_strength", 0.0))
         )
-        response_data = response.json()
-        
-        if "audio" not in response_data:
-             logger.error("'/apply' response does not contain 'audio' key.")
-             raise KeyError("Missing 'audio' in response from /apply")
-        result = np.array(response_data["audio"])
-        return result
+        result = self._load_model(enhancement_type).inference(
+            np.asarray(audio, dtype=np.float32),
+            int(sampling_rate),
+            noise_strength,
+        )
+        return np.asarray(result, dtype=np.float32)

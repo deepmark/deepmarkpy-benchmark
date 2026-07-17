@@ -14,11 +14,11 @@ authors = [
   { name = "DeepMark" }
 ]
 dependencies = [
-  "numpy>=2.0",
+  "numpy>=1.24.3,<3",
   "scipy>=1.11",
   "soundfile>=0.12",
-  "librosa>=0.11",
-  "numba>=0.61",
+  "librosa>=0.10.2.post1,<0.12",
+  "numba>=0.60,<1",
   "requests>=2.31",
   "matplotlib>=3.8",
   "tqdm>=4.66",
@@ -36,23 +36,45 @@ native = [
   "audiocomplib>=0.2.0",
   "pycodec2>=4.0.0",
 ]
+torch-core = [
+  "torch>=2.4",
+  "torchaudio>=2.4",
+]
 torch = [
-  "torch>=2.7",
-  "torchaudio>=2.7",
+  "deepmarkpy[torch-core]",
   "transformers>=4.53",
 ]
 encodec = [
-  "deepmarkpy[torch]",
+  "deepmarkpy[torch-core]",
   "encodec>=0.1.1",
 ]
 dac = [
-  "deepmarkpy[torch]",
+  "deepmarkpy[torch-core]",
   "descript-audio-codec>=1.0.0",
 ]
-speech = [
-  "deepmarkpy[torch,server]",
-  "speechbrain>=1.0",
+vae = [
+  "deepmarkpy[torch-core]",
+  "huggingface-hub>=0.23",
+]
+diffusion = [
+  "deepmarkpy[torch-core]",
+  "diffusers>=0.34",
   "accelerate>=1.1",
+]
+speech-tokenization = [
+  "deepmarkpy[torch-core]",
+]
+neural-vocoder = [
+  "deepmarkpy[torch-core]",
+]
+speech-enhancement-1 = [
+  "deepmarkpy[torch-core]",
+  "speechbrain>=1.0",
+]
+speech-enhancement-2 = [
+]
+speech = [
+  "deepmarkpy[speech-tokenization,speech-enhancement-1,speech-enhancement-2,server]",
   "datasets>=3.0",
   "sentencepiece>=0.2",
 ]
@@ -70,7 +92,7 @@ dev = [
   "pytest>=8",
 ]
 all = [
-  "deepmarkpy[dev,encodec,dac,speech,models]",
+  "deepmarkpy[dev,encodec,dac,vae,diffusion,speech,neural-vocoder,models]",
 ]
 
 [project.scripts]
