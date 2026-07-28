@@ -51,10 +51,18 @@ class TestPluginDiscovery:
     def test_known_attacks_discovered(self):
         attacks = self.pm.get_attacks()
         expected = [
+            "DescriptAudioCodecAttack",
+            "DiffusionAttack",
+            "EncodecAttack",
             "GaussianNoiseAttack",
+            "NeuralVocoderAttack",
             "SignInversionAttack",
             "CropBeginningAttack",
             "SmoothingAttack",
+            "SpeechEnhancement1Attack",
+            "SpeechEnhancement2Attack",
+            "SpeechTokenizationAttack",
+            "VAEAttack",
         ]
         for name in expected:
             assert name in attacks, f"Expected attack '{name}' not discovered"

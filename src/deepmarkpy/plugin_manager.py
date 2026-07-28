@@ -95,7 +95,11 @@ class PluginManager:
 
                     # Inspect all classes defined in the module
                     for name, obj in inspect.getmembers(module, inspect.isclass):
-                        if issubclass(obj, base_class) and obj is not base_class:
+                        if (
+                            obj.__module__ == module.__name__
+                            and issubclass(obj, base_class)
+                            and obj is not base_class
+                        ):
                             entry = {"class": obj, "config": config_data}
                             if base_class is BaseAttack:
                                 entry["attack_key"] = os.path.basename(root)

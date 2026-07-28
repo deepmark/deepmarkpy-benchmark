@@ -38,7 +38,8 @@ services:
   vae:
     build:
       context: .
-      dockerfile: src/deepmarkpy/plugins/attacks/vae/Dockerfile
+      dockerfile: Dockerfile.ai-attacks
+      target: vae
     ports:
       - "${VAE_PORT}:${VAE_PORT}"
     environment:
@@ -47,16 +48,38 @@ services:
   diffusion:
     build:
       context: .
-      dockerfile: src/deepmarkpy/plugins/attacks/diffusion/Dockerfile
+      dockerfile: Dockerfile.ai-attacks
+      target: diffusion
     ports:
       - "${DIFFUSION_PORT}:${DIFFUSION_PORT}"
     environment:
       - APP_PORT=${DIFFUSION_PORT}
 
+  encodec:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai-attacks
+      target: encodec
+    ports:
+      - "${ENCODEC_PORT}:${ENCODEC_PORT}"
+    environment:
+      - APP_PORT=${ENCODEC_PORT}
+
+  descript_audio_codec:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai-attacks
+      target: descript-audio-codec
+    ports:
+      - "${DESCRIPT_AUDIO_CODEC_PORT}:${DESCRIPT_AUDIO_CODEC_PORT}"
+    environment:
+      - APP_PORT=${DESCRIPT_AUDIO_CODEC_PORT}
+
   speech_tokenization:
     build:
       context: .
-      dockerfile: src/deepmarkpy/plugins/attacks/speech_tokenization/Dockerfile
+      dockerfile: Dockerfile.ai-attacks
+      target: speech-tokenization
     ports:
       - "${SPEECH_TOKENIZATION_PORT}:${SPEECH_TOKENIZATION_PORT}"
     environment:
@@ -65,7 +88,8 @@ services:
   neural_vocoder:
     build:
       context: .
-      dockerfile: src/deepmarkpy/plugins/attacks/neural_vocoder/Dockerfile
+      dockerfile: Dockerfile.ai-attacks
+      target: neural-vocoder
     ports:
       - "${NEURAL_VOCODER_PORT}:${NEURAL_VOCODER_PORT}"
     environment:
@@ -74,7 +98,8 @@ services:
   speech_enhancement1:
     build:
       context: .
-      dockerfile: src/deepmarkpy/plugins/attacks/speech_enhancement_1/Dockerfile
+      dockerfile: Dockerfile.ai-attacks
+      target: speech-enhancement-1
     ports:
       - "${SPEECH_ENHANCEMENT_PORT1}:${SPEECH_ENHANCEMENT_PORT1}"
     environment:
@@ -83,7 +108,8 @@ services:
   speech_enhancement2:
     build:
       context: .
-      dockerfile: src/deepmarkpy/plugins/attacks/speech_enhancement_2/Dockerfile
+      dockerfile: Dockerfile.ai-attacks
+      target: speech-enhancement-2
     ports:
       - "${SPEECH_ENHANCEMENT_PORT2}:${SPEECH_ENHANCEMENT_PORT2}"
     environment:

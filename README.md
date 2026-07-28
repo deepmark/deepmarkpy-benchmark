@@ -12,7 +12,26 @@ DeepMark Benchmark is a modular and scalable Python platform for evaluating the 
 
 ## Architecture Overview
 
-This benchmark uses a client-server architecture. Core watermarking models and complex attacks (often AI-based) run as independent web services managed by Docker Compose. The installed CLI (`deepmark-benchmark`, implemented in `src/deepmarkpy/cli.py`) acts as a client, communicating with these services via HTTP requests over a Docker network to perform embedding, attacking, and detection. This isolates complex dependencies within containers.
+This benchmark uses a client-server architecture. Watermarking models and
+dependency-heavy attacks run as independent services managed by Docker Compose.
+The installed CLI (`deepmark-benchmark`) stays slim and calls those services
+over HTTP. Signal-processing attacks continue to run directly in the CLI
+process.
+
+Every AI attack image installs the same local `deepmarkpy` package and imports
+its packaged implementation. Containers contain no copied attack logic; they
+only provide an isolated dependency environment and the shared HTTP adapter.
+The isolated attacks are VAE, diffusion, Encodec, Descript Audio Codec,
+speech tokenization, neural vocoder, and both speech-enhancement attacks.
+
+XCodec2 and ClearVoice intentionally use separate Python environments from the
+modern Torch stack. Do not install several AI extras into the CLI environment;
+build and run the corresponding Compose services instead.
+
+The CLI connects to each attack on `localhost` and the port declared in `.env`.
+For services on another host, set `DEEPMARK_ATTACK_HOST` globally or set an
+attack-specific host variable such as `VAE_PORT_HOST`. The existing port
+variables can also be overridden in the CLI environment.
 
 ## Prerequisites
 
@@ -102,20 +121,23 @@ Some attacks require additional datasets to function:
 
 ### 1. Build and Start Services
 
-This command builds the Docker images for all containerized models/attacks (defined in `docker-compose.yml`) using the configuration from `.env` and starts them in the background. This step is **required** if you intend to use plugins like `audioseal`, `vae`, `diffusion`, etc.
+These commands build the shared model base, build all service images using the
+configuration from `.env`, and start them. This is required for plugins such as
+`audioseal`, `vae`, `diffusion`, and `encodec`.
 ```bash
 docker build -f Dockerfile.base -t ml-services-base:latest .
-docker-compose -f docker-compose.yml build
+docker compose build
+docker compose up -d
 ```
-You can check the status of the services using `docker-compose ps`. The first build might take some time.
+You can check the status of the services using `docker compose ps`. The first build might take some time.
 
 > **Tip:** You don't need to run all services at once. If you only need specific attacks or models, you can build and run them individually:
 > ```bash
-> docker-compose up -d audioseal diffusion  # Only start AudioSeal model and Diffusion attack
+> docker compose up --build -d audioseal diffusion
 > ```
 
 ### 2. Run the CLI
-Ensure the Docker services are running (`docker-compose up -d`) if you are using containerized plugins. Then, execute the main benchmark script from your activated virtual environment (if used) or directly:
+Ensure the Docker services are running (`docker compose up -d`) if you are using containerized plugins. Then, execute the main benchmark script from your activated virtual environment (if used) or directly:
 
 **Single model:**
 ```bash
@@ -372,13 +394,21 @@ class NewAttack(BaseAttack):
 > `--new_attack.threshold 0.5`. Existing suffixed flags are kept as deprecated
 > aliases where mappings exist.
 
-4.	Dockerizing (Optional)
+4.	Isolating an AI Attack
 
-    If your attack requires AI models:
-  - Add app.py for FastAPI service.
-  - Add port to the .env file.
-  - Write a Dockerfile to containerize it.
-  - Add it to docker-compose.yml.
+    If an attack requires an AI runtime:
+
+  - Put the numerical/model class in `implementation.py`.
+  - Make the discoverable class in `attack.py` inherit
+    `deepmarkpy.core.remote_attack.RemoteAttack`.
+  - Create `app.py` with
+    `deepmarkpy.server.attack_service.create_attack_app`.
+  - Add a complete optional dependency extra in `pyproject.toml`.
+  - Add an isolated target to `Dockerfile.ai-attacks`.
+  - Add its port to `.env` and its service to `docker-compose.yml`.
+
+  The container must install `deepmarkpy` with its attack extra. Do not copy
+  the implementation into a container-specific module.
 
 5.	Run the Benchmark
 ```bash 
@@ -439,11 +469,11 @@ deepmark-benchmark --wav_files_dir /path/to/audio --wm_model NewModel --attack_t
 
 To run AI-based plugins inside Docker:
 ```Shell
-docker-compose up --build -d
+docker compose up --build -d
 ```
 To stop:
 ```shell
-docker-compose down
+docker compose down
 ```
 
 ## Contributing

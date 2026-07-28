@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Restored isolated HTTP/Compose execution for all eight dependency-heavy AI
+  attacks while keeping their numerical and model implementations packaged in
+  `deepmarkpy`.
+- Added a shared remote attack client and a lazy FastAPI service adapter.
+- Replaced six per-folder AI Dockerfiles with isolated targets that install the
+  current package and validate each environment with `pip check`.
+- Added Compose services for Encodec and Descript Audio Codec.
+- Completed the XCodec2 and ClearVoice extras, bounded the modern Torch stack,
+  pinned the BigVGAN checkout, and removed aggregate extras that implied the
+  mutually incompatible AI runtimes could share one environment.
+- Preserved canonical attack parameters and legacy aliases across the HTTP
+  boundary.
+
 ## v1.1.0 - 2026-07-17
 
 - Replaced the HTTP proxy implementations for VAE, diffusion, speech tokenization,

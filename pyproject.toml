@@ -37,12 +37,12 @@ native = [
   "pycodec2>=4.0.0",
 ]
 torch-core = [
-  "torch>=2.4",
-  "torchaudio>=2.4",
+  "torch>=2.4,<2.8",
+  "torchaudio>=2.4,<2.8",
 ]
 torch = [
   "deepmarkpy[torch-core]",
-  "transformers>=4.53",
+  "transformers>=4.53,<5",
 ]
 encodec = [
   "deepmarkpy[torch-core]",
@@ -54,29 +54,36 @@ dac = [
 ]
 vae = [
   "deepmarkpy[torch-core]",
-  "huggingface-hub>=0.23",
+  "huggingface-hub>=0.23,<1",
 ]
 diffusion = [
   "deepmarkpy[torch-core]",
-  "diffusers>=0.34",
-  "accelerate>=1.1",
+  "diffusers>=0.34,<0.40",
+  "accelerate>=1.1,<2",
 ]
 speech-tokenization = [
-  "deepmarkpy[torch-core]",
+  "torch==2.4.1",
+  "torchaudio==2.4.1",
+  "transformers==4.45.2",
+  "xcodec2==0.1.3",
 ]
 neural-vocoder = [
   "deepmarkpy[torch-core]",
+  "auraloss>=0.4,<0.5",
+  "huggingface-hub>=0.23.4,<1",
+  "ninja>=1.11",
+  "nnAudio>=0.3.3,<0.4",
+  "tensorboard>=2.17,<3",
 ]
 speech-enhancement-1 = [
   "deepmarkpy[torch-core]",
-  "speechbrain>=1.0",
+  "speechbrain>=1.0,<2",
 ]
 speech-enhancement-2 = [
-]
-speech = [
-  "deepmarkpy[speech-tokenization,speech-enhancement-1,speech-enhancement-2,server]",
-  "datasets>=3.0",
-  "sentencepiece>=0.2",
+  "numpy>=1.24.3,<2",
+  "torch==2.7.1",
+  "torchaudio==2.7.1",
+  "clearvoice==0.1.2",
 ]
 models = [
   "deepmarkpy[torch]",
@@ -85,14 +92,11 @@ models = [
 server = [
   "fastapi>=0.115",
   "uvicorn>=0.35",
-  "pydantic>=2.11",
+  "pydantic>=2.9,<3",
 ]
 dev = [
   "deepmarkpy[metrics,native,server]",
   "pytest>=8",
-]
-all = [
-  "deepmarkpy[dev,encodec,dac,vae,diffusion,speech,neural-vocoder,models]",
 ]
 
 [project.scripts]
@@ -106,3 +110,21 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 deepmarkpy = ["**/*.json"]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "vae" },
+    { extra = "diffusion" },
+    { extra = "encodec" },
+    { extra = "dac" },
+    { extra = "speech-tokenization" },
+    { extra = "neural-vocoder" },
+    { extra = "speech-enhancement-1" },
+    { extra = "speech-enhancement-2" },
+    { extra = "torch" },
+    { extra = "models" },
+    { extra = "native" },
+    { extra = "dev" },
+  ],
+]

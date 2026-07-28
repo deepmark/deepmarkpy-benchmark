@@ -1,5 +1,0 @@
-pydantic
-fastapi
-uvicorn
-matplotlib
-huggingface_hub==0.24.7

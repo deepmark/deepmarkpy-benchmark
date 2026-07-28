@@ -15,7 +15,12 @@ The contract snapshot in `tests/data/attack_param_contract.json` is the interfac
 ```bash
 pip install -e ".[dev]"
 pytest tests -q
+docker compose config --quiet
 ```
+
+AI runtime dependencies are intentionally isolated. Resolve every image extra
+independently against its constraint file; do not validate them by combining
+extras into one environment.
 
 Before publishing a release, build and test the wheel, not only the editable install:
 

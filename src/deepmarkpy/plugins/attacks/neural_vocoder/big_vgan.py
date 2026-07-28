@@ -1,10 +1,17 @@
 import os
 import sys
+from pathlib import Path
 
 import torch
 from deepmarkpy.utils.utils import resample_audio
 
-sys.path.append("BigVGAN")
+bigvgan_path = Path(os.getenv("BIGVGAN_PATH", "/opt/deepmarkpy/BigVGAN"))
+if not bigvgan_path.is_dir():
+    raise RuntimeError(
+        f"BigVGAN checkout not found at {bigvgan_path}. "
+        "Run this attack through its Compose service."
+    )
+sys.path.insert(0, str(bigvgan_path))
 
 import bigvgan
 from meldataset import get_mel_spectrogram

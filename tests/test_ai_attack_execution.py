@@ -14,13 +14,13 @@ def _attack_without_init(cls, attack_key: str, config: dict):
 
 
 def test_vae_executes_in_process_and_rejects_short_audio(monkeypatch):
-    from deepmarkpy.plugins.attacks.vae.attack import VAEAttack
+    from deepmarkpy.plugins.attacks.vae.implementation import VAEImplementation
 
-    attack = _attack_without_init(VAEAttack, "vae", {"model_name": "test-model"})
+    attack = _attack_without_init(VAEImplementation, "vae", {"model_name": "test-model"})
     model = SimpleNamespace(inference=lambda audio: audio * 0.5)
     monkeypatch.setattr(attack, "_load_model", lambda model_name: model)
     monkeypatch.setattr(
-        "deepmarkpy.plugins.attacks.vae.attack.resample_audio",
+        "deepmarkpy.plugins.attacks.vae.implementation.resample_audio",
         lambda audio, _input_sr, _target_sr: audio,
     )
 
@@ -33,10 +33,12 @@ def test_vae_executes_in_process_and_rejects_short_audio(monkeypatch):
 
 
 def test_diffusion_uses_canonical_and_legacy_step_names(monkeypatch):
-    from deepmarkpy.plugins.attacks.diffusion.attack import DiffusionAttack
+    from deepmarkpy.plugins.attacks.diffusion.implementation import (
+        DiffusionImplementation,
+    )
 
     attack = _attack_without_init(
-        DiffusionAttack,
+        DiffusionImplementation,
         "diffusion",
         {"model_name": "test-model", "steps": 5},
     )
@@ -59,14 +61,14 @@ def test_diffusion_uses_canonical_and_legacy_step_names(monkeypatch):
     ("module_name", "class_name", "attack_key", "config"),
     [
         (
-            "deepmarkpy.plugins.attacks.speech_tokenization.attack",
-            "SpeechTokenizationAttack",
+            "deepmarkpy.plugins.attacks.speech_tokenization.implementation",
+            "SpeechTokenizationImplementation",
             "speech_tokenization",
             {"model_name": "test-tokenizer"},
         ),
         (
-            "deepmarkpy.plugins.attacks.neural_vocoder.attack",
-            "NeuralVocoderAttack",
+            "deepmarkpy.plugins.attacks.neural_vocoder.implementation",
+            "NeuralVocoderImplementation",
             "neural_vocoder",
             {"model_name": "test-vocoder"},
         ),
@@ -91,12 +93,12 @@ def test_model_reconstruction_attacks_execute_in_process(
 
 
 def test_speech_enhancement_1_forwards_runtime_parameters(monkeypatch):
-    from deepmarkpy.plugins.attacks.speech_enhancement_1.attack import (
-        SpeechEnhancement1Attack,
+    from deepmarkpy.plugins.attacks.speech_enhancement_1.implementation import (
+        SpeechEnhancement1Implementation,
     )
 
     attack = _attack_without_init(
-        SpeechEnhancement1Attack,
+        SpeechEnhancement1Implementation,
         "speech_enhancement_1",
         {"type": "waveform", "noise_strength": 0.01},
     )
@@ -118,12 +120,12 @@ def test_speech_enhancement_1_forwards_runtime_parameters(monkeypatch):
 
 
 def test_speech_enhancement_2_resamples_around_clearvoice(monkeypatch):
-    from deepmarkpy.plugins.attacks.speech_enhancement_2.attack import (
-        SpeechEnhancement2Attack,
+    from deepmarkpy.plugins.attacks.speech_enhancement_2.implementation import (
+        SpeechEnhancement2Implementation,
     )
 
     attack = _attack_without_init(
-        SpeechEnhancement2Attack,
+        SpeechEnhancement2Implementation,
         "speech_enhancement_2",
         {"model_name": "test-clearvoice", "noise_strength": 0.0},
     )
@@ -140,7 +142,7 @@ def test_speech_enhancement_2_resamples_around_clearvoice(monkeypatch):
             return {"output": np.ones(512, dtype=np.float32)}
 
     monkeypatch.setattr(
-        "deepmarkpy.plugins.attacks.speech_enhancement_2.attack.resample_audio",
+        "deepmarkpy.plugins.attacks.speech_enhancement_2.implementation.resample_audio",
         fake_resample,
     )
     monkeypatch.setattr(attack, "_load_model", lambda model_name: FakeClearVoice())

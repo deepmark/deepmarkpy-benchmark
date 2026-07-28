@@ -1,8 +1,0 @@
-diffusers
-numpy
-torch
-pydantic
-fastapi
-uvicorn
-librosa
-accelerate
