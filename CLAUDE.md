@@ -2,7 +2,9 @@
 
 ## What This Project Is
 
-Open-source benchmarking framework for evaluating audio watermarking robustness. Evaluates watermarking models against 40+ attacks (signal processing, AI-based, transmission). Published at the GenAI Watermarking Workshop 2025.
+Open-source benchmarking framework for evaluating audio watermarking robustness. Evaluates watermarking models against 40+ attacks (signal processing, AI-based, transmission). Published in IEEE Access, vol. 14, 2026, pp. 62031-62044 (DOI 10.1109/ACCESS.2026.3685903).
+
+**Reorganization in progress:** the repo is being packaged per `docs/REORG_PLAN.md` under the rules of `docs/AGENT_PROMPT.md`. Bit-for-bit behavior preservation applies; the defects in `docs/KNOWN_DEFECTS.md` are frozen — do not fix them. Discovery sets are locked by `tests/test_discovery_lock.py`.
 
 ## Architecture
 
@@ -29,7 +31,7 @@ python -m pytest tests/ -v
 
 Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Tests add `src/` to `sys.path` via conftest.
 
-Current: 74 tests, ~2s runtime. No Docker required for tests.
+Current: 120 tests, ~4s runtime. No Docker required for tests. Note: `test_attack_groups.py::TestGroupedAttacksMatchPlugins` fails in environments missing `pywt`/`pyrubberband` (frozen defect D14, `docs/KNOWN_DEFECTS.md`) — pre-existing, not a regression.
 
 ## Running the Benchmark
 
