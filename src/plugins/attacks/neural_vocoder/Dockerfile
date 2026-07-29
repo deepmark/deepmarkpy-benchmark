@@ -6,7 +6,11 @@ ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
 # Handle BigVGAN in builder stage
-RUN git clone https://github.com/NVIDIA/BigVGAN.git 
+# Commit pinned per REORG_PLAN P0.2 (build reproducibility): upstream main
+# HEAD resolved 2026-07-29; no locally-built image existed to recover an
+# earlier commit from.
+RUN git clone https://github.com/NVIDIA/BigVGAN.git && \
+    cd BigVGAN && git checkout 7d2b454564a6c7d014227f635b7423881f14bdac
 COPY /src/plugins/attacks/neural_vocoder/big_vgan_requirements.txt BigVGAN/requirements.txt
 RUN pip install --no-cache-dir -r BigVGAN/requirements.txt
 

@@ -1,7 +1,11 @@
 FROM ml-services-base:latest AS builder
 
 # Clone and set up TimbreWatermarking
-RUN git clone https://github.com/TimbreWatermarking/TimbreWatermarking.git
+# Commit pinned per REORG_PLAN P0.2 (build reproducibility): upstream main
+# HEAD resolved 2026-07-29; no locally-built image existed to recover an
+# earlier commit from.
+RUN git clone https://github.com/TimbreWatermarking/TimbreWatermarking.git && \
+    cd TimbreWatermarking && git checkout c41e7d75637f162d462ef2159acc5149b6c8071a
 
 # Rename the directory structure inside the repo
 RUN if [ -d "TimbreWatermarking/watermarking_model/model" ]; then \

@@ -9,9 +9,13 @@ ENV HOST=${HOST}
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
 # Clone and install AWARE package
+# Commit pinned per REORG_PLAN P0.2 (build reproducibility): upstream main
+# HEAD resolved 2026-07-29; no locally-built image existed to recover an
+# earlier commit from.
 WORKDIR /app
 RUN git clone https://github.com/deepmarkpy/aware.git aware && \
-    cd aware && pip install --no-cache-dir -e .
+    cd aware && git checkout fea9c49e3dfc57a421705ae411adedd80bcc6d09 && \
+    pip install --no-cache-dir -e .
 
 # Go back to app directory
 WORKDIR /app
