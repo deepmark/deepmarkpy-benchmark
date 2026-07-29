@@ -445,6 +445,11 @@ We welcome contributions! Feel free to:
 - Suggest new features
 - Submit pull requests
 
+Before changing existing behavior, read [docs/KNOWN_DEFECTS.md](docs/KNOWN_DEFECTS.md):
+it lists known defects that are deliberately frozen during the ongoing
+packaging & plugin reorganization ([docs/REORG_PLAN.md](docs/REORG_PLAN.md))
+and must not be fixed mid-effort.
+
 ## Citation
 
 If you use DeepMark Benchmark in your research, please cite our paper:
