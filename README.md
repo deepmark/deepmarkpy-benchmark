@@ -12,11 +12,30 @@ DeepMark Benchmark is a modular and scalable Python platform for evaluating the 
 
 ## Architecture Overview
 
-This benchmark uses a client-server architecture. Core watermarking models and complex attacks (often AI-based) run as independent web services managed by Docker Compose. The main benchmark script (`src/run.py`) acts as a client, communicating with these services via HTTP requests over a Docker network to perform embedding, attacking, and detection. This isolates complex dependencies within containers.
+This benchmark uses a client-server architecture. Watermarking models and
+dependency-heavy attacks run as independent services managed by Docker Compose.
+The installed CLI (`deepmark-benchmark`) stays slim and calls those services
+over HTTP. Signal-processing attacks continue to run directly in the CLI
+process.
+
+Every AI attack image installs the same local `deepmarkpy` package and imports
+its packaged implementation. Containers contain no copied attack logic; they
+only provide an isolated dependency environment and the shared HTTP adapter.
+The isolated attacks are VAE, diffusion, Encodec, Descript Audio Codec,
+speech tokenization, neural vocoder, and both speech-enhancement attacks.
+
+XCodec2 and ClearVoice intentionally use separate Python environments from the
+modern Torch stack. Do not install several AI extras into the CLI environment;
+build and run the corresponding Compose services instead.
+
+The CLI connects to each attack on `localhost` and the port declared in `.env`.
+For services on another host, set `DEEPMARK_ATTACK_HOST` globally or set an
+attack-specific host variable such as `VAE_PORT_HOST`. The existing port
+variables can also be overridden in the CLI environment.
 
 ## Prerequisites
 
-*   Python 3.9+
+*   Python 3.11+
 *   Docker (Install Docker)
 *   Docker Compose (Install Docker Compose)
 
@@ -51,10 +70,10 @@ python -m venv venv
 venv\Scripts\activate
 ```
 
-Install core benchmark runner dependencies:
+Install the package in editable mode for local development:
 
 ```bash
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 ### 4. Install Docker (For AI-Based Attacks and Models)
@@ -102,31 +121,34 @@ Some attacks require additional datasets to function:
 
 ### 1. Build and Start Services
 
-This command builds the Docker images for all containerized models/attacks (defined in `docker-compose.yml`) using the configuration from `.env` and starts them in the background. This step is **required** if you intend to use plugins like `audioseal`, `vae`, `diffusion`, etc.
+These commands build the shared model base, build all service images using the
+configuration from `.env`, and start them. This is required for plugins such as
+`audioseal`, `vae`, `diffusion`, and `encodec`.
 ```bash
 docker build -f Dockerfile.base -t ml-services-base:latest .
-docker-compose -f docker-compose.yml build
+docker compose build
+docker compose up -d
 ```
-You can check the status of the services using `docker-compose ps`. The first build might take some time.
+You can check the status of the services using `docker compose ps`. The first build might take some time.
 
 > **Tip:** You don't need to run all services at once. If you only need specific attacks or models, you can build and run them individually:
 > ```bash
-> docker-compose up -d audioseal diffusion  # Only start AudioSeal model and Diffusion attack
+> docker compose up --build -d audioseal diffusion
 > ```
 
 ### 2. Run the CLI
-Ensure the Docker services are running (`docker-compose up -d`) if you are using containerized plugins. Then, execute the main benchmark script from your activated virtual environment (if used) or directly:
+Ensure the Docker services are running (`docker compose up -d`) if you are using containerized plugins. Then, execute the main benchmark script from your activated virtual environment (if used) or directly:
 
 **Single model:**
 ```bash
-python src/run.py --wav_files_dir /path/to/audio \
+deepmark-benchmark --wav_files_dir /path/to/audio \
                   --wm_model AudioSealModel \
                   --attack_types GaussianNoiseAttack LowpassFilterAttack
 ```
 
 **Multiple models (comparative report):**
 ```bash
-python src/run.py --wav_files_dir /path/to/audio \
+deepmark-benchmark --wav_files_dir /path/to/audio \
                   --wm_models AudioSealModel AwareModel PerthModel \
                   --attack_types GaussianNoiseAttack LowpassFilterAttack
 ```
@@ -135,7 +157,7 @@ When using `--wm_models` with two or more models, the benchmark runs each model 
 
 **Using attack groups:**
 ```bash
-python src/run.py --wav_files_dir /path/to/audio \
+deepmark-benchmark --wav_files_dir /path/to/audio \
                   --wm_model AudioSealModel \
                   --attack_groups audio_distortion desynchronization
 ```
@@ -154,18 +176,26 @@ covers. Groups can be combined with `--attack_types` to add individual attacks.
 | `transmission` | `ReplayAttack`, `NetworkTransmissionAttack` |
 
 Attacks not listed in any group fall under "Other Attacks" in the detailed
-report. The canonical mapping lives in `src/utils/attack_groups.py` — update it
+report. The canonical mapping lives in `src/deepmarkpy/utils/attack_groups.py` — update it
 there when adding a new attack so the reports pick the right metrics for it.
 
 **Codec2 Vocoder Attack:**
 
 `Codec2VocoderAttack` simulates transmission through a low-bitrate voice channel
 (similar to MELP/MELPe military vocoders). It encodes audio at a given bitrate
-using the Codec2 codec and decodes it back to PCM. The `bitrate_codec2` parameter
-in `config.json` accepts either a single value or a list of bitrates:
+using the Codec2 codec and decodes it back to PCM. The `bitrate` parameter in
+`config.json` accepts either a single value or a list of bitrates:
 
 ```json
-{"bitrate_codec2": [700, 1200, 2400]}
+{"bitrate": [700, 1200, 2400]}
+```
+
+From the CLI, override it with the namespaced attack flag:
+
+```bash
+deepmark-benchmark --wav_files_dir /path/to/wavs --wm_model AudioSealModel \
+                  --attack_types Codec2VocoderAttack \
+                  --codec2_vocoder.bitrate 1200
 ```
 
 When a list is provided, the benchmark automatically expands it into separate
@@ -184,7 +214,7 @@ runs — one per bitrate — and reports results as `Codec2VocoderAttack_700`,
 Use `--calculate_quality_metrics` to compute audio quality metrics and generate a detailed report:
 
 ```bash
-python src/run.py --wav_files_dir /path/to/audio --wm_model AudioSealModel \
+deepmark-benchmark --wav_files_dir /path/to/audio --wm_model AudioSealModel \
                   --attack_types GaussianNoiseAttack LowpassFilterAttack \
                   --calculate_quality_metrics
 ```
@@ -258,7 +288,7 @@ If NISQA is not installed or the weights file is missing, the metric is silently
 Use `--detection_reliability` to measure false positive and false negative rates. This mode supports a **single model** per run and requires the model to implement `is_watermarked()` (see [Adding a New Watermarking Model](#adding-a-new-watermarking-model)).
 
 ```bash
-python src/run.py --wav_files_dir /path/to/audio \
+deepmark-benchmark --wav_files_dir /path/to/audio \
                   --wm_model PerthModel \
                   --detection_reliability
 ```
@@ -270,7 +300,7 @@ Without attacks the mode measures:
 When combined with `--attack_types` or `--attack_groups`, FP/FN are additionally reported per attack (attack applied to clean audio for FP, attack applied to watermarked audio for FN).
 
 ```bash
-python src/run.py --wav_files_dir /path/to/audio \
+deepmark-benchmark --wav_files_dir /path/to/audio \
                   --wm_model AudioSealModel \
                   --detection_reliability \
                   --attack_types GaussianNoiseAttack LowpassFilterAttack
@@ -289,7 +319,7 @@ Results are saved to `report/detection_reliability.json` and a dedicated `detect
 Use `--save_audio` to write intermediate audio files to disk for manual inspection. Files are saved to `<report_dir>/audio/`.
 
 ```bash
-python src/run.py --wav_files_dir /path/to/audio \
+deepmark-benchmark --wav_files_dir /path/to/audio \
                   --wm_model AudioSealModel \
                   --detection_reliability \
                   --attack_types GaussianNoiseAttack \
@@ -328,15 +358,15 @@ DeepMark Benchmark is designed to allow easy addition of new attacks and waterma
 
 1.	Create a New Attack Folder
 
-Inside src/plugins/attacks, create a new folder with the attack name:
+Inside src/deepmarkpy/plugins/attacks, create a new folder with the attack name:
 ```Shell
-mkdir src/plugins/attacks/new_attack
+mkdir src/deepmarkpy/plugins/attacks/new_attack
 ```
 2.	Add attack.py
 Create a file attack.py inside your folder:
 ```python 
 import numpy as np
-from core.base_attack import BaseAttack
+from deepmarkpy.core.base_attack import BaseAttack
 
 class NewAttack(BaseAttack):
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
@@ -351,41 +381,53 @@ class NewAttack(BaseAttack):
 }
 ```
 
-> **Important:** Use unique parameter names in your config to avoid conflicts with other attacks. A good practice is to suffix parameters with your attack name:
+> **Important:** Use clean, attack-local parameter names in `config.json`.
+> The CLI namespaces them by attack key, so parameters no longer need attack-name
+> suffixes:
 > ```json
 > {
->     "snr_db_myattack": 20,
->     "threshold_myattack": 0.5
+>     "snr_db": 20,
+>     "threshold": 0.5
 > }
 > ```
-> This prevents parameter overwrites when multiple attacks are used together.
+> Users override these as `--new_attack.snr_db 20` and
+> `--new_attack.threshold 0.5`. Existing suffixed flags are kept as deprecated
+> aliases where mappings exist.
 
-4.	Dockerizing (Optional)
+4.	Isolating an AI Attack
 
-    If your attack requires AI models:
-  - Add app.py for FastAPI service.
-  - Add port to the .env file.
-  - Write a Dockerfile to containerize it.
-  - Add it to docker-compose.yml.
+    If an attack requires an AI runtime:
+
+  - Put the numerical/model class in `implementation.py`.
+  - Make the discoverable class in `attack.py` inherit
+    `deepmarkpy.core.remote_attack.RemoteAttack`.
+  - Create `app.py` with
+    `deepmarkpy.server.attack_service.create_attack_app`.
+  - Add a complete optional dependency extra in `pyproject.toml`.
+  - Add an isolated target to `Dockerfile.ai-attacks`.
+  - Add its port to `.env` and its service to `docker-compose.yml`.
+
+  The container must install `deepmarkpy` with its attack extra. Do not copy
+  the implementation into a container-specific module.
 
 5.	Run the Benchmark
 ```bash 
-python src/run.py --wav_files_dir /path/to/audio --wm_model AudioSealModel --attack_types NewAttack
+deepmark-benchmark --wav_files_dir /path/to/audio --wm_model AudioSealModel --attack_types NewAttack
 ```
 
 ### Adding a New Watermarking Model
 
 1.	Create a New Model Folder
 
-Inside src/plugins/models, create a folder:
+Inside src/deepmarkpy/plugins/models, create a folder:
 ```Shell 
-mkdir src/plugins/models/new_model
+mkdir src/deepmarkpy/plugins/models/new_model
 ```
 
 2.	Add model.py
 ```python
 import numpy as np
-from core.base_model import BaseModel
+from deepmarkpy.core.base_model import BaseModel
 
 class NewModel(BaseModel):
     def embed(self, audio: np.ndarray, watermark_data: np.ndarray, sampling_rate: int) -> np.ndarray:
@@ -420,18 +462,18 @@ class NewModel(BaseModel):
 
 4.	Run the Benchmark with the New Model
 ```Shell
-python src/run.py --wav_files_dir /path/to/audio --wm_model NewModel --attack_types CutSamplesAttack
+deepmark-benchmark --wav_files_dir /path/to/audio --wm_model NewModel --attack_types CutSamplesAttack
 ```
 
 ### Docker Integration
 
 To run AI-based plugins inside Docker:
 ```Shell
-docker-compose up --build -d
+docker compose up --build -d
 ```
 To stop:
 ```shell
-docker-compose down
+docker compose down
 ```
 
 ## Contributing

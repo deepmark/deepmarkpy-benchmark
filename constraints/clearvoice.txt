@@ -1,0 +1,5 @@
+librosa==0.10.2.post1
+numba==0.60.0
+numpy==1.26.4
+torch==2.7.1
+torchaudio==2.7.1

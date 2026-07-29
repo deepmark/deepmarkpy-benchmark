@@ -2,9 +2,9 @@
 
 import pytest
 
-from plugin_manager import PluginManager
-from core.base_attack import BaseAttack
-from core.base_model import BaseModel
+from deepmarkpy.plugin_manager import PluginManager
+from deepmarkpy.core.base_attack import BaseAttack
+from deepmarkpy.core.base_model import BaseModel
 
 
 class TestPluginDiscovery:
@@ -51,10 +51,18 @@ class TestPluginDiscovery:
     def test_known_attacks_discovered(self):
         attacks = self.pm.get_attacks()
         expected = [
+            "DescriptAudioCodecAttack",
+            "DiffusionAttack",
+            "EncodecAttack",
             "GaussianNoiseAttack",
+            "NeuralVocoderAttack",
             "SignInversionAttack",
             "CropBeginningAttack",
             "SmoothingAttack",
+            "SpeechEnhancement1Attack",
+            "SpeechEnhancement2Attack",
+            "SpeechTokenizationAttack",
+            "VAEAttack",
         ]
         for name in expected:
             assert name in attacks, f"Expected attack '{name}' not discovered"

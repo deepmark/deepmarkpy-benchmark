@@ -1,14 +1,9 @@
-"""Tests for src/run.py — to_json_safe utility."""
+"""Tests for deepmarkpy.cli — to_json_safe utility."""
 
 import numpy as np
 import pytest
 
-# Import directly since run.py defines it at module level
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-from run import to_json_safe
+from deepmarkpy.cli import build_parser, to_json_safe
 
 
 class TestToJsonSafe:
@@ -70,3 +65,38 @@ class TestToJsonSafe:
     def test_empty_structures(self):
         assert to_json_safe({}) == {}
         assert to_json_safe([]) == []
+
+
+class TestAttackParamParser:
+    def _parser(self):
+        return build_parser(
+            models=["DummyModel"],
+            attacks=["GaussianNoiseAttack"],
+            valid_args={"gaussian_noise": {"snr_db": 35}},
+        )
+
+    def test_namespaced_attack_flag_sets_canonical_dest(self):
+        args = self._parser().parse_args(
+            [
+                "--wav_files_dir",
+                "samples",
+                "--wm_model",
+                "DummyModel",
+                "--gaussian_noise.snr_db",
+                "20",
+            ]
+        )
+        assert args.gaussian_noise__snr_db == 20
+
+    def test_legacy_attack_flag_sets_same_dest(self):
+        args = self._parser().parse_args(
+            [
+                "--wav_files_dir",
+                "samples",
+                "--wm_model",
+                "DummyModel",
+                "--snr_db_gaussian_noise",
+                "20",
+            ]
+        )
+        assert args.gaussian_noise__snr_db == 20

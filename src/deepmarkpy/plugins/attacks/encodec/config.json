@@ -1,0 +1,5 @@
+{
+    "model_name": "encodec_24khz",
+    "bandwidth": 24,
+    "target_sampling_rate": 24000
+}

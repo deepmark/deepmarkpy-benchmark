@@ -7,7 +7,7 @@ import tempfile
 import numpy as np
 import pytest
 
-from utils.utils import snr, resample_audio, renormalize_audio, load_config
+from deepmarkpy.utils.utils import snr, resample_audio, renormalize_audio, load_config
 
 
 # ---------------------------------------------------------------------------

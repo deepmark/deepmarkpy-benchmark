@@ -1,0 +1,7 @@
+{
+    "max_sequence_length": 50,
+    "num_sequences": 20,
+    "duration": 0.5,
+    "max_value_difference": 0.1
+
+}

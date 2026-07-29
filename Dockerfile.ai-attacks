@@ -1,0 +1,118 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.11-slim-bookworm AS package-runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    git \
+    libgomp1 \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/deepmarkpy
+
+COPY pyproject.toml README.md LICENSE ./
+COPY constraints ./constraints
+COPY src ./src
+
+RUN python -m pip install --no-cache-dir --upgrade pip
+
+ENV HOST=0.0.0.0
+
+
+FROM package-runtime AS vae
+
+RUN python -m pip install --no-cache-dir \
+    --constraint constraints/ai-modern.txt \
+    ".[vae,server]" \
+    && python -m pip check
+
+ENV APP_PORT=10001
+CMD ["sh", "-c", "uvicorn deepmarkpy.plugins.attacks.vae.app:app --host=${HOST} --port=${APP_PORT}"]
+
+
+FROM package-runtime AS diffusion
+
+RUN python -m pip install --no-cache-dir \
+    --constraint constraints/ai-modern.txt \
+    ".[diffusion,server]" \
+    && python -m pip check
+
+ENV APP_PORT=10002
+CMD ["sh", "-c", "uvicorn deepmarkpy.plugins.attacks.diffusion.app:app --host=${HOST} --port=${APP_PORT}"]
+
+
+FROM package-runtime AS encodec
+
+RUN python -m pip install --no-cache-dir \
+    --constraint constraints/ai-modern.txt \
+    ".[encodec,server]" \
+    && python -m pip check
+
+ENV APP_PORT=10007
+CMD ["sh", "-c", "uvicorn deepmarkpy.plugins.attacks.encodec.app:app --host=${HOST} --port=${APP_PORT}"]
+
+
+FROM package-runtime AS descript-audio-codec
+
+RUN python -m pip install --no-cache-dir \
+    --constraint constraints/ai-modern.txt \
+    ".[dac,server]" \
+    && python -m pip check
+
+ENV APP_PORT=10008
+CMD ["sh", "-c", "uvicorn deepmarkpy.plugins.attacks.descript_audio_codec.app:app --host=${HOST} --port=${APP_PORT}"]
+
+
+FROM package-runtime AS speech-tokenization
+
+# XCodec2 pins packaging==24.1 and ninja==1.11.1.1. pip>24.0 incorrectly
+# reports that otherwise runnable Ninja wheel as unsupported with that
+# packaging release, so keep pip 24.0 for this isolated legacy environment.
+RUN python -m pip install --no-cache-dir "pip==24.0" \
+    && python -m pip install --no-cache-dir ".[speech-tokenization,server]" \
+    && python -m pip check
+
+ENV APP_PORT=10003
+CMD ["sh", "-c", "uvicorn deepmarkpy.plugins.attacks.speech_tokenization.app:app --host=${HOST} --port=${APP_PORT}"]
+
+
+FROM package-runtime AS neural-vocoder
+
+ARG BIGVGAN_COMMIT=7d2b454564a6c7d014227f635b7423881f14bdac
+RUN git init BigVGAN \
+    && git -C BigVGAN fetch --depth 1 \
+        https://github.com/NVIDIA/BigVGAN.git "${BIGVGAN_COMMIT}" \
+    && git -C BigVGAN checkout --detach FETCH_HEAD \
+    && test "$(git -C BigVGAN rev-parse HEAD)" = "${BIGVGAN_COMMIT}"
+
+RUN python -m pip install --no-cache-dir \
+        --constraint constraints/ai-modern.txt \
+        ".[neural-vocoder,server]" \
+    && python -m pip check
+
+ENV APP_PORT=10004
+CMD ["sh", "-c", "uvicorn deepmarkpy.plugins.attacks.neural_vocoder.app:app --host=${HOST} --port=${APP_PORT}"]
+
+
+FROM package-runtime AS speech-enhancement-1
+
+RUN python -m pip install --no-cache-dir \
+    --constraint constraints/ai-modern.txt \
+    ".[speech-enhancement-1,server]" \
+    && python -m pip check
+
+ENV APP_PORT=10005
+CMD ["sh", "-c", "uvicorn deepmarkpy.plugins.attacks.speech_enhancement_1.app:app --host=${HOST} --port=${APP_PORT}"]
+
+
+FROM package-runtime AS speech-enhancement-2
+
+RUN python -m pip install --no-cache-dir \
+    --constraint constraints/clearvoice.txt \
+    ".[speech-enhancement-2,server]" \
+    && python -m pip check
+
+ENV APP_PORT=10006
+CMD ["sh", "-c", "uvicorn deepmarkpy.plugins.attacks.speech_enhancement_2.app:app --host=${HOST} --port=${APP_PORT}"]

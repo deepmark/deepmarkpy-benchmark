@@ -1,0 +1,5 @@
+{
+    "model_type": "44khz",
+    "target_sampling_rate": 44100,
+    "n_codebooks": 9
+}

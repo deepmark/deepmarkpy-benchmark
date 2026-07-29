@@ -1,0 +1,10 @@
+{
+    "target_ratio": 0.5,
+    "min_segment_sec": 0.5,
+    "max_segment_sec": 2.0,
+    "crossfade_ms": 50,
+    "silence_threshold_db": -35,
+    "min_silence_ms": 30,
+    "target_tolerance": 0.02,
+    "log_splice_stats": false
+}

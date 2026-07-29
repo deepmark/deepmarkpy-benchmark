@@ -5,8 +5,8 @@ import os
 
 import pytest
 
-from utils.latex_helpers import display_attack_name
-from utils.report_generator import BenchmarkReportGenerator, generate_benchmark_report
+from deepmarkpy.utils.latex_helpers import display_attack_name
+from deepmarkpy.utils.report_generator import BenchmarkReportGenerator, generate_benchmark_report
 
 
 # ---------------------------------------------------------------------------

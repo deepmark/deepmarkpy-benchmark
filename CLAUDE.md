@@ -6,28 +6,29 @@ Open-source benchmarking framework for evaluating audio watermarking robustness.
 
 ## Architecture
 
-- **Plugin-based**: Models and attacks auto-discovered from `src/plugins/models/` and `src/plugins/attacks/` via `PluginManager`
+- **Package-based**: import root is `deepmarkpy`; models and attacks are auto-discovered from `src/deepmarkpy/plugins/models/` and `src/deepmarkpy/plugins/attacks/` via `PluginManager`
 - **Client-server**: Complex ML models/attacks run in Docker containers, accessed via HTTP (FastAPI). Simple attacks run natively
-- **Base classes**: `BaseModel` (embed/detect) in `src/core/base_model.py`, `BaseAttack` (apply) in `src/core/base_attack.py`
+- **Base classes**: `BaseModel` (embed/detect) in `src/deepmarkpy/core/base_model.py`, `BaseAttack` (apply) in `src/deepmarkpy/core/base_attack.py`
 - **Config-driven**: Each plugin has a `config.json` with defaults. Model configs include `returns_confidence` and `is_zero_bit` flags. Detection reliability uses `is_watermarked()` on the model class
 
 ## Key Files
 
-- `src/run.py` — CLI entrypoint
-- `src/benchmark.py` — Core benchmark orchestration (run loop, accuracy computation)
-- `src/plugin_manager.py` — Auto-discovers plugins by walking directories
-- `src/utils/metrics.py` — PESQ, STOI, PSNR, SI-SDR
-- `src/utils/report_generator.py` — LaTeX + chart generation
+- `src/deepmarkpy/cli.py` — CLI entrypoint, exposed as `deepmark-benchmark`
+- `src/deepmarkpy/benchmark.py` — Core benchmark orchestration (run loop, accuracy computation)
+- `src/deepmarkpy/plugin_manager.py` — Auto-discovers plugins from package resources
+- `src/deepmarkpy/utils/metrics.py` — PESQ, STOI, PSNR, SI-SDR
+- `src/deepmarkpy/utils/report_generator.py` — LaTeX + chart generation
 - `docker-compose.yml` — All containerized services
 - `.env.example` — Port configuration template
 
 ## Running Tests
 
 ```bash
+pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Tests add `src/` to `sys.path` via conftest.
+Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Install the package in editable mode when running tests locally.
 
 Current: 74 tests, ~2s runtime. No Docker required for tests.
 
@@ -37,12 +38,12 @@ Current: 74 tests, ~2s runtime. No Docker required for tests.
 # Start Docker services (if using containerized models/attacks)
 docker-compose up -d audioseal
 # Run benchmark
-python src/run.py --wav_files_dir /path/to/wavs --wm_model AudioSealModel --attack_types GaussianNoiseAttack
+deepmark-benchmark --wav_files_dir /path/to/wavs --wm_model AudioSealModel --attack_types GaussianNoiseAttack
 ```
 
 ## Development Conventions
 
-- **Attack parameter names must be unique across all attacks** — they share a flat CLI namespace. Suffix with attack name (e.g., `snr_db_replay`, `order_bandstop`). The system warns on collisions but doesn't prevent them
+- **Attack parameter names are attack-local** — keep `config.json` keys clean (for example, `snr_db`, `order`) and expose CLI overrides through namespaced flags such as `--replay.snr_db` or `--bandstop_filter.order`. Legacy suffixed flags are compatibility aliases only
 - **Model capabilities declared in config.json** — use `returns_confidence: true/false` and `is_zero_bit: true/false` for general dispatch. For detection reliability, models must implement `is_watermarked(detect_output) -> bool` in `model.py`
 - **Native attacks** need only `attack.py` + `config.json` in their directory
 - **Dockerized attacks/models** additionally need `app.py`, `Dockerfile`, `requirements.txt`

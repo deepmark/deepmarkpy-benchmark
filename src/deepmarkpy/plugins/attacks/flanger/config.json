@@ -1,0 +1,6 @@
+{
+    "start_delay": 0.01,
+    "w_delay": 0.003,
+    "delay_rate": 1,
+    "gain": 1
+}

@@ -1,8 +1,0 @@
-pydantic
-fastapi
-uvicorn
-
-
-
-
-

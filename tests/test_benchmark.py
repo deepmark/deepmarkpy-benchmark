@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from benchmark import Benchmark
+from deepmarkpy.benchmark import Benchmark
 
 
 # ---------------------------------------------------------------------------
@@ -115,5 +115,5 @@ class TestGetAvailableArgs:
     def test_args_contains_known_keys(self):
         bench = Benchmark()
         _, _, args = bench.get_available_args()
-        # gaussian_noise always has its (attack-suffixed) snr_db parameter
-        assert "snr_db_gaussian_noise" in args
+        assert "gaussian_noise" in args
+        assert "snr_db" in args["gaussian_noise"]

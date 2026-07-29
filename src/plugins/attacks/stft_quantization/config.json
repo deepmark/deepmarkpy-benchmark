@@ -1,5 +1,0 @@
-{
-    "n_fft_stft_quantization": 1024,
-    "hop_length_stft_quantization": 512,
-    "quantization_levels_stft_quantization": 256
-}

@@ -1,0 +1,12 @@
+.git
+.github
+.idea/
+.pytest_cache
+.venv
+__pycache__
+*.egg-info
+*.py[cod]
+build
+dist
+tests
+uv.lock
