@@ -1,0 +1,10 @@
+# Build-context exclusions, restricted to paths no Dockerfile COPY can match
+# (all COPY sources live under src/ — see docs/REORG_PLAN.md §4.1). Keeps
+# whole-repo build contexts small and stops unrelated repo edits from
+# invalidating every image's COPY layers.
+.git
+report/
+weights/
+*.pdf
+tests/
+.env

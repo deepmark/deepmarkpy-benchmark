@@ -29,9 +29,13 @@ git clone https://github.com/deepmark/deepmarkpy-benchmark.git
 cd deepmarkpy-benchmark
 ```
 
-### 2. Review Environment File (`.env`)
+### 2. Create the Environment File (`.env`)
 
-This repository includes a `.env` file which defines the default network ports used by the various Docker services (models and attacks). Docker Compose automatically reads this file when starting the services.
+This repository ships a `.env.example` template which defines the default network ports used by the various Docker services (models and attacks). The `.env` file itself is not committed; create it from the template first. Docker Compose automatically reads `.env` when starting the services.
+
+```bash
+cp .env.example .env
+```
 
 *   **Action:** Review the ports defined in the `.env` file. You generally don't need to change the defaults unless they conflict with other services already running on your machine. If a conflict exists, modify the corresponding port number in the `.env` file before proceeding.
 
