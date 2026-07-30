@@ -1,0 +1,52 @@
+{
+  "service": "audioseal",
+  "kind": "model",
+  "recorded": "2026-07-30",
+  "image_id": "6fee081b0950113ba319683ae57a8ccf0e4a71a11c47e04901f59a87a5688d5b",
+  "classification": "deterministic",
+  "endpoints": {
+    "/embed": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermarked_audio"
+      ],
+      "response_sha256": "7321c3da5ae3f975a59e93f3c2d64e89c50079cfd23674488e300ef9d1e9221d",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.5005170325114209
+        },
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.5005170325114209
+        }
+      ]
+    },
+    "/detect": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "confidence",
+        "watermark"
+      ],
+      "response_sha256": "bee0d07bcedadaf0daa5025886b171834e66fe4e8d155e54987059b0b962951d",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": null,
+          "audio_rms": null
+        },
+        {
+          "audio_len": null,
+          "audio_rms": null
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "service": "speech_tokenization",
+  "kind": "attack",
+  "recorded": "2026-07-30",
+  "image_id": "930ce0b46e6cdf713ee119c5870d3aa2b3791317487653b7f945227a137c3fd9",
+  "classification": "deterministic",
+  "endpoints": {
+    "/attack": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "audio"
+      ],
+      "response_sha256": "827f7b9c3fd08a4667c0d16bb70b5d501195330105cb5a185e1141f802cdd98b",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 16320,
+          "audio_rms": 0.5030206619967988
+        },
+        {
+          "audio_len": 16320,
+          "audio_rms": 0.5030206619967988
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "service": "speech_enhancement2",
+  "kind": "attack",
+  "recorded": "2026-07-30",
+  "image_id": "ceaac84c2989abbe58910953cefbb9e57c522cac9c4b8092c3ee58598b6bbe81",
+  "classification": "stochastic",
+  "endpoints": {
+    "/attack": {
+      "request_non_audio": {
+        "sampling_rate": 16000,
+        "model_name": "MossFormerGAN_SE_16K"
+      },
+      "response_status": 200,
+      "response_keys": [
+        "audio"
+      ],
+      "response_sha256": "b05bb7ac4dc43610fa44262ebe9c9b6676f66c01b024245218be8b83ab38bbf8",
+      "double_call_identical": false,
+      "double_call_stats": [
+        {
+          "audio_len": 16000,
+          "audio_rms": 5.532840372731295
+        },
+        {
+          "audio_len": 16000,
+          "audio_rms": 5.58083161867824
+        }
+      ]
+    }
+  }
+}

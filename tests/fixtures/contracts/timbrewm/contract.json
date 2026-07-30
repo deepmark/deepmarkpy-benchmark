@@ -1,0 +1,51 @@
+{
+  "service": "timbrewm",
+  "kind": "model",
+  "recorded": "2026-07-30",
+  "image_id": "6dc11d87fe5c1fd041291ab11922c8d35edc4f547c52d55b7a957a024d311cbc",
+  "classification": "deterministic",
+  "endpoints": {
+    "/embed": {
+      "request_non_audio": {
+        "sampling_rate": 22050
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermarked_audio"
+      ],
+      "response_sha256": "8aa093b4347aaf886b930bab26fef6b34510691cb2a03bc100b20230776251f2",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 22050,
+          "audio_rms": 0.498261466976859
+        },
+        {
+          "audio_len": 22050,
+          "audio_rms": 0.498261466976859
+        }
+      ]
+    },
+    "/detect": {
+      "request_non_audio": {
+        "sampling_rate": 22050
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermark"
+      ],
+      "response_sha256": "7cb66b2990878fb06a5cb72eebcf93534c98083875a9e391ab8d2980d1ba7b1a",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": null,
+          "audio_rms": null
+        },
+        {
+          "audio_len": null,
+          "audio_rms": null
+        }
+      ]
+    }
+  }
+}

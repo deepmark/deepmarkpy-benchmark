@@ -1,0 +1,46 @@
+{
+  "service": "network_transmission",
+  "kind": "attack",
+  "recorded": "2026-07-30",
+  "image_id": "d17100a6f9e4141554e5e79bee9a6b29cdf07181352538ac9f59ce4f7ec3b117",
+  "classification": "stochastic",
+  "classification_note": "cross-container-instance nondeterminism: same-container double call identical, fresh-container call differs (recorded 2026-07-30); netem itself does not engage under Docker Desktop",
+  "endpoints": {
+    "/attack": {
+      "request_non_audio": {
+        "sampling_rate": 16000,
+        "bitrate_bps_netem": 24000,
+        "frame_duration_ms_netem": 20,
+        "delay_ms_netem": 50,
+        "jitter_ms_netem": 10,
+        "packet_loss_netem": 5,
+        "duplication_netem": 0,
+        "reorder_netem": 0,
+        "corruption_netem": 0,
+        "fec_enabled_netem": true,
+        "expected_loss_netem": 5,
+        "ns_enabled_netem": false,
+        "vad_enabled_netem": true,
+        "agc_enabled_netem": true,
+        "agc_target_lufs_netem": -18,
+        "playout_delay_ms_netem": 60
+      },
+      "response_status": 200,
+      "response_keys": [
+        "audio"
+      ],
+      "response_sha256": "b7046023a8a053d53b1e2227464dad118bc6d1bec4565a043a849d8764816d97",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.0954076666911359
+        },
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.0954076666911359
+        }
+      ]
+    }
+  }
+}

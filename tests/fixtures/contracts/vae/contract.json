@@ -1,0 +1,30 @@
+{
+  "service": "vae",
+  "kind": "attack",
+  "recorded": "2026-07-30",
+  "image_id": "2691d3a0d07d8b25385807c1b0f23350bfd386624d50264fc23730cac90965f2",
+  "classification": "stochastic",
+  "endpoints": {
+    "/attack": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "audio"
+      ],
+      "response_sha256": "1aa109fd1a26a7794b533007ef00fc623cd2fb542724e26d7b9f336943a1a945",
+      "double_call_identical": false,
+      "double_call_stats": [
+        {
+          "audio_len": 14336,
+          "audio_rms": 0.3203916121358381
+        },
+        {
+          "audio_len": 14336,
+          "audio_rms": 0.4601244200539295
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "service": "silentcipher",
+  "kind": "model",
+  "recorded": "2026-07-30",
+  "image_id": "0e5f923d0547895ea5401896540030e2a9b3631c331fde9499b9e99be68c9e67",
+  "classification": "deterministic",
+  "endpoints": {
+    "/embed": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermarked_audio"
+      ],
+      "response_sha256": "a3cfd18b5cba05ab3b31d4890396bc5c5c273d67ca858ce5c5810791623c9246",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.48788597741116574
+        },
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.48788597741116574
+        }
+      ]
+    },
+    "/detect": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermark"
+      ],
+      "response_sha256": "edc9bacb99f4f8b9160fc4ad9b17f9eb3a312c3aeddbb1caadd8b718ad5f3862",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": null,
+          "audio_rms": null
+        },
+        {
+          "audio_len": null,
+          "audio_rms": null
+        }
+      ]
+    }
+  }
+}

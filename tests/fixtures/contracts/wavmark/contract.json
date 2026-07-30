@@ -1,0 +1,51 @@
+{
+  "service": "wavmark",
+  "kind": "model",
+  "recorded": "2026-07-30",
+  "image_id": "6c6f083a0e29958c7389673b06067280417f60573a0a6319cbc102efc42cc408",
+  "classification": "deterministic",
+  "endpoints": {
+    "/embed": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermarked_audio"
+      ],
+      "response_sha256": "7adf963a00fdf88e99b4a76b80ff45c080e64016e430b08902d9ac4b5c2b50c8",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 32000,
+          "audio_rms": 0.5020633952301113
+        },
+        {
+          "audio_len": 32000,
+          "audio_rms": 0.5020633952301113
+        }
+      ]
+    },
+    "/detect": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermark"
+      ],
+      "response_sha256": "edc9bacb99f4f8b9160fc4ad9b17f9eb3a312c3aeddbb1caadd8b718ad5f3862",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": null,
+          "audio_rms": null
+        },
+        {
+          "audio_len": null,
+          "audio_rms": null
+        }
+      ]
+    }
+  }
+}

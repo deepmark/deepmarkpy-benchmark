@@ -1,0 +1,10 @@
+{
+  "service": "diffusion",
+  "kind": "attack",
+  "recorded": "2026-07-30",
+  "image_id": "unrecordable",
+  "classification": "stochastic",
+  "classification_note": "Classified by \u00a74.3 code evidence: ddpm.py:27-28 draws a fresh OS-entropy torch seed per request \u2014 not even allclose across calls. Live recording BLOCKED on the designated machine: the container crashes at startup because the frozen base lineage carries torchaudio==2.11.0 against torch==2.7.1 (Dockerfile.base pins only torch); torchaudio 2.11's aarch64 wheel dlopens libcudart.so.13, triggered via diffusers -> transformers 5.14 loss_rnnt -> import torchaudio. Escalated to the owner (fix requires a dependency version change: pin torchaudio==2.7.1 in the base constraints and rebuild).",
+  "recording_blocked": true,
+  "endpoints": {}
+}

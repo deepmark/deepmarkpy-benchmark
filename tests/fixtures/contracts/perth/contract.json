@@ -1,0 +1,51 @@
+{
+  "service": "perth",
+  "kind": "model",
+  "recorded": "2026-07-30",
+  "image_id": "1e924473cf0400e662a378f511a7fb88b26db7ed150d49bff28f9795eda38025",
+  "classification": "deterministic",
+  "endpoints": {
+    "/embed": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermarked_audio"
+      ],
+      "response_sha256": "cb0d518e774159cf4debdd8eead1c921673a215203398fc67c4138e3e019b65c",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.48944847763708943
+        },
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.48944847763708943
+        }
+      ]
+    },
+    "/detect": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermark"
+      ],
+      "response_sha256": "a77df79bb9166d39448542ee7c0100b2e72c2ba7bed19c18a05f43c84a58e0f5",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": null,
+          "audio_rms": null
+        },
+        {
+          "audio_len": null,
+          "audio_rms": null
+        }
+      ]
+    }
+  }
+}

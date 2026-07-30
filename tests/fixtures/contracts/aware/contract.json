@@ -1,0 +1,52 @@
+{
+  "service": "aware",
+  "kind": "model",
+  "recorded": "2026-07-30",
+  "image_id": "5d1fb3b243d80ebbf4dfe8734210e8142205062208db1c4b2886282f5750f7ba",
+  "classification": "deterministic",
+  "endpoints": {
+    "/embed": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "watermarked_audio"
+      ],
+      "response_sha256": "b618b374d466474e1cdda6f1b143b31452eb52761905a3e03f97792961893b01",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 15872,
+          "audio_rms": 0.45454808458719675
+        },
+        {
+          "audio_len": 15872,
+          "audio_rms": 0.45454808458719675
+        }
+      ]
+    },
+    "/detect": {
+      "request_non_audio": {
+        "sampling_rate": 16000
+      },
+      "response_status": 200,
+      "response_keys": [
+        "confidence",
+        "watermark"
+      ],
+      "response_sha256": "e9fcab6e550ed71feaea0b3d759edd8ff142c8044397d87e36c25b0b3b2289f2",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": null,
+          "audio_rms": null
+        },
+        {
+          "audio_len": null,
+          "audio_rms": null
+        }
+      ]
+    }
+  }
+}
