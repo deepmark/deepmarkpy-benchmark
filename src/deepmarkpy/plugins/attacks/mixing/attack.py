@@ -221,7 +221,7 @@ class MixingAttack(BaseAttack):
 
         if not os.path.isabs(music_folder):
             attack_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(attack_dir))))
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(attack_dir)))))
             music_folder = os.path.join(project_root, music_folder)
 
         # Calculate audio amplitude reference

@@ -80,7 +80,7 @@ class ReplayAttack(BaseAttack):
         if not os.path.isabs(air_folder):
             # get project root (4 levels up from attack.py)
             attack_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(attack_dir))))
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(attack_dir)))))
             air_folder = os.path.join(project_root, air_folder)
 
         # get list of AIR files
