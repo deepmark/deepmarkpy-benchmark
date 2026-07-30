@@ -18,7 +18,11 @@ COPY src/plugins/attacks/opus_codec/requirements.txt .
 COPY src/plugins/attacks/opus_codec/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/attacks/opus_codec .
+# Explicit COPYs: the host-side client (attack.py) is not part of the image
+# (REORG_PLAN §5.1 — stop copying host-side files while touched).
+COPY src/plugins/attacks/opus_codec/app.py .
+COPY src/plugins/attacks/opus_codec/inference.py .
+COPY src/plugins/attacks/opus_codec/config.json .
 
 EXPOSE 10023
 
