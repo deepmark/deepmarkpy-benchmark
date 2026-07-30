@@ -6,7 +6,8 @@ ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
 COPY /src/plugins/attacks/speech_enhancement_1/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY /src/plugins/attacks/speech_enhancement_1/constraints.txt .
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY src/plugins/attacks/speech_enhancement_1 .
 

@@ -6,8 +6,9 @@ ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
 COPY /src/plugins/attacks/speech_enhancement_2/requirements.txt .
-RUN pip install clearvoice --no-cache-dir
-RUN pip install --no-cache-dir -r requirements.txt
+COPY /src/plugins/attacks/speech_enhancement_2/constraints.txt .
+RUN pip install clearvoice --no-cache-dir -c constraints.txt
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY src/plugins/attacks/speech_enhancement_2 .
 

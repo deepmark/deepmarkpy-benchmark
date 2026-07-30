@@ -25,7 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY src/plugins/attacks/network_transmission/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY src/plugins/attacks/network_transmission/constraints.txt .
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 # Build python-webrtc-audio-processing from the same fork v1 uses, with
 # the pinned upstream commit known to compile cleanly.

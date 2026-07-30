@@ -15,7 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY src/plugins/attacks/opus_codec/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY src/plugins/attacks/opus_codec/constraints.txt .
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY src/plugins/attacks/opus_codec .
 

@@ -38,7 +38,8 @@ ENV HOST=${HOST}
 COPY --from=builder /app/TimbreWatermarking /app/TimbreWatermarking
 
 COPY /src/plugins/models/timbrewm/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY /src/plugins/models/timbrewm/constraints.txt .
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY src/plugins/models/timbrewm .
 

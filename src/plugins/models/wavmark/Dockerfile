@@ -8,7 +8,8 @@ ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
 COPY /src/plugins/models/wavmark/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY /src/plugins/models/wavmark/constraints.txt .
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY src/plugins/models/wavmark .
 

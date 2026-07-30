@@ -8,7 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# Constraints capture the image's currently-resolved dependency set
+# (REORG_PLAN P0.2 freeze-in-place; a no-op at capture time).
+COPY constraints.base.txt /constraints.base.txt
 RUN pip install --no-cache-dir \
+    -c /constraints.base.txt \
     torch==2.7.1 \
     torchaudio \
     numpy \

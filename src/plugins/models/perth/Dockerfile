@@ -7,7 +7,8 @@ ENV HOST=${HOST}
 
 # Only install service-specific dependencies not in base
 COPY /src/plugins/models/perth/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY /src/plugins/models/perth/constraints.txt .
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 COPY src/plugins/models/perth .
 

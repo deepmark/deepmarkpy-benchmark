@@ -41,7 +41,8 @@ chinese-test-60s/
 chinese-test-combined/
 report_baseline_replacement/
 results/
-scripts/
+# scripts/ is tracked since P0.2/P0.3: it holds the committed fixture
+# and constraint helpers required by docs/REORG_PLAN.md §4.3/§6.
 
 
 report/
