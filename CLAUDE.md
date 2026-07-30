@@ -54,7 +54,7 @@ python src/run.py --wav_files_dir /path/to/wavs --wm_model AudioSealModel --atta
 ## Common Gotchas
 
 - Plugin loading imports ALL plugins at startup. If a dependency is missing (e.g., `pywt`, `audiocomplib`), that plugin silently fails to load
-- The `.env` file is gitignored; copy `.env.example` to `.env` for local development
+- `.env` is tracked in git even though `.gitignore` lists it (the entry never untracked it) — local port edits show up as modifications; `.env.example` mirrors it
 - Accuracy values are percentages (0-100), NOT decimals (0-1). All thresholds and comparisons must use percentage scale
 - `CrossModelAttack.apply()` returns a tuple `(audio, watermark)`, not just audio — handled specially in benchmark.py
 - Perth is a zero-bit model (detect returns a scalar, not a bit array)
