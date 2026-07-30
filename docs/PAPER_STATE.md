@@ -1,7 +1,8 @@
 # Paper-reproducing repository state (P0.2 record)
 
 Status: **resolved 2026-07-30 — owner ruling: the `v1.0.0`/`v1.1.0` releases
-were made in error by another developer and are to be ignored entirely.** They
+were made in error by another developer; their tags have been purged from the
+repository and versioning restarts fresh with the packaging release.** They
 are not part of this effort's lineage (neither is an ancestor of `main`'s
 current line), and no tag reproduces the paper's evaluated state. The
 best-evidence candidate for the evaluated state remains `c66a786` (below);

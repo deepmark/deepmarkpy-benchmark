@@ -1,6 +1,7 @@
 # DeepMarkPy Benchmark — Packaging & Plugin Reorganization Plan
 
 **Status:** Ready for owner review (v2 — revised after adversarial verification pass)
+**Amended:** 2026-07-30 (2), owner ruling: the erroneous `v1.0.0`/`v1.1.0` tags are **purged** from the repository and versioning restarts fresh — the P2 release ships as **`v1.0.0`** (read every `v2.0.0` in this plan as `v1.0.0`); with no prior release line, §6.1's "cut a v1.x maintenance branch" rollback item is superseded by "the pre-P2 tip is the rollback point", and P2's "migration guide v1→v2" becomes a guide from the unversioned source-checkout workflow to the packaged release.
 **Amended:** 2026-07-30, owner-approved: §4.3 golden-harness seed protocol extended with stdlib `random.seed` (pins `crop_random`); §6 P0.3 row aligned with §4.3 on `collusion_2` (excluded as model-callback, not "statistical-only"); `codec2_vocoder` excluded from goldens per KNOWN_DEFECTS D16 (in-process pycodec2 state); the `v1.0.0`/`v1.1.0` release tags ruled void (see `docs/PAPER_STATE.md`)
 **Date:** 2026-07-29
 **Owner:** Slavko Kovačević (DeepMark)

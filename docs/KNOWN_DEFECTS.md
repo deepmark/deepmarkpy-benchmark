@@ -10,7 +10,8 @@ below (or anything of the same character: adding timeouts or
 text, fixing kwarg/sample-rate mismatches, removing dead code, normalizing
 logging, hoisting per-request instantiation, seeding stochastic paths)
 breaks that guarantee and is out of scope. **Target release for all entries:
-the deferred-fix release, scoped separately after v2.0.0** (REORG_PLAN §P3.3).
+the deferred-fix release, scoped separately after the v1.0.0 packaging
+release** (REORG_PLAN §P3.3).
 
 If preserving an entry exactly ever conflicts with an assigned extraction,
 stop and escalate per `docs/AGENT_PROMPT.md` — do not resolve the conflict
