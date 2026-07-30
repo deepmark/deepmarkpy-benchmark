@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
-from plugin_manager import PluginManager  # noqa: E402
+from deepmarkpy.plugin_manager import PluginManager  # noqa: E402
 
 SAMPLING_RATE = 16000
 INPUT_RNG_SEED = 42

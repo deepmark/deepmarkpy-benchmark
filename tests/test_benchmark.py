@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from benchmark import Benchmark
+from deepmarkpy.benchmark import Benchmark
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from utils.metrics import trim_audio_to_match, psnr, si_sdr
+from deepmarkpy.utils.metrics import trim_audio_to_match, psnr, si_sdr
 
 
 # ---------------------------------------------------------------------------

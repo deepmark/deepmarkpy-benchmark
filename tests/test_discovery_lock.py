@@ -47,7 +47,7 @@ from pathlib import Path
 
 import pytest
 
-from plugin_manager import PluginManager
+from deepmarkpy.plugin_manager import PluginManager
 
 # The exact model class-name set registered in the canonical environment,
 # mapped to the plugin directory whose model.py defines each class.

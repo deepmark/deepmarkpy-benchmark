@@ -6,7 +6,7 @@ Only tests attacks that run locally without Docker containers.
 import numpy as np
 import pytest
 
-from plugin_manager import PluginManager
+from deepmarkpy.plugin_manager import PluginManager
 
 
 @pytest.fixture(scope="module")
@@ -190,7 +190,7 @@ class TestReplacement2Attack:
     def test_matches_original_with_defaults(self, attacks):
         """With default params the fast variant reproduces the original
         ReplacementAttack output (up to float rounding)."""
-        from plugins.attacks.replacement.replacement_attack import (
+        from deepmarkpy.plugins.attacks.replacement.replacement_attack import (
             replacement_attack,
         )
 

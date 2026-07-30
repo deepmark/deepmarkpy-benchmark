@@ -8,7 +8,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from run import to_json_safe
+from deepmarkpy.run import to_json_safe
 
 
 class TestToJsonSafe:

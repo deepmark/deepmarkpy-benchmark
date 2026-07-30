@@ -47,7 +47,7 @@ import shutil
 import numpy as np
 import pytest
 
-from plugin_manager import PluginManager
+from deepmarkpy.plugin_manager import PluginManager
 from tests.test_discovery_lock import CANONICAL_ATTACKS, OPTIONAL_DEP_ATTACKS
 
 GOLDENS_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "goldens")

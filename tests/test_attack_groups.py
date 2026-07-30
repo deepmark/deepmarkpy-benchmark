@@ -2,8 +2,8 @@
 
 import pytest
 
-from plugin_manager import PluginManager
-from utils.attack_groups import (
+from deepmarkpy.plugin_manager import PluginManager
+from deepmarkpy.utils.attack_groups import (
     ATTACK_GROUPS,
     get_attacks_for_groups,
     get_group_for_attack,
@@ -76,5 +76,5 @@ class TestGetMetricsForAttack:
         assert "nisqa_mos" in metrics
 
     def test_unknown_attack_returns_all_metrics(self):
-        from utils.metrics import ALL_METRICS
+        from deepmarkpy.utils.metrics import ALL_METRICS
         assert set(get_metrics_for_attack("FakeAttack")) == set(ALL_METRICS)
