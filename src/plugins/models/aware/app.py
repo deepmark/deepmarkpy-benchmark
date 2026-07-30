@@ -3,15 +3,12 @@ import os
 import sys
 from typing import List, Optional
 
-import numpy as np
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from aware.service import embed_watermark, detect_watermark
-from aware.utils.models import load
-
-from utils.utils import load_config, resample_audio
+from inference import Engine
+from utils.utils import load_config
 
 
 logger = logging.getLogger(__name__)
@@ -27,11 +24,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
 
 try:
     logger.info("Loading AWARE models...")
-    embedder, detector = load()
-    model = {
-        "embedder": embedder,
-        "detector": detector,
-    }
+    engine = Engine(config)
     logger.info("AWARE models loaded successfully")
 except Exception as e:
     logger.critical(f"Failed to load AWARE models: {e}. Application cannot start.")
@@ -54,34 +47,15 @@ class DetectRequest(BaseModel):
 @app.post("/embed")
 async def embed(request: EmbedRequest):
     """Embed a watermark in an audio file using AWARE."""
-    audio = np.array(request.audio)
-    watermark_data = np.array(request.watermark_data, dtype=np.int32)
-    sampling_rate = request.sampling_rate
-
-    if sampling_rate != config["sampling_rate"]:
-        audio = resample_audio(audio, sampling_rate, config["sampling_rate"])
-
-    embedder = model["embedder"]
-
     try:
-        watermarked_audio = embed_watermark(
-            audio,
-            config["sampling_rate"],
-            watermark_data,
-            embedder
+        watermarked_audio = engine.embed(
+            request.audio, request.watermark_data, request.sampling_rate
         )
     except Exception as e:
         logger.error(f"Error embedding watermark: {e}")
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
-
-    # Sanitize watermarked audio to ensure JSON serialization works
-    # Replace NaN and Inf values with 0
-    watermarked_audio = np.nan_to_num(watermarked_audio, nan=0.0, posinf=0.0, neginf=0.0)
-
-    if sampling_rate != config["sampling_rate"]:
-        watermarked_audio = resample_audio(watermarked_audio, config["sampling_rate"], sampling_rate)
 
     return {
         "watermarked_audio": watermarked_audio.tolist(),
@@ -91,30 +65,15 @@ async def embed(request: EmbedRequest):
 @app.post("/detect")
 async def detect(request: DetectRequest):
     """Detect a watermark from an audio file using AWARE."""
-    audio = np.array(request.audio)
-    sampling_rate = request.sampling_rate
-
-    if sampling_rate != config["sampling_rate"]:
-        audio = resample_audio(audio, sampling_rate, config["sampling_rate"])
-
-    detector = model["detector"]
-
     try:
-        detected_watermark, confidence = detect_watermark(
-            audio,
-            config["sampling_rate"],
-            detector
+        detected_watermark, confidence = engine.detect(
+            request.audio, request.sampling_rate
         )
     except Exception as e:
         logger.error(f"Error detecting watermark: {e}")
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
-
-    # Sanitize detected watermark and confidence to ensure JSON serialization works
-    if detected_watermark is not None:
-        detected_watermark = np.nan_to_num(detected_watermark, nan=0.0, posinf=1.0, neginf=0.0)
-
 
     return {
         "watermark": detected_watermark.tolist() if detected_watermark is not None else None,

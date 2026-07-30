@@ -31,8 +31,10 @@ COPY /src/plugins/models/aware/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c /app/constraints.txt
 
 # Copy application files
+# The host-side client (model.py) is not part of the image
+# (REORG_PLAN §5.1 — stop copying host-side files while touched).
 COPY src/plugins/models/aware/app.py .
-COPY src/plugins/models/aware/model.py .
+COPY src/plugins/models/aware/inference.py .
 COPY src/plugins/models/aware/config.json .
 COPY src/utils ./utils
 
