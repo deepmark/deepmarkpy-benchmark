@@ -76,6 +76,8 @@ SERVICES = {
     "timbrewm": ("src/plugins/models/timbrewm", 9001, "model"),
     "wavmark": ("src/plugins/models/wavmark", 8001, "model"),
     "vae": ("src/plugins/attacks/vae", 10001, "attack"),
+    "encodec": ("src/plugins/attacks/encodec", 10007, "attack"),
+    "descript_audio_codec": ("src/plugins/attacks/descript_audio_codec", 10008, "attack"),
     "diffusion": ("src/plugins/attacks/diffusion", 10002, "attack"),
     "neural_vocoder": ("src/plugins/attacks/neural_vocoder", 10004, "attack"),
     "opus_codec": ("src/plugins/attacks/opus_codec", 10023, "attack"),
@@ -123,6 +125,8 @@ def build_attack_extra_fields(service: str, cfg: dict) -> dict:
         return {"noise_strength": 0.0}
     if service == "speech_enhancement2":
         return {"model_name": cfg["model_name_se2"]}
+    if service == "descript_audio_codec":
+        return {"n_codebooks_dac": cfg["n_codebooks_dac"]}
     if service == "network_transmission":
         keys = [
             "bitrate_bps_netem", "frame_duration_ms_netem", "delay_ms_netem",

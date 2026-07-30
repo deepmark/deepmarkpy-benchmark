@@ -25,6 +25,8 @@ only.
 | timbrewm | model | deterministic | byte-identical double call |
 | wavmark | model | deterministic | byte-identical double call (2 s input — 1 s yields zero usable chunks in `wavmark.encode_watermark`) |
 | neural_vocoder | attack | deterministic | byte-identical double call |
+| encodec | attack | deterministic | byte-identical double call |
+| descript_audio_codec | attack | deterministic | byte-identical double call |
 | opus_codec | attack | deterministic | byte-identical double call |
 | speech_tokenization | attack | deterministic | byte-identical double call |
 | speech_enhancement1 | attack | deterministic | byte-identical double call **with `noise_strength=0.0` in the request** (§4.3 prescription; default 0.01 is stochastic) |

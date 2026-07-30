@@ -50,6 +50,8 @@ SERVICE_TO_PLUGIN = {
     "timbrewm": "src/plugins/models/timbrewm",
     "wavmark": "src/plugins/models/wavmark",
     "vae": "src/plugins/attacks/vae",
+    "encodec": "src/plugins/attacks/encodec",
+    "descript_audio_codec": "src/plugins/attacks/descript_audio_codec",
     "diffusion": "src/plugins/attacks/diffusion",
     "neural_vocoder": "src/plugins/attacks/neural_vocoder",
     "opus_codec": "src/plugins/attacks/opus_codec",

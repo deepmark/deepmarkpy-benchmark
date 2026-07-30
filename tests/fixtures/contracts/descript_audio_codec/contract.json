@@ -1,0 +1,32 @@
+{
+  "service": "descript_audio_codec",
+  "kind": "attack",
+  "recorded": "2026-07-30",
+  "image_id": "f20d78f07229aba3b9283797e1064af4f140c628d119d24fe7a996ef5912e6e6",
+  "classification": "deterministic",
+  "classification_note": null,
+  "endpoints": {
+    "/attack": {
+      "request_non_audio": {
+        "sampling_rate": 16000,
+        "n_codebooks_dac": 9
+      },
+      "response_status": 200,
+      "response_keys": [
+        "audio"
+      ],
+      "response_sha256": "266de4ac5c4ca29b8d7ed0b634ef821afdbf7ce6875b87e9bd13357f89603c0c",
+      "double_call_identical": true,
+      "double_call_stats": [
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.24690487038996511
+        },
+        {
+          "audio_len": 16000,
+          "audio_rms": 0.24690487038996511
+        }
+      ]
+    }
+  }
+}

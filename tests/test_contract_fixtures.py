@@ -20,6 +20,7 @@ CONTRACTS_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "contracts")
 ALL_SERVICES = frozenset({
     "audioseal", "aware", "perth", "silentcipher", "timbrewm", "wavmark",
     "vae", "diffusion", "neural_vocoder", "opus_codec",
+    "encodec", "descript_audio_codec",
     "network_transmission", "speech_enhancement1", "speech_enhancement2",
     "speech_tokenization",
 })
@@ -36,6 +37,8 @@ EXPECTED_CLASSIFICATION = {
     "opus_codec": "deterministic",
     "speech_tokenization": "deterministic",
     "speech_enhancement1": "deterministic",
+    "encodec": "deterministic",
+    "descript_audio_codec": "deterministic",
     "vae": "stochastic",
     "speech_enhancement2": "stochastic",
     "network_transmission": "stochastic",

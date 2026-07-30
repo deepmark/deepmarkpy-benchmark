@@ -44,6 +44,24 @@ services:
     environment:
       - APP_PORT=${VAE_PORT}
 
+  encodec:
+    build:
+      context: .
+      dockerfile: src/plugins/attacks/encodec/Dockerfile
+    ports:
+      - "${ENCODEC_PORT}:${ENCODEC_PORT}"
+    environment:
+      - APP_PORT=${ENCODEC_PORT}
+
+  descript_audio_codec:
+    build:
+      context: .
+      dockerfile: src/plugins/attacks/descript_audio_codec/Dockerfile
+    ports:
+      - "${DESCRIPT_AUDIO_CODEC_PORT}:${DESCRIPT_AUDIO_CODEC_PORT}"
+    environment:
+      - APP_PORT=${DESCRIPT_AUDIO_CODEC_PORT}
+
   diffusion:
     build:
       context: .
