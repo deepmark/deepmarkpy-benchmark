@@ -8,18 +8,18 @@ Open-source benchmarking framework for evaluating audio watermarking robustness.
 
 ## Architecture
 
-- **Plugin-based**: Models and attacks auto-discovered from `src/plugins/models/` and `src/plugins/attacks/` via `PluginManager`
+- **Plugin-based**: Models and attacks auto-discovered from `src/deepmarkpy/plugins/models/` and `src/deepmarkpy/plugins/attacks/` via `PluginManager`
 - **Client-server**: Complex ML models/attacks run in Docker containers, accessed via HTTP (FastAPI). Simple attacks run natively
-- **Base classes**: `BaseModel` (embed/detect) in `src/core/base_model.py`, `BaseAttack` (apply) in `src/core/base_attack.py`
+- **Base classes**: `BaseModel` (embed/detect) in `src/deepmarkpy/core/base_model.py`, `BaseAttack` (apply) in `src/deepmarkpy/core/base_attack.py`
 - **Config-driven**: Each plugin has a `config.json` with defaults. Model configs include `returns_confidence` and `is_zero_bit` flags. Detection reliability uses `is_watermarked()` on the model class
 
 ## Key Files
 
-- `src/run.py` — CLI entrypoint
-- `src/benchmark.py` — Core benchmark orchestration (run loop, accuracy computation)
-- `src/plugin_manager.py` — Auto-discovers plugins by walking directories
-- `src/utils/metrics.py` — PESQ, STOI, PSNR, SI-SDR
-- `src/utils/report_generator.py` — LaTeX + chart generation
+- `src/deepmarkpy/run.py` — CLI entrypoint (`deepmark-benchmark` console script; `src/run.py` is a deprecation shim)
+- `src/deepmarkpy/benchmark.py` — Core benchmark orchestration (run loop, accuracy computation)
+- `src/deepmarkpy/plugin_manager.py` — Auto-discovers plugins by walking directories
+- `src/deepmarkpy/utils/metrics.py` — PESQ, STOI, PSNR, SI-SDR
+- `src/deepmarkpy/utils/report_generator.py` — LaTeX + chart generation
 - `docker-compose.yml` — All containerized services
 - `.env.example` — Port configuration template
 
@@ -29,7 +29,7 @@ Open-source benchmarking framework for evaluating audio watermarking robustness.
 python -m pytest tests/ -v
 ```
 
-Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Tests add `src/` to `sys.path` via conftest.
+Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Tests import the installed `deepmarkpy` package (`pip install -e .`).
 
 Current: 210 tests, ~5s runtime. No Docker required for tests. Note: `test_attack_groups.py::TestGroupedAttacksMatchPlugins` fails in environments missing `pywt`/`pyrubberband` (frozen defect D14, `docs/KNOWN_DEFECTS.md` — this includes the §4.3 canonical environment) — pre-existing, not a regression. Golden replay tests (`test_native_goldens.py`) enforce only where the numeric environment matches their manifest and skip elsewhere.
 
@@ -39,7 +39,7 @@ Current: 210 tests, ~5s runtime. No Docker required for tests. Note: `test_attac
 # Start Docker services (if using containerized models/attacks)
 docker-compose up -d audioseal
 # Run benchmark
-python src/run.py --wav_files_dir /path/to/wavs --wm_model AudioSealModel --attack_types GaussianNoiseAttack
+deepmark-benchmark --wav_files_dir /path/to/wavs --wm_model AudioSealModel --attack_types GaussianNoiseAttack
 ```
 
 ## Development Conventions

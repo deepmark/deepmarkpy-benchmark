@@ -65,6 +65,13 @@ def main():
     parser = argparse.ArgumentParser(description="Run DeepMark Benchmark CLI")
 
     parser.add_argument(
+        "--report_dir",
+        type=str,
+        default="report",
+        help="Directory for generated reports and saved audio "
+             "(default: ./report, relative to the working directory).",
+    )
+    parser.add_argument(
         "--plugins_dir",
         type=str,
         default=None,
@@ -246,13 +253,13 @@ def main():
             )
             return
         model_name = args.wm_models[0] if args.wm_models else args.wm_model
-        _clean_report_dir("report")
+        _clean_report_dir(args.report_dir)
         run_no_attacks_mode(benchmark, filepaths, [model_name], args)
         run_detection_reliability_mode(benchmark, filepaths, model_name, args)
     elif args.no_attacks:
         # --- No-attacks mode: embed + detect only ---
         model_names = args.wm_models if args.wm_models else [args.wm_model]
-        _clean_report_dir("report")
+        _clean_report_dir(args.report_dir)
         run_no_attacks_mode(benchmark, filepaths, model_names, args)
     elif args.detection_reliability:
         # --- Detection reliability mode: FP/FN measurement ---
@@ -264,7 +271,7 @@ def main():
             )
             return
         model_name = args.wm_models[0] if args.wm_models else args.wm_model
-        _clean_report_dir("report")
+        _clean_report_dir(args.report_dir)
         run_detection_reliability_mode(benchmark, filepaths, model_name, args)
     elif args.wm_models and len(args.wm_models) > 1:
         # --- Multi-model mode ---
@@ -272,7 +279,7 @@ def main():
     else:
         # --- Single-model mode (--wm_model or --wm_models with one entry) ---
         model_name = args.wm_models[0] if args.wm_models else args.wm_model
-        _clean_report_dir("report")
+        _clean_report_dir(args.report_dir)
         run_single_model(benchmark, filepaths, model_name, args)
 
 
@@ -304,7 +311,7 @@ def _copy_deepmark_assets(src_dir, dst_dir):
 
 def run_no_attacks_mode(benchmark, filepaths, model_names, args):
     """Run embed+detect without attacks for one or more models."""
-    report_dir = "report"
+    report_dir = args.report_dir
     os.makedirs(report_dir, exist_ok=True)
 
     from deepmarkpy.utils.no_attacks_report_generator import generate_no_attacks_report
@@ -370,7 +377,7 @@ def run_detection_reliability_mode(benchmark, filepaths, model_name, args):
         generate_detection_reliability_report,
     )
 
-    report_dir = "report"
+    report_dir = args.report_dir
     os.makedirs(report_dir, exist_ok=True)
 
     # Build the same ``args_dict`` plumbing the rest of the modes use --
