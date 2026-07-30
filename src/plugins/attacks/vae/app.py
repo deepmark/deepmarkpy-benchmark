@@ -3,14 +3,12 @@ import os
 import sys
 from typing import List
 
-import numpy as np
-import torch
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
-from vae import VAE
 
-from utils.utils import load_config, resample_audio
+from inference import Engine
+from utils.utils import load_config
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +20,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-logger.info(f"Using device: {device}")
-
-model = VAE(config["model_name_vae"], device)
+engine = Engine(config)
 
 
 class AttackRequest(BaseModel):
@@ -47,20 +41,7 @@ async def attack(request: AttackRequest):
     Returns:
         np.ndarray: The attacked audio signal.
     """
-    sampling_rate = request.sampling_rate
-    audio = np.array(request.audio)
-    audio = np.squeeze(audio)
-
-    block_size = 2048
-    original_length = len(audio)
-    new_length = (original_length // block_size) * block_size
-    audio = audio[:new_length]
-
-    audio = resample_audio(audio, sampling_rate, target_sr=48000)
-
-    audio = model.inference(audio)
-
-    audio = resample_audio(audio, 48000, sampling_rate)
+    audio = engine.apply(request.audio, request.sampling_rate)
 
     return {"audio": audio.tolist()}
 

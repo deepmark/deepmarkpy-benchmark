@@ -9,7 +9,9 @@ COPY /src/plugins/attacks/vae/requirements.txt .
 COPY /src/plugins/attacks/vae/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/attacks/vae .
+COPY src/plugins/attacks/vae/app.py .
+COPY src/plugins/attacks/vae/inference.py .
+COPY src/plugins/attacks/vae/config.json .
 
 # Expose the service port
 EXPOSE 10001
