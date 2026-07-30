@@ -41,6 +41,12 @@ cp .env.example .env
 
 ### 3. Install Core Dependencies (Optional - for development/direct script interaction)
 
+> **Note:** the host environment no longer includes PyTorch. The `encodec`
+> and `descript_audio_codec` attacks now run as Docker services (like the
+> other ML attacks); `torch`, `torchaudio`, `encodec`, and
+> `descript-audio-codec` were removed from `requirements.txt`. Existing
+> environments keep working; fresh installs are considerably lighter.
+
 It's recommended to use a virtual environment for the benchmark runner itself:
 
 Linux/macOS: 

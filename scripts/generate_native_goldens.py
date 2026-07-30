@@ -72,8 +72,7 @@ GOLDENS_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "goldens")
 # the manifest; the replay test enforces byte-identity only when the running
 # environment matches (§4.3 — byte-identity is same-machine, same-environment).
 NUMERIC_ENV_PACKAGES = [
-    "numpy", "scipy", "librosa", "soundfile", "torch", "torchaudio",
-    "encodec", "descript-audio-codec", "audiocomplib",
+    "numpy", "scipy", "librosa", "soundfile", "audiocomplib",
 ]
 
 # Attacks goldened here. Values: extra kwargs beyond sampling_rate (all
@@ -86,9 +85,7 @@ GOLDEN_ATTACKS = {
     "CropBeginningAttack": {},
     "CropRandomAttack": {},
     "CutSamplesAttack": {},
-    "DescriptAudioCodecAttack": {},
     "EchoAttack": {},
-    "EncodecAttack": {},
     "EqualizerAttack": {},
     "FlangerAttack": {},
     "FlipSamplesAttack": {},
@@ -111,6 +108,7 @@ GOLDEN_ATTACKS = {
 
 EXCLUSIONS = {
     "containerized (P0.4 contract fixtures)": [
+        "EncodecAttack", "DescriptAudioCodecAttack",
         "VAEAttack", "DiffusionAttack", "NeuralVocoderAttack",
         "SpeechEnhancement1Attack", "SpeechEnhancement2Attack",
         "SpeechTokenizationAttack", "OpusCodecAttack",

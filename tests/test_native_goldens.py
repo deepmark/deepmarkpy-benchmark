@@ -18,9 +18,9 @@ manifest (``tests/fixtures/goldens/manifest.json``, the source of truth this
 suite parametrizes from); per the §6 P0.3 acceptance row the list is also
 recorded here:
 
-- containerized, verified by P0.4 contract fixtures instead: VAE, Diffusion,
-  NeuralVocoder, SpeechEnhancement1/2, SpeechTokenization, OpusCodec,
-  NetworkTransmission;
+- containerized, verified by P0.4 contract fixtures instead: Encodec,
+  DescriptAudioCodec, VAE, Diffusion, NeuralVocoder, SpeechEnhancement1/2,
+  SpeechTokenization, OpusCodec, NetworkTransmission;
 - model-callback (need live models/the registry; collusion_2 additionally
   unseedable — fresh ``default_rng()`` at attack.py:129): SameModel,
   CrossModel, Collusion, Collusion2, ZeroBitCollusion;
