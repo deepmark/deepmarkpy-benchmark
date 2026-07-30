@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepmarkpy"
+version = "1.0.0"
+description = "DeepMark Benchmark: audio watermarking robustness evaluation against 40+ signal-processing, AI-based, and transmission attacks"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "DeepMark" }]
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+]
+# Core dependencies are everything the CLI imports unconditionally
+# (metrics.py imports pesq/pystoi and run.py imports the matplotlib-backed
+# report generator at module level). requirements.txt remains the pinned
+# reproduction lockfile.
+dependencies = [
+    "numpy",
+    "scipy",
+    "librosa",
+    "soundfile",
+    "requests",
+    "tqdm",
+    "pesq",
+    "pystoi",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+# ViSQOL is imported lazily and skipped when absent; NISQA has no PyPI
+# distribution and stays a documented manual install.
+metrics = ["visqol-python"]
+# Without pywt/pyrubberband: docs/KNOWN_DEFECTS.md D14.
+native-attacks = ["pycodec2>=4.0.0", "audiocomplib"]
+all = ["deepmarkpy[metrics,native-attacks]"]
+
+[project.scripts]
+deepmark-benchmark = "deepmarkpy.run:main"
+
+[project.urls]
+Homepage = "https://github.com/deepmark/deepmarkpy-benchmark"
+Repository = "https://github.com/deepmark/deepmarkpy-benchmark"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["deepmarkpy*"]
+
+[tool.setuptools.package-data]
+deepmarkpy = [
+    "plugins/**/config.json",
+    "plugins/**/requirements.txt",
+    "plugins/**/*_requirements.txt",
+    "plugins/**/constraints*.txt",
+    "plugins/**/Dockerfile",
+]
