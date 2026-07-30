@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from inference import Engine
 
-from utils.utils import load_config, resample_audio
+from deepmarkpy.utils.utils import load_config, resample_audio
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)

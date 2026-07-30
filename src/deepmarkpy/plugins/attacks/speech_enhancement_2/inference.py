@@ -15,7 +15,7 @@ import numpy as np
 import soundfile as sf
 from clearvoice import ClearVoice
 
-from utils.utils import resample_audio
+from deepmarkpy.utils.utils import resample_audio
 
 logger = logging.getLogger(__name__)
 

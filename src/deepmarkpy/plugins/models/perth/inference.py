@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from perth.perth_net.perth_net_implicit.perth_watermarker import PerthImplicitWatermarker
 
-from utils.utils import resample_audio
+from deepmarkpy.utils.utils import resample_audio
 
 logger = logging.getLogger(__name__)
 

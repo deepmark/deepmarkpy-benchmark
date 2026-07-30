@@ -1,20 +1,14 @@
 """BigVGAN mel-vocoder resynthesis attack inference, HTTP-free.
 
-Imports follow the container layout: ``app_utils`` is the image's alias
-for the shared utils, and ``bigvgan``/``meldataset`` resolve from the
-image's /app/BigVGAN working directory (the ``sys.path.append`` is a
-no-op there).
+``bigvgan``/``meldataset`` resolve from the image's /app/BigVGAN working
+directory.
 """
 
 import logging
-import os
-import sys
 
 import numpy as np
 import torch
-from app_utils.utils import resample_audio
-
-sys.path.append("BigVGAN")
+from deepmarkpy.utils.utils import resample_audio
 
 import bigvgan
 from meldataset import get_mel_spectrogram

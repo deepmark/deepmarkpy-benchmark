@@ -5,13 +5,13 @@ ENV APP_PORT=10002
 ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
-COPY /src/plugins/attacks/diffusion/requirements.txt .
-COPY /src/plugins/attacks/diffusion/constraints.txt .
+COPY /src/deepmarkpy/plugins/attacks/diffusion/requirements.txt .
+COPY /src/deepmarkpy/plugins/attacks/diffusion/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/attacks/diffusion/app.py .
-COPY src/plugins/attacks/diffusion/inference.py .
-COPY src/plugins/attacks/diffusion/config.json .
+COPY src/deepmarkpy/plugins/attacks/diffusion/app.py .
+COPY src/deepmarkpy/plugins/attacks/diffusion/inference.py .
+COPY src/deepmarkpy/plugins/attacks/diffusion/config.json .
 
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}

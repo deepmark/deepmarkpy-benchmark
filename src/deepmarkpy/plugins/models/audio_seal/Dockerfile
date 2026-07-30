@@ -6,13 +6,13 @@ ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
 # Only install service-specific dependencies not in base
-COPY /src/plugins/models/audio_seal/requirements.txt .
-COPY /src/plugins/models/audio_seal/constraints.txt .
+COPY /src/deepmarkpy/plugins/models/audio_seal/requirements.txt .
+COPY /src/deepmarkpy/plugins/models/audio_seal/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/models/audio_seal/app.py .
-COPY src/plugins/models/audio_seal/inference.py .
-COPY src/plugins/models/audio_seal/config.json .
+COPY src/deepmarkpy/plugins/models/audio_seal/app.py .
+COPY src/deepmarkpy/plugins/models/audio_seal/inference.py .
+COPY src/deepmarkpy/plugins/models/audio_seal/config.json .
 
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}

@@ -12,7 +12,7 @@ from speechbrain.inference.enhancement import (
     WaveformEnhancement,
 )
 
-from utils.utils import resample_audio
+from deepmarkpy.utils.utils import resample_audio
 
 
 class Engine:

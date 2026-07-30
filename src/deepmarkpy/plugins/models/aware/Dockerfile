@@ -13,8 +13,8 @@ WORKDIR /app
 # Two constraint files: the editable install resolves aware's own exact
 # pins (stage 1); requirements.txt later upgrades some of them. Each pip
 # step is pinned to the set it resolves.
-COPY /src/plugins/models/aware/constraints.stage1.txt /app/constraints.stage1.txt
-COPY /src/plugins/models/aware/constraints.txt /app/constraints.txt
+COPY /src/deepmarkpy/plugins/models/aware/constraints.stage1.txt /app/constraints.stage1.txt
+COPY /src/deepmarkpy/plugins/models/aware/constraints.txt /app/constraints.txt
 RUN git clone https://github.com/deepmarkpy/aware.git aware && \
     cd aware && git checkout fea9c49e3dfc57a421705ae411adedd80bcc6d09 && \
     pip install --no-cache-dir -e . -c /app/constraints.stage1.txt
@@ -23,14 +23,13 @@ RUN git clone https://github.com/deepmarkpy/aware.git aware && \
 WORKDIR /app
 
 # Install service-specific dependencies
-COPY /src/plugins/models/aware/requirements.txt .
+COPY /src/deepmarkpy/plugins/models/aware/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c /app/constraints.txt
 
 # Copy application files
-COPY src/plugins/models/aware/app.py .
-COPY src/plugins/models/aware/inference.py .
-COPY src/plugins/models/aware/config.json .
-COPY src/utils ./utils
+COPY src/deepmarkpy/plugins/models/aware/app.py .
+COPY src/deepmarkpy/plugins/models/aware/inference.py .
+COPY src/deepmarkpy/plugins/models/aware/config.json .
 
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}

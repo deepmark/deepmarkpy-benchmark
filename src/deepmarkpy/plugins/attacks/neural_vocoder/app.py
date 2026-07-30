@@ -8,7 +8,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from app_utils.utils import load_config
+from deepmarkpy.utils.utils import load_config
 
 # The upstream BigVGAN clone ships its own inference.py, and the service's
 # working directory (/app/BigVGAN) shadows PYTHONPATH for a bare

@@ -25,8 +25,11 @@ RUN pip install --no-cache-dir \
 # Set up working directory
 WORKDIR /app
 
-# Copy shared utilities (this appears in all your dockerfiles)
-COPY src/utils ./utils
+# Install the deepmarkpy package (modules only; runtime deps are the
+# image's own frozen set)
+COPY pyproject.toml README.md LICENSE /tmp/deepmarkpy-pkg/
+COPY src/deepmarkpy /tmp/deepmarkpy-pkg/src/deepmarkpy
+RUN pip install --no-cache-dir --no-deps /tmp/deepmarkpy-pkg && rm -rf /tmp/deepmarkpy-pkg
 
 # Set up Python path
 ENV PYTHONPATH=/app:$PYTHONPATH

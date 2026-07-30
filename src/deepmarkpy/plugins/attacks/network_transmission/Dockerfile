@@ -24,8 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY src/plugins/attacks/network_transmission/requirements.txt .
-COPY src/plugins/attacks/network_transmission/constraints.txt .
+COPY src/deepmarkpy/plugins/attacks/network_transmission/requirements.txt .
+COPY src/deepmarkpy/plugins/attacks/network_transmission/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 # Build python-webrtc-audio-processing from the same fork v1 uses, with
@@ -38,7 +38,7 @@ RUN git clone https://github.com/nesovicelena/python-webrtc-audio-processing.git
     python setup.py install && \
     rm -rf /tmp/python-webrtc-audio-processing
 
-COPY src/plugins/attacks/network_transmission .
+COPY src/deepmarkpy/plugins/attacks/network_transmission .
 
 EXPOSE 10020
 

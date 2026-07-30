@@ -69,22 +69,22 @@ STOCHASTIC_OVERRIDES = {
 
 # service -> (plugin dir, host port .env var default, kind)
 SERVICES = {
-    "audioseal": ("src/plugins/models/audio_seal", 5001, "model"),
-    "aware": ("src/plugins/models/aware", 9004, "model"),
-    "perth": ("src/plugins/models/perth", 7010, "model"),
-    "silentcipher": ("src/plugins/models/silent_cipher", 7001, "model"),
-    "timbrewm": ("src/plugins/models/timbrewm", 9001, "model"),
-    "wavmark": ("src/plugins/models/wavmark", 8001, "model"),
-    "vae": ("src/plugins/attacks/vae", 10001, "attack"),
-    "encodec": ("src/plugins/attacks/encodec", 10007, "attack"),
-    "descript_audio_codec": ("src/plugins/attacks/descript_audio_codec", 10008, "attack"),
-    "diffusion": ("src/plugins/attacks/diffusion", 10002, "attack"),
-    "neural_vocoder": ("src/plugins/attacks/neural_vocoder", 10004, "attack"),
-    "opus_codec": ("src/plugins/attacks/opus_codec", 10023, "attack"),
-    "network_transmission": ("src/plugins/attacks/network_transmission", 10020, "attack"),
-    "speech_enhancement1": ("src/plugins/attacks/speech_enhancement_1", 10005, "attack"),
-    "speech_enhancement2": ("src/plugins/attacks/speech_enhancement_2", 10006, "attack"),
-    "speech_tokenization": ("src/plugins/attacks/speech_tokenization", 10003, "attack"),
+    "audioseal": ("src/deepmarkpy/plugins/models/audio_seal", 5001, "model"),
+    "aware": ("src/deepmarkpy/plugins/models/aware", 9004, "model"),
+    "perth": ("src/deepmarkpy/plugins/models/perth", 7010, "model"),
+    "silentcipher": ("src/deepmarkpy/plugins/models/silent_cipher", 7001, "model"),
+    "timbrewm": ("src/deepmarkpy/plugins/models/timbrewm", 9001, "model"),
+    "wavmark": ("src/deepmarkpy/plugins/models/wavmark", 8001, "model"),
+    "vae": ("src/deepmarkpy/plugins/attacks/vae", 10001, "attack"),
+    "encodec": ("src/deepmarkpy/plugins/attacks/encodec", 10007, "attack"),
+    "descript_audio_codec": ("src/deepmarkpy/plugins/attacks/descript_audio_codec", 10008, "attack"),
+    "diffusion": ("src/deepmarkpy/plugins/attacks/diffusion", 10002, "attack"),
+    "neural_vocoder": ("src/deepmarkpy/plugins/attacks/neural_vocoder", 10004, "attack"),
+    "opus_codec": ("src/deepmarkpy/plugins/attacks/opus_codec", 10023, "attack"),
+    "network_transmission": ("src/deepmarkpy/plugins/attacks/network_transmission", 10020, "attack"),
+    "speech_enhancement1": ("src/deepmarkpy/plugins/attacks/speech_enhancement_1", 10005, "attack"),
+    "speech_enhancement2": ("src/deepmarkpy/plugins/attacks/speech_enhancement_2", 10006, "attack"),
+    "speech_tokenization": ("src/deepmarkpy/plugins/attacks/speech_tokenization", 10003, "attack"),
 }
 
 # Per-request timeout: speech_enhancement2 instantiates ClearVoice per request

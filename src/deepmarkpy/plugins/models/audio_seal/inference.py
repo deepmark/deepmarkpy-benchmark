@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from audioseal import AudioSeal
 
-from utils.utils import resample_audio
+from deepmarkpy.utils.utils import resample_audio
 
 logger = logging.getLogger(__name__)
 

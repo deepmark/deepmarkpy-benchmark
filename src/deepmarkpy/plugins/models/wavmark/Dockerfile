@@ -7,13 +7,13 @@ ENV APP_PORT=8001
 ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
-COPY /src/plugins/models/wavmark/requirements.txt .
-COPY /src/plugins/models/wavmark/constraints.txt .
+COPY /src/deepmarkpy/plugins/models/wavmark/requirements.txt .
+COPY /src/deepmarkpy/plugins/models/wavmark/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/models/wavmark/app.py .
-COPY src/plugins/models/wavmark/inference.py .
-COPY src/plugins/models/wavmark/config.json .
+COPY src/deepmarkpy/plugins/models/wavmark/app.py .
+COPY src/deepmarkpy/plugins/models/wavmark/inference.py .
+COPY src/deepmarkpy/plugins/models/wavmark/config.json .
 
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}

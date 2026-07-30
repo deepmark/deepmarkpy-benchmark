@@ -34,13 +34,13 @@ ENV HOST=${HOST}
 # Copy TimbreWatermarking from builder
 COPY --from=builder /app/TimbreWatermarking /app/TimbreWatermarking
 
-COPY /src/plugins/models/timbrewm/requirements.txt .
-COPY /src/plugins/models/timbrewm/constraints.txt .
+COPY /src/deepmarkpy/plugins/models/timbrewm/requirements.txt .
+COPY /src/deepmarkpy/plugins/models/timbrewm/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/models/timbrewm/app.py .
-COPY src/plugins/models/timbrewm/inference.py .
-COPY src/plugins/models/timbrewm/config.json .
+COPY src/deepmarkpy/plugins/models/timbrewm/app.py .
+COPY src/deepmarkpy/plugins/models/timbrewm/inference.py .
+COPY src/deepmarkpy/plugins/models/timbrewm/config.json .
 
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}

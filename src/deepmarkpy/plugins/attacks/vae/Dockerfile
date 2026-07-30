@@ -5,13 +5,13 @@ ENV APP_PORT=10001
 ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
-COPY /src/plugins/attacks/vae/requirements.txt .
-COPY /src/plugins/attacks/vae/constraints.txt .
+COPY /src/deepmarkpy/plugins/attacks/vae/requirements.txt .
+COPY /src/deepmarkpy/plugins/attacks/vae/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/attacks/vae/app.py .
-COPY src/plugins/attacks/vae/inference.py .
-COPY src/plugins/attacks/vae/config.json .
+COPY src/deepmarkpy/plugins/attacks/vae/app.py .
+COPY src/deepmarkpy/plugins/attacks/vae/inference.py .
+COPY src/deepmarkpy/plugins/attacks/vae/config.json .
 
 # Expose the service port
 EXPOSE 10001

@@ -14,7 +14,7 @@ import numpy as np
 import torch
 from huggingface_hub import hf_hub_download
 
-from utils.utils import renormalize_audio, resample_audio
+from deepmarkpy.utils.utils import renormalize_audio, resample_audio
 
 logger = logging.getLogger(__name__)
 

@@ -43,22 +43,22 @@ REPO = Path(__file__).resolve().parent.parent
 SPECIAL_SELECTORS = {"base", "nv-builder"}
 
 SERVICE_TO_PLUGIN = {
-    "audioseal": "src/plugins/models/audio_seal",
-    "aware": "src/plugins/models/aware",
-    "perth": "src/plugins/models/perth",
-    "silentcipher": "src/plugins/models/silent_cipher",
-    "timbrewm": "src/plugins/models/timbrewm",
-    "wavmark": "src/plugins/models/wavmark",
-    "vae": "src/plugins/attacks/vae",
-    "encodec": "src/plugins/attacks/encodec",
-    "descript_audio_codec": "src/plugins/attacks/descript_audio_codec",
-    "diffusion": "src/plugins/attacks/diffusion",
-    "neural_vocoder": "src/plugins/attacks/neural_vocoder",
-    "opus_codec": "src/plugins/attacks/opus_codec",
-    "network_transmission": "src/plugins/attacks/network_transmission",
-    "speech_enhancement1": "src/plugins/attacks/speech_enhancement_1",
-    "speech_enhancement2": "src/plugins/attacks/speech_enhancement_2",
-    "speech_tokenization": "src/plugins/attacks/speech_tokenization",
+    "audioseal": "src/deepmarkpy/plugins/models/audio_seal",
+    "aware": "src/deepmarkpy/plugins/models/aware",
+    "perth": "src/deepmarkpy/plugins/models/perth",
+    "silentcipher": "src/deepmarkpy/plugins/models/silent_cipher",
+    "timbrewm": "src/deepmarkpy/plugins/models/timbrewm",
+    "wavmark": "src/deepmarkpy/plugins/models/wavmark",
+    "vae": "src/deepmarkpy/plugins/attacks/vae",
+    "encodec": "src/deepmarkpy/plugins/attacks/encodec",
+    "descript_audio_codec": "src/deepmarkpy/plugins/attacks/descript_audio_codec",
+    "diffusion": "src/deepmarkpy/plugins/attacks/diffusion",
+    "neural_vocoder": "src/deepmarkpy/plugins/attacks/neural_vocoder",
+    "opus_codec": "src/deepmarkpy/plugins/attacks/opus_codec",
+    "network_transmission": "src/deepmarkpy/plugins/attacks/network_transmission",
+    "speech_enhancement1": "src/deepmarkpy/plugins/attacks/speech_enhancement_1",
+    "speech_enhancement2": "src/deepmarkpy/plugins/attacks/speech_enhancement_2",
+    "speech_tokenization": "src/deepmarkpy/plugins/attacks/speech_tokenization",
 }
 
 PIN_RE = re.compile(r"^[A-Za-z0-9._-]+==\S+$")
@@ -117,7 +117,7 @@ def main() -> None:
     if only is None or "nv-builder" in only:
         build = subprocess.run(
             ["docker", "build", "--target", "builder", "-t", "nv-builder-freeze",
-             "-f", "src/plugins/attacks/neural_vocoder/Dockerfile", "."],
+             "-f", "src/deepmarkpy/plugins/attacks/neural_vocoder/Dockerfile", "."],
             cwd=REPO, capture_output=True, text=True, timeout=3600)
         if build.returncode != 0:
             raise SystemExit(
@@ -127,7 +127,7 @@ def main() -> None:
         kept, dropped = freeze_via(
             ["docker", "run", "--rm", "nv-builder-freeze", "pip", "freeze"])
         write_constraints(
-            REPO / "src/plugins/attacks/neural_vocoder/constraints.builder.txt",
+            REPO / "src/deepmarkpy/plugins/attacks/neural_vocoder/constraints.builder.txt",
             "the neural_vocoder builder stage", kept, dropped)
 
 

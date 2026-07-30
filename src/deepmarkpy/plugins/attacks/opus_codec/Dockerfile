@@ -14,13 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY src/plugins/attacks/opus_codec/requirements.txt .
-COPY src/plugins/attacks/opus_codec/constraints.txt .
+COPY src/deepmarkpy/plugins/attacks/opus_codec/requirements.txt .
+COPY src/deepmarkpy/plugins/attacks/opus_codec/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/attacks/opus_codec/app.py .
-COPY src/plugins/attacks/opus_codec/inference.py .
-COPY src/plugins/attacks/opus_codec/config.json .
+COPY src/deepmarkpy/plugins/attacks/opus_codec/app.py .
+COPY src/deepmarkpy/plugins/attacks/opus_codec/inference.py .
+COPY src/deepmarkpy/plugins/attacks/opus_codec/config.json .
 
 EXPOSE 10023
 

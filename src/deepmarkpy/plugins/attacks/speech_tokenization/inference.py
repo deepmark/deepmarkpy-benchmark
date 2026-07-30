@@ -7,7 +7,7 @@ The 16 kHz resample here duplicates app.py's request-level resample
 import torch
 from xcodec2.modeling_xcodec2 import XCodec2Model
 
-from utils.utils import resample_audio
+from deepmarkpy.utils.utils import resample_audio
 
 
 class Engine:

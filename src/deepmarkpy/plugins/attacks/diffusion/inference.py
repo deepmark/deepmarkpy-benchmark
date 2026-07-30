@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from diffusers import DiffusionPipeline
 
-from utils.utils import renormalize_audio, resample_audio
+from deepmarkpy.utils.utils import renormalize_audio, resample_audio
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,7 @@ import numpy as np
 from aware.service import embed_watermark, detect_watermark
 from aware.utils.models import load
 
-from utils.utils import resample_audio
+from deepmarkpy.utils.utils import resample_audio
 
 
 class Engine:

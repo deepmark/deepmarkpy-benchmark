@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from inference import Engine
-from utils.utils import load_config
+from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
 

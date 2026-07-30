@@ -7,7 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from utils.utils import load_config
+from deepmarkpy.utils.utils import load_config
 
 # Configure more detailed logging
 logging.basicConfig(level=logging.DEBUG)

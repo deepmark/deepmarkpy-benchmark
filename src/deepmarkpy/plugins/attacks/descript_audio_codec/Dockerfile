@@ -5,13 +5,13 @@ ENV APP_PORT=10008
 ARG HOST="0.0.0.0"
 ENV HOST=${HOST}
 
-COPY /src/plugins/attacks/descript_audio_codec/requirements.txt .
-COPY /src/plugins/attacks/descript_audio_codec/constraints.txt .
+COPY /src/deepmarkpy/plugins/attacks/descript_audio_codec/requirements.txt .
+COPY /src/deepmarkpy/plugins/attacks/descript_audio_codec/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/attacks/descript_audio_codec/app.py .
-COPY src/plugins/attacks/descript_audio_codec/inference.py .
-COPY src/plugins/attacks/descript_audio_codec/config.json .
+COPY src/deepmarkpy/plugins/attacks/descript_audio_codec/app.py .
+COPY src/deepmarkpy/plugins/attacks/descript_audio_codec/inference.py .
+COPY src/deepmarkpy/plugins/attacks/descript_audio_codec/config.json .
 
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}

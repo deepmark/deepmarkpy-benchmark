@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import yaml
 
-from utils.utils import resample_audio
+from deepmarkpy.utils.utils import resample_audio
 
 # Named "app" so the debug lines below keep their existing format in the
 # service log output ("DEBUG:app:...").
