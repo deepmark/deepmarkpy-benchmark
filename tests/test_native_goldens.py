@@ -28,9 +28,9 @@ recorded here:
   Mixing;
 - absent from the canonical environment (KNOWN_DEFECTS D14): Wavelet,
   TimeStretch, PitchShift, InvertedTimeStretch;
-- escalated determinism-policy gaps, owner decision pending: CropRandom
-  (stdlib ``random``, outside ``np.random.seed``'s reach), Codec2Vocoder
-  (pycodec2 carries C encoder state across in-process instantiations).
+- excluded per owner ruling 2026-07-30 (KNOWN_DEFECTS D16): Codec2Vocoder —
+  pycodec2 carries C encoder state across in-process instantiations, so its
+  output is invocation-history-dependent.
 
 ``test_goldens_and_exclusions_cover_the_attack_universe`` enforces that the
 goldens plus these exclusions exactly cover the discovery-lock attack
@@ -41,6 +41,7 @@ explicitly goldened or excluded.
 import importlib.metadata
 import json
 import os
+import random
 import shutil
 
 import numpy as np
@@ -113,6 +114,7 @@ def test_native_attack_matches_golden(cls_name, pm):
 
     audio = _canonical_input()
     np.random.seed(GLOBAL_SEED)
+    random.seed(GLOBAL_SEED)
     out = attacks[cls_name]["class"]().apply(
         audio, sampling_rate=SAMPLING_RATE, **meta["params"]
     )

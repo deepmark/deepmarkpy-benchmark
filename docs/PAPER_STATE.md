@@ -1,7 +1,11 @@
 # Paper-reproducing repository state (P0.2 record)
 
-Status: **verified — the expected answer was refuted; final designation awaits
-owner sign-off.**
+Status: **resolved 2026-07-30 — owner ruling: the `v1.0.0`/`v1.1.0` releases
+were made in error by another developer and are to be ignored entirely.** They
+are not part of this effort's lineage (neither is an ancestor of `main`'s
+current line), and no tag reproduces the paper's evaluated state. The
+best-evidence candidate for the evaluated state remains `c66a786` (below);
+tagging it is optional and stays with the owner.
 
 REORG_PLAN.md §2.5/§6 (P0.2) requires confirming which release tag reproduces
 the state evaluated in the paper (IEEE Access, vol. 14, 2026, pp. 62031-62044,
@@ -34,9 +38,9 @@ raw directories) between:
 | `c66a786` (merge of PR #10, "new_attacks2") | 2026-03-25 | Tree at submission (received 28 March). **Recommended**: evaluations for the submitted manuscript necessarily ran on or before this state. |
 | `7332a35` (merge of PR #14) | 2026-04-07 | Tip during the review window (accepted 15 April). Substantive changes vs `c66a786` (benchmark.py, base classes, many attacks) — applies only if evaluations were re-run during review. |
 
-## Pending owner decision
+## Disposition
 
-Designate the evaluated commit (recommendation: `c66a786`, unless evaluation
-logs/records show re-runs after 25 March 2026) and optionally tag it (e.g.
-`paper-ieee-access-2026`). No tag has been created by this effort; creating
-one is deferred to the owner.
+Owner ruling (2026-07-30): ignore the v1.x releases. Recommended evaluated
+commit: `c66a786` (unless evaluation logs/records show re-runs after
+25 March 2026). No tag has been created by this effort; creating one remains
+optional and with the owner.

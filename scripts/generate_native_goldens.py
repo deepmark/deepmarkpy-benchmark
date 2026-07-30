@@ -12,9 +12,10 @@ For every goldenable native attack this script:
    not declare a sampling rate in config; 16 kHz is the most common model
    rate and is fixed here, per §4.3 the exact expression lives in this
    script);
-2. seeds the legacy global RNG with ``np.random.seed(GLOBAL_SEED)``
-   immediately before the attack invocation (§4.3 protocol — pins attacks
-   that draw from ``np.random``);
+2. seeds the legacy global RNG with ``np.random.seed(GLOBAL_SEED)`` and the
+   stdlib RNG with ``random.seed(GLOBAL_SEED)`` immediately before the attack
+   invocation (§4.3 protocol, extended 2026-07-30 with owner approval — pins
+   attacks drawing from ``np.random`` and ``crop_random``'s stdlib draws);
 3. calls ``AttackCls().apply(input, sampling_rate=SAMPLING_RATE, **params)``
    with config-default parameters (``params`` is currently empty for every
    goldened attack; the hook exists for attacks whose config value is a list
@@ -48,6 +49,7 @@ import json
 import logging
 import os
 import platform
+import random
 import subprocess
 import sys
 
@@ -82,6 +84,7 @@ GOLDEN_ATTACKS = {
     "BandstopFilterAttack": {},
     "ChorusAttack": {},
     "CropBeginningAttack": {},
+    "CropRandomAttack": {},
     "CutSamplesAttack": {},
     "DescriptAudioCodecAttack": {},
     "EchoAttack": {},
@@ -126,17 +129,9 @@ EXCLUSIONS = {
         "WaveletAttack", "TimeStretchAttack", "PitchShiftAttack",
         "InvertedTimeStretchAttack",
     ],
-    "escalated 2026-07-29 — determinism policy gap, owner decision pending": [
-        # CropRandomAttack draws from the stdlib `random` module
-        # (attack.py:2), outside np.random.seed's reach; pinning it needs a
-        # harness-side random.seed() call, which extends the §4.3 protocol.
-        "CropRandomAttack",
-        # Codec2VocoderAttack is deterministic in a fresh process but the
-        # pycodec2 C library carries encoder state across instantiations
-        # in-process: same-process re-runs differ on ~99% of samples. A
-        # golden requires subprocess isolation (first-invocation semantics);
-        # note the benchmark's own codec2 outputs are therefore
-        # invocation-history-dependent (post-paper attack; no red line).
+    "excluded per owner ruling 2026-07-30 (KNOWN_DEFECTS D16: pycodec2"
+    " carries C encoder state across in-process instantiations, so output"
+    " is invocation-history-dependent; same-process re-runs differ)": [
         "Codec2VocoderAttack",
     ],
 }
@@ -151,6 +146,7 @@ def run_attack(attack_cls, params: dict) -> np.ndarray:
     """One seeded attack invocation on a fresh instance (the §4.3 protocol)."""
     audio = canonical_input()
     np.random.seed(GLOBAL_SEED)
+    random.seed(GLOBAL_SEED)
     return attack_cls().apply(audio, sampling_rate=SAMPLING_RATE, **params)
 
 

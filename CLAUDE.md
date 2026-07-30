@@ -31,7 +31,7 @@ python -m pytest tests/ -v
 
 Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Tests add `src/` to `sys.path` via conftest.
 
-Current: 120 tests, ~4s runtime. No Docker required for tests. Note: `test_attack_groups.py::TestGroupedAttacksMatchPlugins` fails in environments missing `pywt`/`pyrubberband` (frozen defect D14, `docs/KNOWN_DEFECTS.md`) — pre-existing, not a regression.
+Current: 152 tests, ~5s runtime. No Docker required for tests. Note: `test_attack_groups.py::TestGroupedAttacksMatchPlugins` fails in environments missing `pywt`/`pyrubberband` (frozen defect D14, `docs/KNOWN_DEFECTS.md` — this includes the §4.3 canonical environment) — pre-existing, not a regression. Golden replay tests (`test_native_goldens.py`) enforce only where the numeric environment matches their manifest and skip elsewhere.
 
 ## Running the Benchmark
 

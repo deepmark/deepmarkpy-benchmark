@@ -1,5 +1,5 @@
 {
-  "recorded": "2026-07-29",
+  "recorded": "2026-07-30",
   "environment": "canonical (REORG_PLAN.md \u00a74.3): clean venv, pip install -r requirements.txt, CPython 3.11.5",
   "machine": "Darwin arm64",
   "ffmpeg": "ffmpeg version 8.0.1 Copyright (c) 2000-2025 the FFmpeg developers",
@@ -45,8 +45,7 @@
       "PitchShiftAttack",
       "InvertedTimeStretchAttack"
     ],
-    "escalated 2026-07-29 \u2014 determinism policy gap, owner decision pending": [
-      "CropRandomAttack",
+    "excluded per owner ruling 2026-07-30 (KNOWN_DEFECTS D16: pycodec2 carries C encoder state across in-process instantiations, so output is invocation-history-dependent; same-process re-runs differ)": [
       "Codec2VocoderAttack"
     ]
   },
@@ -73,6 +72,13 @@
       ]
     },
     "CropBeginningAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        14400
+      ]
+    },
+    "CropRandomAttack": {
       "params": {},
       "output_dtype": "float64",
       "output_shape": [
