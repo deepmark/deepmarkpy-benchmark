@@ -213,3 +213,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# The published paper stays local-only.
+DeepMark_Benchmark_Redefining_Audio_Watermarking_Robustness.pdf
