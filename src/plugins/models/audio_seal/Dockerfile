@@ -10,7 +10,11 @@ COPY /src/plugins/models/audio_seal/requirements.txt .
 COPY /src/plugins/models/audio_seal/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/models/audio_seal .
+# Explicit COPYs: the host-side client (model.py) is not part of the image
+# (REORG_PLAN §5.1 — stop copying host-side files while touched).
+COPY src/plugins/models/audio_seal/app.py .
+COPY src/plugins/models/audio_seal/inference.py .
+COPY src/plugins/models/audio_seal/config.json .
 
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}
