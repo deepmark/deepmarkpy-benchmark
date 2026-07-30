@@ -1,16 +1,26 @@
+import importlib.util
 import logging
 import os
 import sys
 from typing import List
 
-import numpy as np
-import torch
 import uvicorn
-from big_vgan import BigVGAN
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from app_utils.utils import load_config
+
+# The upstream BigVGAN clone ships its own inference.py and the service runs
+# with WORKDIR /app/BigVGAN, whose cwd entry shadows PYTHONPATH for a bare
+# `import inference`. Load this plugin's inference.py by explicit path so the
+# uniform §5.1 module name works without touching the image's runtime layout.
+_spec = importlib.util.spec_from_file_location(
+    "plugin_inference",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "inference.py"),
+)
+_inference = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_inference)
+Engine = _inference.Engine
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +32,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-logger.info(f"Using device: {device}")
-
-model = BigVGAN(config["model_name_neural_vocoder"], device)
+engine = Engine(config)
 
 
 class AttackRequest(BaseModel):
@@ -35,10 +42,7 @@ class AttackRequest(BaseModel):
 
 @app.post("/attack")
 async def attack(request: AttackRequest):
-    sampling_rate = request.sampling_rate
-    audio = np.array(request.audio)
-
-    audio = model.inference(audio, sampling_rate)
+    audio = engine.apply(request.audio, request.sampling_rate)
 
     return {"audio": audio.tolist()}
 

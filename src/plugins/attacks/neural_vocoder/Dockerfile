@@ -27,7 +27,10 @@ COPY /src/plugins/attacks/neural_vocoder/requirements.txt .
 COPY /src/plugins/attacks/neural_vocoder/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-COPY src/plugins/attacks/neural_vocoder .
+# Explicit COPYs: the host-side client (attack.py) is not part of the image
+# (REORG_PLAN §5.1 — stop copying host-side files while touched).
+COPY src/plugins/attacks/neural_vocoder/app.py .
+COPY src/plugins/attacks/neural_vocoder/inference.py .
 
 WORKDIR /app/BigVGAN
 
