@@ -2,6 +2,19 @@
 
 DeepMark Benchmark is a modular and scalable Python platform for evaluating the robustness of audio watermarking systems. It enables testing against various attacks, including both simple signal manipulations and advanced AI-based disruptions, using a containerized architecture for consistency and ease of use.
 
+## Two ways to use this repository
+
+1. **Primary — run the benchmark.** Evaluate watermarking models against
+   40+ attacks through the CLI (`deepmark-benchmark`) with the containerized
+   model/attack services managed by docker-compose. This is the workflow the
+   rest of this README describes.
+2. **Additional — consume the plugin engines.** Install `deepmarkpy` as a
+   library and import any plugin's inference engine
+   (`deepmarkpy.plugins.{attacks,models}.<name>.inference.Engine`) to embed
+   the watermarking models and attacks in your own serving stack, without
+   this repo's HTTP layer or orchestrator. See
+   [docs/CONSUMING.md](docs/CONSUMING.md).
+
 ## Features
 
 *   **Extensible Plugin System:** Easily add new watermarking models and attacks.
@@ -455,9 +468,8 @@ We welcome contributions! Feel free to:
 - Submit pull requests
 
 Before changing existing behavior, read [docs/KNOWN_DEFECTS.md](docs/KNOWN_DEFECTS.md):
-it lists known defects that are deliberately frozen during the ongoing
-packaging & plugin reorganization ([docs/REORG_PLAN.md](docs/REORG_PLAN.md))
-and must not be fixed mid-effort.
+it lists known defects that are deliberately preserved in the current release
+line and are scheduled for a dedicated fix release.
 
 ## Citation
 

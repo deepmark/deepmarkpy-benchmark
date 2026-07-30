@@ -1,4 +1,4 @@
-"""Consistency checks for the P0.4 HTTP-contract fixtures (no Docker needed).
+"""Consistency checks for the HTTP-contract fixtures (no Docker needed).
 
 Live contract verification happens through ``scripts/contract_check.py``
 (which needs the compose services); this suite only locks the committed
@@ -68,8 +68,8 @@ def test_classification_locked(service):
     contract = _contract(service)
     assert contract["classification"] == EXPECTED_CLASSIFICATION[service], (
         f"{service}: classification changed from the recorded "
-        f"'{EXPECTED_CLASSIFICATION[service]}' — re-classification requires "
-        "owner sign-off (REORG_PLAN.md §4.3)"
+        f"'{EXPECTED_CLASSIFICATION[service]}' — re-classification is "
+        "a deliberate, reviewed decision"
     )
 
 

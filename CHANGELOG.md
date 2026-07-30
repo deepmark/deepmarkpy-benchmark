@@ -4,8 +4,7 @@
 
 First release of the `deepmarkpy` package. Behavior is bit-for-bit identical
 to the pre-package benchmark (verified by discovery lock tests, native-attack
-golden fixtures, and HTTP-contract fixtures for all 16 services; see
-`docs/REORG_PLAN.md` for the verification policy).
+golden fixtures, and HTTP-contract fixtures for all 16 services).
 
 ### Packaging
 
@@ -28,7 +27,7 @@ golden fixtures, and HTTP-contract fixtures for all 16 services; see
 
 - Every containerized plugin's inference logic lives in one `inference.py`
   module exposing a uniform `Engine` class behind a thin FastAPI `app.py`
-  (see `docs/ENGINE_CONVENTIONS.md`). HTTP contracts are byte-identical.
+  (see `docs/CONSUMING.md`). HTTP contracts are byte-identical.
 - The `encodec` and `descript_audio_codec` attacks run as Docker services
   (ports `ENCODEC_PORT`/`DESCRIPT_AUDIO_CODEC_PORT`); PyTorch is no longer a
   host dependency.

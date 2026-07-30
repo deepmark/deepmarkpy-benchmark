@@ -52,5 +52,5 @@ export DEEPMARK_PLUGINS_DIR=/path/to/my_plugins
 
 The per-plugin inference modules are importable as
 `deepmarkpy.plugins.{attacks,models}.<name>.inference` and expose a uniform
-`Engine` class (see `docs/ENGINE_CONVENTIONS.md`); these paths are the
+`Engine` class (see `docs/CONSUMING.md`); these paths are the
 stable public API from v1.0.0.

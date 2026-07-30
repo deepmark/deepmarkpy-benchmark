@@ -1,19 +1,17 @@
-"""Discovery lock tests — freeze the exact plugin registry (REORG_PLAN.md §6, P0.1).
+"""Discovery lock tests — freeze the exact plugin registry.
 
 These tests lock the exact sets of attack and model class names that
-``PluginManager`` registers in the *canonical environment* (REORG_PLAN.md
-§4.3), plus the provenance of each registration (the plugin directory whose
+``PluginManager`` registers in the *canonical environment*, plus the provenance of each registration (the plugin directory whose
 ``attack.py``/``model.py`` defines the class). Their purpose is to turn the
 silent-vanish failure mode into a hard test failure: plugin import errors are
 logged and swallowed, so a plugin can disappear from the registry with no
-error — most critically via the dual-module-identity packaging risk described
-in REORG_PLAN.md §2.4, where discovery can return an empty registry with exit
-code 0. Provenance is locked because discovery registers every subclass found
+error — most critically when a packaging change lets discovery return an empty
+registry with exit code 0. Provenance is locked because discovery registers every subclass found
 in a module's namespace, so a class imported across plugin modules (e.g.
 ``mixing`` imports ``EqualizerAttack``) can keep a same-named registry entry
 alive even when its own directory has dropped out of the walked tree.
 
-Canonical environment (REORG_PLAN.md §4.3), recorded 2026-07-29 at commit
+Canonical environment (the reference for all discovery assertions), recorded 2026-07-29 at commit
 fec866b on the designated machine (macOS arm64, Darwin 25.3.0):
 
     python3 -m venv <venv>                      # CPython 3.11.5
@@ -27,7 +25,7 @@ lower bound in ``requirements.txt``; it resolved to 4.1.1 at record time.
 
 In the canonical environment four attack classes are absent because their
 import-time dependencies are not in ``requirements.txt`` (frozen per
-REORG_PLAN.md §4.2 D14 / §8 D5 — note D14 lists ``wavelet``, ``pitch_shift``,
+docs/KNOWN_DEFECTS.md D14 — note D14 lists ``wavelet``, ``pitch_shift``,
 ``time_stretch``; empirically ``inverted_time_stretch`` also vanishes because
 it imports ``plugins.attacks.time_stretch.attack``). These four appear in
 ``OPTIONAL_DEP_ATTACKS`` below and may legitimately register in developer
@@ -36,9 +34,8 @@ exact-set assertion therefore binds only when neither optional dependency is
 importable, while the subset, no-unknown-names, and provenance assertions
 bind everywhere.
 
-Per REORG_PLAN.md §6 (P2 item 5) and §9 item 1, the asserted sets below must
-not change anywhere in this effort: no removals ever, and additions only with
-explicit owner sign-off amending the plan in the same commit.
+The asserted sets below are load-bearing: no removals ever, and additions
+only as a deliberate, reviewed decision.
 """
 
 import importlib.util
@@ -171,7 +168,7 @@ class TestModelDiscoveryLock:
         )
         assert not extra, (
             f"Unexpected model registrations: {sorted(extra)}. The lock set may "
-            "only be extended deliberately, with owner sign-off (REORG_PLAN.md §9)."
+            "only be extended deliberately, as a reviewed decision."
         )
 
 
@@ -183,7 +180,7 @@ class TestAttackDiscoveryLock:
         assert not missing, (
             f"Attack plugins silently vanished from discovery: {sorted(missing)}. "
             "Every dependency these plugins need is in requirements.txt, so in a "
-            "canonical environment (§4.3) this means a real discovery regression; "
+            "canonical environment this means a real discovery regression; "
             "in a developer environment it can also mean the environment is stale "
             "relative to requirements.txt. PluginManager swallows import errors — "
             "check the 'Failed to import' log lines."
@@ -194,7 +191,7 @@ class TestAttackDiscoveryLock:
         unknown = set(pm.get_attacks().keys()) - allowed
         assert not unknown, (
             f"Unexpected attack registrations: {sorted(unknown)}. The lock set may "
-            "only be extended deliberately, with owner sign-off (REORG_PLAN.md §9)."
+            "only be extended deliberately, as a reviewed decision."
         )
 
     def test_exact_attack_set_in_canonical_environment(self, pm):
@@ -202,8 +199,8 @@ class TestAttackDiscoveryLock:
         if installed:
             pytest.skip(
                 f"optional plugin dependencies installed: {installed} — the "
-                "exact-set lock is defined against the canonical environment "
-                "(REORG_PLAN.md §4.3), which has neither"
+                "exact-set lock is defined against the canonical environment, "
+                "which has neither"
             )
         registered = set(pm.get_attacks().keys())
         assert registered == CANONICAL_ATTACKS, (
@@ -229,12 +226,12 @@ class TestRegistrationProvenanceLock:
     walked module's namespace, so a class imported across plugin modules (e.g.
     ``mixing`` imports ``EqualizerAttack``) keeps a same-named registry entry
     alive even if its own directory drops out of the walked tree — the
-    walk/import divergence of REORG_PLAN.md §2.4. Pinning each class's
+    walk/import divergence risk. Pinning each class's
     defining module and source location closes that hole, and also rejects a
     same-named impostor class defined elsewhere. ``__module__`` is fixed at
     class definition, so these assertions are walk-order-independent; the
-    suffix comparison is prefix-agnostic so the P2 rename to
-    ``deepmarkpy.plugins.…`` keeps the lock intact.
+    suffix comparison is prefix-agnostic so the packaged
+    ``deepmarkpy.plugins.…`` prefix keeps the lock intact.
     """
 
     @staticmethod
@@ -244,7 +241,7 @@ class TestRegistrationProvenanceLock:
             f"{cls_name} is registered from module '{cls.__module__}', expected "
             f"a module ending in '{expected_module_suffix}' — the registry entry "
             "is not backed by the class's own plugin directory (walk/import "
-            "divergence, REORG_PLAN.md §2.4) or a same-named impostor class "
+            "divergence) or a same-named impostor class "
             "replaced the real plugin."
         )
         source = Path(inspect.getfile(cls)).resolve()
@@ -252,7 +249,7 @@ class TestRegistrationProvenanceLock:
         assert walked in source.parents, (
             f"{cls_name} is defined in '{source}', outside the walked plugins "
             f"directory '{walked}' — discovery is being fed by imports, not by "
-            "the walked tree (walk/import divergence, REORG_PLAN.md §2.4)."
+            "the walked tree (walk/import divergence)."
         )
 
     def test_attack_registrations_defined_in_own_plugin_directory(self, pm):

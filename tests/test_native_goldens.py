@@ -1,24 +1,23 @@
-"""Golden replay tests for native attacks (REORG_PLAN.md §6 P0.3, §4.3).
+"""Golden replay tests for native attacks.
 
 Each golden in ``tests/fixtures/goldens/`` was recorded by
-``scripts/generate_native_goldens.py`` in the canonical environment (§4.3) on
+``scripts/generate_native_goldens.py`` in the canonical environment on
 the designated machine. This suite replays every goldened attack under the
 same protocol — canonical input ``0.5 *
 np.random.default_rng(42).standard_normal(16000)``, ``np.random.seed(42)``
 immediately before the invocation — and requires the output to be
 byte-identical (dtype, shape, values) to the recorded fixture.
 
-Byte-identity is a same-machine, same-environment claim (§4.3): torch CPU
+Byte-identity is a same-machine, same-environment claim: torch CPU
 numerics differ across architectures, and mp3_compression shells out to the
 machine's ffmpeg. In other environments a mismatch (as opposed to an error)
 still indicates a real behavioral difference worth investigating.
 
 Attacks not goldened — the machine-readable copy lives in the fixture
 manifest (``tests/fixtures/goldens/manifest.json``, the source of truth this
-suite parametrizes from); per the §6 P0.3 acceptance row the list is also
-recorded here:
+suite parametrizes from); for reference the list is also recorded here:
 
-- containerized, verified by P0.4 contract fixtures instead: Encodec,
+- containerized, verified by the HTTP-contract fixtures instead: Encodec,
   DescriptAudioCodec, VAE, Diffusion, NeuralVocoder, SpeechEnhancement1/2,
   SpeechTokenization, OpusCodec, NetworkTransmission;
 - model-callback (need live models/the registry; collusion_2 additionally
@@ -57,8 +56,7 @@ if not os.path.exists(_MANIFEST_PATH):
     raise FileNotFoundError(
         f"{_MANIFEST_PATH} is missing — the golden fixtures are gone or were "
         "never generated. Regenerate them in the canonical environment with "
-        "scripts/generate_native_goldens.py (owner sign-off required; see "
-        "REORG_PLAN.md §4.3)."
+        "scripts/generate_native_goldens.py (a deliberate, reviewed decision)."
     )
 with open(_MANIFEST_PATH) as _f:
     MANIFEST = json.load(_f)
@@ -97,8 +95,8 @@ def test_native_attack_matches_golden(cls_name, pm):
     if mismatches:
         pytest.skip(
             "numeric environment differs from the goldens' recording "
-            "environment — byte-identity is a same-environment claim "
-            f"(REORG_PLAN.md §4.3): {'; '.join(mismatches)}"
+            "environment — byte-identity is a same-environment claim: "
+            f"{'; '.join(mismatches)}"
         )
     if cls_name == "Mp3CompressionAttack" and shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg not on PATH — required by Mp3CompressionAttack")
@@ -106,7 +104,7 @@ def test_native_attack_matches_golden(cls_name, pm):
     if cls_name not in attacks:
         pytest.skip(
             f"{cls_name} not discovered in this environment — goldens are "
-            "recorded and verified in the canonical environment (§4.3); "
+            "recorded and verified in the canonical environment; "
             "discovery gaps are judged by test_discovery_lock.py"
         )
     meta = MANIFEST["attacks"][cls_name]
@@ -127,7 +125,7 @@ def test_native_attack_matches_golden(cls_name, pm):
     )
     assert np.array_equal(out, golden), (
         f"{cls_name}: output differs from its golden fixture — behavior "
-        "changed relative to the recorded state (REORG_PLAN.md §4.3)"
+        "changed relative to the recorded state"
     )
 
 

@@ -1,12 +1,12 @@
-# Native-attack golden fixtures (P0.3)
+# Native-attack golden fixtures
 
-Recorded per REORG_PLAN.md §4.3 by `scripts/generate_native_goldens.py`;
+Recorded by `scripts/generate_native_goldens.py`;
 replayed by `tests/test_native_goldens.py`. `manifest.json` carries the
 authoritative metadata: recording date, environment lineage, numeric-path
 package versions, input expression, seed protocol, per-attack output
 dtype/shape, and the exclusion lists with rationale.
 
-## Designated machine (§4.3)
+## Designated machine
 
 Byte-identity claims are same-machine, same-environment only. These fixtures
 were recorded on the owner's designated machine:
@@ -19,14 +19,14 @@ were recorded on the owner's designated machine:
   ffmpeg (exact build recorded in `manifest.json`)
 
 torch CPU numerics differ across x86/arm64, so cross-machine byte comparison
-is out of scope (§4.3). The replay test enforces byte-identity only when the
+is out of scope. The replay test enforces byte-identity only when the
 running environment's numeric-path package versions match the manifest, and
 skips with an explanatory reason otherwise.
 
 ## Re-recording
 
-Only with owner sign-off (the fixtures define "unchanged behavior" for the
-whole reorganization effort):
+Only as a deliberate, reviewed decision (the fixtures define "unchanged
+behavior" for the benchmark):
 
 ```bash
 <canonical-venv>/bin/python scripts/generate_native_goldens.py

@@ -4,7 +4,7 @@
 
 Open-source benchmarking framework for evaluating audio watermarking robustness. Evaluates watermarking models against 40+ attacks (signal processing, AI-based, transmission). Published in IEEE Access, vol. 14, 2026, pp. 62031-62044 (DOI 10.1109/ACCESS.2026.3685903).
 
-**Reorganization in progress:** the repo is being packaged per `docs/REORG_PLAN.md` under the rules of `docs/AGENT_PROMPT.md`. Bit-for-bit behavior preservation applies; the defects in `docs/KNOWN_DEFECTS.md` are frozen — do not fix them. Discovery sets are locked by `tests/test_discovery_lock.py`.
+**Behavior freeze:** the v1.0.0 release line preserves benchmark behavior bit-for-bit. The defects in `docs/KNOWN_DEFECTS.md` are frozen until the dedicated deferred-fix release — do not fix them in passing. Discovery sets are locked by `tests/test_discovery_lock.py`; native-attack goldens and HTTP-contract fixtures (`tests/fixtures/`) gate any change to plugin behavior.
 
 ## Architecture
 

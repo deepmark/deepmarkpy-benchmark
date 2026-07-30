@@ -22,15 +22,15 @@ audio is the §4.3 input — ``0.5 * np.random.default_rng(42).standard_normal(S
 at the model's config ``sampling_rate`` (attacks: 16000 Hz). Model fixtures
 chain ``/embed`` → ``/detect`` (detect consumes the embed response audio).
 Watermarks are ``np.random.default_rng(42).integers(0, 2, watermark_size)``.
-Per §4.3, ``speech_enhancement_1`` is recorded with ``noise_strength=0.0`` in
+``speech_enhancement_1`` is recorded with ``noise_strength=0.0`` in
 the request (a legal kwargs-path value), making it byte-comparable.
 
-Verification criteria (§4.3): deterministic services must return the exact
+Verification criteria: deterministic services must return the exact
 recorded raw body (SHA-256); stochastic services (``diffusion``,
 ``network_transmission``, ``speech_enhancement_2``) are checked structurally —
 same JSON keys, finite floats, response length within the recorded range, RMS
 within [0.25x, 4x] of the recorded mean. Byte-identity claims are
-same-machine, same-image-lineage only (§4.3).
+same-machine, same-image-lineage only.
 """
 
 import hashlib
@@ -92,7 +92,7 @@ SERVICES = {
 REQUEST_TIMEOUT_S = {"speech_enhancement2": 2400}
 DEFAULT_REQUEST_TIMEOUT_S = 900
 
-# §4.3 canonical input is ≈1 s "unless a plugin needs otherwise". wavmark's
+# The canonical input is ≈1 s unless a plugin needs otherwise. wavmark's
 # encode_watermark yields zero usable chunks for exactly 1 s of audio
 # (wm_add_util.py:50 assert) — it needs strictly more; 2 s is the smallest
 # round override and matches real benchmark usage (multi-second files).

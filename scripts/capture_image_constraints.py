@@ -1,4 +1,4 @@
-"""Capture per-image pip freezes into per-plugin constraint files (REORG_PLAN P0.2).
+"""Capture per-image pip freezes into per-plugin constraint files.
 
 Run from the repo root, with the base image and all compose services built:
 

@@ -70,9 +70,9 @@ NVIDIA BigVGAN, TimbreWatermarking, Resemble Perth, SpeechBrain, ClearVoice,
 Descript, upstream RAVE exports); review them before redistribution of
 images or weights.
 
-## Consumer validation exercise (deferred, for the consuming agent)
+## Consumer validation exercise (for the first consumer)
 
-Per REORG_PLAN §6 P3.2, the first consumer should validate the contract by
+The first consumer should validate the contract by
 building two images **from the installed wheel and this document alone**
 (no checkout of this repo):
 

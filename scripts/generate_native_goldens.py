@@ -1,6 +1,7 @@
-"""Generate golden fixtures for native attacks (REORG_PLAN.md §6 P0.3, §4.3).
+"""Generate golden fixtures for native attacks.
 
-Run from the repo root, inside the canonical environment (§4.3):
+Run from the repo root, inside the canonical environment
+(clean venv + pip install -r requirements.txt):
 
     python scripts/generate_native_goldens.py
 
@@ -10,8 +11,8 @@ For every goldenable native attack this script:
    ``0.5 * np.random.default_rng(42).standard_normal(SAMPLING_RATE)``
    (≈1 s of noise scaled to ±0.5) at ``SAMPLING_RATE`` = 16000 Hz (attacks do
    not declare a sampling rate in config; 16 kHz is the most common model
-   rate and is fixed here, per §4.3 the exact expression lives in this
-   script);
+   rate and is fixed here — this script is the authoritative source of the
+   exact expression);
 2. seeds the legacy global RNG with ``np.random.seed(GLOBAL_SEED)`` and the
    stdlib RNG with ``random.seed(GLOBAL_SEED)`` immediately before the attack
    invocation (pins attacks drawing from ``np.random`` and ``crop_random``'s
@@ -27,18 +28,18 @@ For every goldenable native attack this script:
    re-derivable, only the output array is stored) and a ``manifest.json``
    with environment lineage and per-attack metadata.
 
-Byte-identity holds same-machine, same-environment only (§4.3): fixtures are
+Byte-identity holds same-machine, same-environment only: fixtures are
 recorded on the designated machine in the canonical venv. mp3_compression
 shells out to ffmpeg, so its golden is additionally tied to the machine's
 ffmpeg build (recorded in the manifest).
 
-Excluded (with §4.3 rationale, also recorded in the manifest):
-- containerized attacks — verified by P0.4 HTTP-contract fixtures instead;
+Excluded (with rationale, also recorded in the manifest):
+- containerized attacks — verified by the HTTP-contract fixtures instead;
 - model-callback attacks (need live model instances / the registry;
   collusion_2 additionally draws from a fresh ``np.random.default_rng()`` at
   attack.py:129, beyond ``np.random.seed``'s reach);
 - corpus-dependent attacks (replay, mixing — need on-disk corpora);
-- D14-absent attacks (wavelet, time_stretch, pitch_shift,
+- attacks absent from the canonical environment (wavelet, time_stretch, pitch_shift,
   inverted_time_stretch — import-time deps outside requirements.txt, absent
   from the canonical environment; see docs/KNOWN_DEFECTS.md D14).
 """
@@ -70,7 +71,7 @@ GOLDENS_DIR = os.path.join(REPO_ROOT, "tests", "fixtures", "goldens")
 
 # Packages on the goldens' numeric path. Their exact versions are recorded in
 # the manifest; the replay test enforces byte-identity only when the running
-# environment matches (§4.3 — byte-identity is same-machine, same-environment).
+# environment matches (byte-identity is same-machine, same-environment).
 NUMERIC_ENV_PACKAGES = [
     "numpy", "scipy", "librosa", "soundfile", "audiocomplib",
 ]
@@ -107,7 +108,7 @@ GOLDEN_ATTACKS = {
 }
 
 EXCLUSIONS = {
-    "containerized (P0.4 contract fixtures)": [
+    "containerized (verified by the HTTP-contract fixtures)": [
         "EncodecAttack", "DescriptAudioCodecAttack",
         "VAEAttack", "DiffusionAttack", "NeuralVocoderAttack",
         "SpeechEnhancement1Attack", "SpeechEnhancement2Attack",
@@ -136,12 +137,12 @@ EXCLUSIONS = {
 
 
 def canonical_input() -> np.ndarray:
-    """The exact §4.3 canonical golden input."""
+    """The canonical golden input."""
     return 0.5 * np.random.default_rng(INPUT_RNG_SEED).standard_normal(SAMPLING_RATE)
 
 
 def run_attack(attack_cls, params: dict) -> np.ndarray:
-    """One seeded attack invocation on a fresh instance (the §4.3 protocol)."""
+    """One seeded attack invocation on a fresh instance."""
     audio = canonical_input()
     np.random.seed(GLOBAL_SEED)
     random.seed(GLOBAL_SEED)
@@ -164,7 +165,7 @@ def main() -> None:
 
     manifest = {
         "recorded": datetime.date.today().isoformat(),
-        "environment": "canonical (REORG_PLAN.md §4.3): clean venv, "
+        "environment": "canonical: clean venv, "
                        "pip install -r requirements.txt, CPython "
                        + platform.python_version(),
         "machine": f"{platform.system()} {platform.machine()}",
@@ -185,7 +186,7 @@ def main() -> None:
         if cls_name not in attacks:
             raise SystemExit(
                 f"{cls_name} not discovered — generation must run in the "
-                "canonical environment (§4.3)."
+                "canonical environment."
             )
         attack_cls = attacks[cls_name]["class"]
         first = run_attack(attack_cls, params)

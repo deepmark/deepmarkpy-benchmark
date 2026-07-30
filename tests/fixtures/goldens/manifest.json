@@ -1,6 +1,6 @@
 {
   "recorded": "2026-07-30",
-  "environment": "canonical (REORG_PLAN.md \u00a74.3): clean venv, pip install -r requirements.txt, CPython 3.11.5",
+  "environment": "canonical: clean venv, pip install -r requirements.txt, CPython 3.11.5",
   "machine": "Darwin arm64",
   "ffmpeg": "ffmpeg version 8.0.1 Copyright (c) 2000-2025 the FFmpeg developers",
   "numeric_env": {
@@ -14,7 +14,7 @@
   "input_expression": "0.5 * np.random.default_rng(42).standard_normal(16000)",
   "global_seed_before_each_invocation": 42,
   "exclusions": {
-    "containerized (P0.4 contract fixtures)": [
+    "containerized (verified by the HTTP-contract fixtures)": [
       "EncodecAttack",
       "DescriptAudioCodecAttack",
       "VAEAttack",
