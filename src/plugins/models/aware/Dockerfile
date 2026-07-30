@@ -9,14 +9,10 @@ ENV HOST=${HOST}
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
 # Clone and install AWARE package
-# Commit pinned per REORG_PLAN P0.2 (build reproducibility): upstream main
-# HEAD resolved 2026-07-29; no locally-built image existed to recover an
-# earlier commit from.
 WORKDIR /app
-# Two constraint files because this build is path-dependent: the editable
-# install resolves aware's own exact pins (stage 1), then requirements.txt
-# upgrades some of them (final). Each pip step is pinned to what it resolved
-# at capture time (REORG_PLAN P0.2 freeze-in-place).
+# Two constraint files: the editable install resolves aware's own exact
+# pins (stage 1); requirements.txt later upgrades some of them. Each pip
+# step is pinned to the set it resolves.
 COPY /src/plugins/models/aware/constraints.stage1.txt /app/constraints.stage1.txt
 COPY /src/plugins/models/aware/constraints.txt /app/constraints.txt
 RUN git clone https://github.com/deepmarkpy/aware.git aware && \
@@ -31,8 +27,6 @@ COPY /src/plugins/models/aware/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c /app/constraints.txt
 
 # Copy application files
-# The host-side client (model.py) is not part of the image
-# (REORG_PLAN §5.1 — stop copying host-side files while touched).
 COPY src/plugins/models/aware/app.py .
 COPY src/plugins/models/aware/inference.py .
 COPY src/plugins/models/aware/config.json .

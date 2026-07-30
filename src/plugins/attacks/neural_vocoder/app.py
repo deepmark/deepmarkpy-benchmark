@@ -10,10 +10,9 @@ from pydantic import BaseModel
 
 from app_utils.utils import load_config
 
-# The upstream BigVGAN clone ships its own inference.py and the service runs
-# with WORKDIR /app/BigVGAN, whose cwd entry shadows PYTHONPATH for a bare
-# `import inference`. Load this plugin's inference.py by explicit path so the
-# uniform §5.1 module name works without touching the image's runtime layout.
+# The upstream BigVGAN clone ships its own inference.py, and the service's
+# working directory (/app/BigVGAN) shadows PYTHONPATH for a bare
+# `import inference` — load this plugin's inference.py by explicit path.
 _spec = importlib.util.spec_from_file_location(
     "plugin_inference",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "inference.py"),

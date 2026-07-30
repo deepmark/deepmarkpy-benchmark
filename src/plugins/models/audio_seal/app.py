@@ -46,8 +46,7 @@ async def detect(request: DetectRequest):
     """Detect a watermark from an audio file."""
     message, confidence = engine.detect(request.audio, request.sampling_rate)
     if isinstance(message, list):
-        # Engine's empty result (min-length guard / detector RuntimeError):
-        # serialize as the current empty response body.
+        # Empty detection result (audio too short or detector failure).
         return {"watermark": message, "confidence": confidence}
     return {"watermark": message if message is None else message.tolist(),
             "confidence": float(confidence)}

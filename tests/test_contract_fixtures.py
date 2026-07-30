@@ -24,7 +24,7 @@ ALL_SERVICES = frozenset({
     "speech_tokenization",
 })
 
-# Classification lock (§4.3, recorded 2026-07-30 — see contracts README).
+# Classification lock (see tests/fixtures/contracts/README.md).
 EXPECTED_CLASSIFICATION = {
     "audioseal": "deterministic",
     "aware": "deterministic",
@@ -74,9 +74,8 @@ def test_classification_locked(service):
 def test_recorded_fixtures_are_complete(service):
     contract = _contract(service)
     assert not contract.get("recording_blocked"), (
-        f"{service} is marked recording_blocked — all 14 services have "
-        "recorded fixtures since 2026-07-30; a regression here needs owner "
-        "attention (see contracts README)"
+        f"{service} is marked recording_blocked — every service has recorded "
+        "fixtures (see tests/fixtures/contracts/README.md)"
     )
     assert contract["endpoints"], f"{service}: no endpoints recorded"
     for path, endpoint in contract["endpoints"].items():

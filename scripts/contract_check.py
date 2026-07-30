@@ -1,4 +1,4 @@
-"""Record / verify HTTP-contract fixtures for the compose services (P0.4, §4.3).
+"""Record / verify HTTP-contract fixtures for the compose services.
 
 Usage (repo root; base image + services built per README; Docker running):
 
@@ -55,19 +55,16 @@ ATTACK_SR = 16000
 READY_TIMEOUT_S = 1200
 STOCHASTIC_EXPECTED = {"diffusion", "network_transmission", "speech_enhancement2"}
 
-# Services whose classification is forced to stochastic despite an identical
-# same-container double call, with the recorded evidence. network_transmission:
-# two calls within one container lifetime returned identical bytes, but a
-# third call from a freshly started container differed (2026-07-30) — the RTP
-# path is timing/instance-dependent, so byte-identity cannot gate it. (Note:
-# `tc netem` does not engage under Docker Desktop's VM — `tc qdisc show`
-# stays `noqueue` and nominal 5% loss produces no byte differences within a
-# container lifetime; the instance-level nondeterminism dominates anyway.)
+# Services classified stochastic even when a same-container double call is
+# byte-identical. network_transmission's RTP path is timing/instance
+# dependent: calls within one container lifetime match, calls from a fresh
+# container differ, so byte-identity cannot gate it. (`tc netem` does not
+# engage under Docker Desktop's VM — `tc qdisc show` stays `noqueue`.)
 STOCHASTIC_OVERRIDES = {
     "network_transmission":
-        "cross-container-instance nondeterminism: same-container double call "
-        "identical, fresh-container call differs (recorded 2026-07-30); "
-        "netem itself does not engage under Docker Desktop",
+        "instance-dependent RTP path: same-container double call identical, "
+        "fresh-container call differs; netem does not engage under Docker "
+        "Desktop",
 }
 
 # service -> (plugin dir, host port .env var default, kind)

@@ -1,10 +1,7 @@
-"""All inference for the opus_codec attack service (REORG_PLAN.md §5.1).
+"""Opus encode/decode round-trip attack inference, HTTP-free.
 
-No FastAPI/HTTP imports. The opusenc/opusdec subprocess round-trip moved
-verbatim from app.py. ``Engine.apply`` returns ``(audio, output_sr)`` — the
-response carries the decoder's output rate, and the client-side
-resample-back in attack.py stays where it is (no logic crosses the HTTP
-boundary, REORG_PLAN §5.1).
+``Engine.apply`` returns ``(audio, output_sr)``: the response carries the
+decoder's output rate and the client resamples back.
 """
 
 import logging
@@ -15,11 +12,8 @@ import tempfile
 import numpy as np
 import soundfile as sf
 
-# Deliberately named "app", not __name__: the INFO line in
-# process_opus_codec is visible container output under app.py's
-# logging.basicConfig ("INFO:app:..."), and moved code keeps its
-# user-visible text verbatim (REORG_PLAN §4.1). Rename in the
-# deferred-fix release.
+# Named "app" so the INFO line in process_opus_codec keeps its existing
+# format in the service log output ("INFO:app:...").
 logger = logging.getLogger("app")
 
 
@@ -101,9 +95,8 @@ class Engine:
     def apply(self, audio: list, sampling_rate: int, **params) -> "tuple[np.ndarray, int]":
         """Run the Opus round trip; returns ``(decoded_audio, output_sr)``.
 
-        ``params`` requires ``bitrate`` and ``framesize`` (the request
-        fields). The output rate rides back to the client, which owns the
-        resample-back (attack.py — unchanged).
+        ``params`` requires ``bitrate`` and ``framesize``. The output rate
+        rides back to the client, which owns the resample-back.
         """
         audio_arr = np.array(audio, dtype=np.float32)
         return process_opus_codec(

@@ -1,6 +1,6 @@
-# pip constraints captured from compose service 'speech_tokenization' image (REORG_PLAN P0.2).
-# Freeze-in-place: pins the image to its currently-resolved dependency
-# set; a no-op at capture time. Regenerate only with owner sign-off.
+# pip constraints captured from compose service 'speech_tokenization' image
+# by scripts/capture_image_constraints.py. Pins the image to its
+# resolved dependency set.
 accelerate==1.1.0
 aiohappyeyeballs==2.4.0
 aiohttp==3.10.5

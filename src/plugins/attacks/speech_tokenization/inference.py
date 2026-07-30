@@ -1,11 +1,7 @@
-"""All inference for the speech_tokenization attack service (REORG_PLAN.md §5.1).
+"""XCodec2 tokenize/detokenize attack inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from xcodec.py. The 16 kHz
-resample here duplicates app.py's request-level resample (defect D9,
-docs/KNOWN_DEFECTS.md) — preserved exactly, do not de-duplicate. app.py
-also keeps its request-path resample block and INFO logs: they are visible
-container output under its ``logging.basicConfig`` (moving them would
-change the logged logger name — user-visible text).
+The 16 kHz resample here duplicates app.py's request-level resample
+(docs/KNOWN_DEFECTS.md D9).
 """
 
 import torch
@@ -17,9 +13,8 @@ from utils.utils import resample_audio
 class Engine:
     """XCodec2 tokenize/detokenize round-trip attack.
 
-    The codec loads at construction (startup-loaded stays startup-loaded).
-    ``device`` is passed by app.py, which keeps its own device selection and
-    its visible "Using device" log line.
+    The codec loads once at construction onto the ``device`` chosen by
+    app.py.
     """
 
     def __init__(self, config: dict, device: str | None = None):
@@ -31,7 +26,7 @@ class Engine:
         self.model.eval().to(self.device)
 
     def apply(self, audio, sampling_rate: int, **params):
-        """Encode ``audio`` to VQ codes and decode back (includes the D9 resample)."""
+        """Encode ``audio`` to VQ codes and decode back."""
         audio = resample_audio(audio, input_sr=sampling_rate, target_sr=16000)
 
         audio = torch.from_numpy(audio).float().unsqueeze(0)

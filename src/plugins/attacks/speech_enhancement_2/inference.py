@@ -1,12 +1,10 @@
-"""All inference for the speech_enhancement_2 attack service (REORG_PLAN.md §5.1).
+"""ClearVoice speech-enhancement attack inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from app.py's request path.
-Two frozen behaviors ride along (do not change here): ClearVoice is
-instantiated **per request** inside ``apply`` (REORG_PLAN §4.1 — hoisting to
-load-once is a deferred fix), and the unseeded config-driven noise term
-(``noise_strength_se2``, 0.01 in config) keeps the service stochastic
-(§4.3). The error-in-200 response shape (D5) is built by app.py, which
-catches whatever ``apply`` raises.
+ClearVoice is constructed per request inside ``apply``; construction
+placement is part of the service's observable behavior. The config-driven
+noise term is unseeded, so the service is stochastic. app.py converts
+exceptions from ``apply`` into the error response
+(docs/KNOWN_DEFECTS.md D5).
 """
 
 import logging
@@ -25,8 +23,8 @@ logger = logging.getLogger(__name__)
 class Engine:
     """ClearVoice speech-enhancement attack.
 
-    ``__init__`` loads nothing: the current code constructs ClearVoice per
-    request, and that stays inside ``apply`` (frozen behavior).
+    ``__init__`` loads nothing — ClearVoice is constructed per request
+    inside ``apply``.
     """
 
     def __init__(self, config: dict, device: str | None = None):
@@ -36,8 +34,8 @@ class Engine:
     def apply(self, audio: list, sampling_rate: int, **params) -> np.ndarray:
         """Enhance ``audio`` with the request's ClearVoice ``model_name``.
 
-        Raises on any processing failure — app.py turns that into the
-        current error-in-200 body (D5).
+        Raises on processing failure; app.py builds the error response
+        (docs/KNOWN_DEFECTS.md D5).
         """
         model_name = params["model_name"]
         audio_arr = np.array(audio)

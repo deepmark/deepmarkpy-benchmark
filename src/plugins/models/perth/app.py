@@ -41,7 +41,6 @@ async def embed(request: EmbedRequest):
 @app.post("/detect")
 async def detect(request: DetectRequest):
     """Detect a watermark from an audio file."""
-    # Engine.detect returns a JSON-able value (its sanitize block converts
-    # in place, including the moved .tolist()) — no serialization left here.
+    # Engine.detect returns a JSON-able scalar or list.
     message = engine.detect(request.audio, request.sampling_rate)
     return {"watermark": message}

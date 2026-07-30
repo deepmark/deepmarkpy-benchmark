@@ -1,6 +1,6 @@
-# pip constraints captured from compose service 'aware' image (REORG_PLAN P0.2).
-# Freeze-in-place: pins the image to its currently-resolved dependency
-# set; a no-op at capture time. Regenerate only with owner sign-off.
+# pip constraints captured from compose service 'aware' image
+# by scripts/capture_image_constraints.py. Pins the image to its
+# resolved dependency set.
 # Excluded non-constraint entries (pinned elsewhere): -e git+https://github.com/deepmarkpy/aware.git@fea9c49e3dfc57a421705ae411adedd80bcc6d09#egg=aware
 annotated-doc==0.0.5
 annotated-types==0.8.0

@@ -19,16 +19,14 @@ instead), and writes:
     constraints.base.txt                      for Dockerfile.base (repo root)
     <neural_vocoder>/constraints.builder.txt  for its builder stage
 
-Freeze-in-place (REORG_PLAN §4.1): the files record what the images resolved
-at capture time; wiring them into the Dockerfiles is a no-op at capture time
-by construction. Re-capturing changes the frozen dependency set — do it only
-with owner sign-off.
+The files record what the images resolved at capture time; re-capturing
+changes the frozen dependency set.
 
 Note: aware's ``constraints.stage1.txt`` (the interim state after its
 editable install, before requirements.txt upgrades some pins) is NOT
 regenerated here — it must be captured from a build stopped after the
-editable-install step, because the final image's freeze is unsatisfiable for
-that step (path-dependent resolution; see the comment in aware's Dockerfile).
+editable-install step, because the final image's freeze is unsatisfiable
+for that step.
 """
 
 import logging
@@ -80,9 +78,9 @@ def freeze_via(cmd: list) -> tuple:
 
 def write_constraints(path: Path, source: str, kept: list, dropped: list) -> None:
     header = [
-        f"# pip constraints captured from {source} (REORG_PLAN P0.2).",
-        "# Freeze-in-place: pins the image to its currently-resolved dependency",
-        "# set; a no-op at capture time. Regenerate only with owner sign-off.",
+        f"# pip constraints captured from {source}",
+        "# by scripts/capture_image_constraints.py. Pins the image to its",
+        "# resolved dependency set.",
     ]
     if dropped:
         header.append("# Excluded non-constraint entries (pinned elsewhere): "

@@ -1,12 +1,9 @@
-"""All inference for the AWARE model service (REORG_PLAN.md §5.1).
+"""AWARE embed/detect inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from app.py: unlike the
-other models, ``resample_audio`` receives the ndarray on both endpoints,
-and embed sanitizes **before** resampling back — both preserved exactly.
-The per-endpoint error-in-200 wrapping (D6, with its visible
-``traceback.print_exc()`` stderr output) stays in app.py, which catches
-what these methods raise; the ``embed_watermark``/``detect_watermark``
-calls raise freely here.
+``resample_audio`` receives the ndarray on both endpoints, and embed
+sanitizes before resampling back. The ``embed_watermark``/
+``detect_watermark`` calls raise freely; app.py converts exceptions into
+the service's error responses (docs/KNOWN_DEFECTS.md D6).
 """
 
 import numpy as np
@@ -18,12 +15,11 @@ from utils.utils import resample_audio
 
 
 class Engine:
-    """AWARE embed/detect inference (logic inside the pip-installed package).
+    """AWARE embed/detect via the ``aware`` package.
 
-    The embedder/detector pair loads at construction — app.py wraps the
-    construction in the current startup try/except (critical log +
-    traceback + exit). ``device`` is accepted for signature uniformity but
-    unused — the aware package manages its own placement.
+    The embedder/detector pair loads once at construction. ``device`` is
+    accepted for interface uniformity and unused — the aware package
+    manages its own placement.
     """
 
     def __init__(self, config: dict, device: str | None = None):
@@ -36,7 +32,7 @@ class Engine:
         }
 
     def embed(self, audio: list, watermark_data: list, sampling_rate: int) -> np.ndarray:
-        """Embed ``watermark_data``; sanitizes before the resample-back (as today)."""
+        """Embed ``watermark_data``; sanitizes before the resample-back."""
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data, dtype=np.int32)
 

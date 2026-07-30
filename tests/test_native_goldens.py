@@ -28,9 +28,9 @@ recorded here:
   Mixing;
 - absent from the canonical environment (KNOWN_DEFECTS D14): Wavelet,
   TimeStretch, PitchShift, InvertedTimeStretch;
-- excluded per owner ruling 2026-07-30 (KNOWN_DEFECTS D16): Codec2Vocoder —
-  pycodec2 carries C encoder state across in-process instantiations, so its
-  output is invocation-history-dependent.
+- not goldenable (KNOWN_DEFECTS D16): Codec2Vocoder — pycodec2 carries C
+  encoder state across in-process instantiations, so its output is
+  invocation-history-dependent.
 
 ``test_goldens_and_exclusions_cover_the_attack_universe`` enforces that the
 goldens plus these exclusions exactly cover the discovery-lock attack

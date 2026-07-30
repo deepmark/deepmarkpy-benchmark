@@ -1,10 +1,8 @@
-"""All inference for the AudioSeal model service (REORG_PLAN.md §5.1).
+"""AudioSeal embed/detect inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from app.py, including
-defect D11 (both endpoints feed ``resample_audio`` the raw request list)
-and the detect-path behaviors: the 1000-sample minimum-length guard and
-the RuntimeError fallback both yield the empty result ``([], 0.0)`` that
-app.py serializes into the current empty-response body.
+Both endpoints feed ``resample_audio`` the raw request list
+(docs/KNOWN_DEFECTS.md D11). ``detect`` yields the empty result
+``([], 0.0)`` for too-short audio and on detector failure.
 """
 
 import logging
@@ -19,12 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 class Engine:
-    """AudioSeal embed/detect inference.
+    """AudioSeal embed/detect at the config sampling rate.
 
-    Generator and detector load at construction (startup-loaded stays
-    startup-loaded). ``device`` is accepted for signature uniformity but
-    unused — the current code performs no device placement, and that is
-    preserved.
+    Generator and detector load once at construction. ``device`` is
+    accepted for interface uniformity and unused — no device placement
+    happens here.
     """
 
     def __init__(self, config: dict, device: str | None = None):
@@ -36,10 +33,7 @@ class Engine:
         }
 
     def embed(self, audio: list, watermark_data: list, sampling_rate: int) -> np.ndarray:
-        """Additively embed ``watermark_data``; returns the watermarked signal.
-
-        When resampling engages, ``resample_audio`` receives the raw list (D11).
-        """
+        """Additively embed ``watermark_data``; returns the watermarked signal."""
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data)
         if sampling_rate != self.config["sampling_rate"]:
@@ -66,10 +60,7 @@ class Engine:
     def detect(self, audio: list, sampling_rate: int) -> tuple:
         """Detect the watermark; returns ``(message, confidence)``.
 
-        The minimum-length guard and the detector RuntimeError fallback
-        return ``([], 0.0)`` — app.py maps that to the current empty
-        response body. When resampling engages, ``resample_audio`` receives
-        the raw list (D11).
+        Too-short audio and detector failures return ``([], 0.0)``.
         """
         audio_arr = np.array(audio)
         if sampling_rate != self.config["sampling_rate"]:

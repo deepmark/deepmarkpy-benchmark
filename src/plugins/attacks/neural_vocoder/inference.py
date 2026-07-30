@@ -1,10 +1,9 @@
-"""All inference for the neural_vocoder attack service (REORG_PLAN.md §5.1).
+"""BigVGAN mel-vocoder resynthesis attack inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from big_vgan.py, including
-its import mechanics: the container-only ``app_utils`` alias and the
-WORKDIR-dependent no-op ``sys.path.append("BigVGAN")`` stay intact until P2
-(REORG_PLAN §4.1 — dead code moves verbatim; ``bigvgan``/``meldataset``
-resolve from the image's /app/BigVGAN working directory).
+Imports follow the container layout: ``app_utils`` is the image's alias
+for the shared utils, and ``bigvgan``/``meldataset`` resolve from the
+image's /app/BigVGAN working directory (the ``sys.path.append`` is a
+no-op there).
 """
 
 import logging
@@ -24,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 class Engine:
-    """BigVGAN mel-vocoder resynthesis attack.
+    """BigVGAN mel-vocoder resynthesis through a 44.1 kHz round-trip.
 
-    The vocoder loads at construction (startup-loaded stays startup-loaded).
+    The vocoder loads once at construction.
     """
 
     def __init__(self, config: dict, device: str | None = None):

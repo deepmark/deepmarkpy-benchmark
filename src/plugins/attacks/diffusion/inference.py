@@ -1,10 +1,8 @@
-"""All inference for the diffusion attack service (REORG_PLAN.md §5.1).
+"""Diffusion regeneration attack inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from ddpm.py plus app.py's
-``1000 - diffusion_steps`` inversion, which lands inside ``Engine.apply``
-per the P1.2 plan row. Stochastic by §4.3 classification: ``_diffuse``
-draws a fresh OS-entropy seed per request via ``generator.seed()`` — do not
-seed or de-randomize (REORG_PLAN §4.1).
+The denoising start step is derived as ``1000 - diffusion_steps``. Each
+request draws a fresh OS-entropy seed via ``generator.seed()``, so output
+is stochastic across calls.
 """
 
 import logging
@@ -21,9 +19,8 @@ logger = logging.getLogger(__name__)
 class Engine:
     """Audio-diffusion regeneration attack.
 
-    The pipeline loads at construction (startup-loaded stays
-    startup-loaded); ``apply`` regenerates the audio from
-    ``1000 - diffusion_steps`` denoising steps.
+    The pipeline loads once at construction; ``apply`` regenerates the
+    audio from ``1000 - diffusion_steps`` denoising steps.
     """
 
     def __init__(self, config: dict, device: str | None = None):
@@ -39,17 +36,13 @@ class Engine:
         self.model.to(self.device)
 
     def apply(self, audio: list, sampling_rate: int, **params) -> np.ndarray:
-        """Regenerate ``audio`` through the diffusion model.
-
-        ``params`` requires ``diffusion_steps`` (the request field); the
-        ``1000 - diffusion_steps`` inversion happens here, not in app.py.
-        """
+        """Regenerate ``audio`` from ``1000 - params['diffusion_steps']`` steps."""
         audio_arr = np.array(audio)
         diffusion_steps = params["diffusion_steps"]
         return self._diffuse(audio_arr, sampling_rate, 1000 - diffusion_steps)
 
     def _diffuse(self, audio, sampling_rate, diffusion_steps):
-        """Sliced diffusion regeneration (moved verbatim from ddpm.py)."""
+        """Sliced diffusion regeneration with overlap blending."""
         mel = self.model.mel
         mel_sample_rate = mel.get_sample_rate()
         slice_size = mel.x_res * mel.hop_length

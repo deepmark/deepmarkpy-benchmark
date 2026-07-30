@@ -1,14 +1,10 @@
-"""All inference for the Perth model service (REORG_PLAN.md §5.1).
+"""Perth zero-bit embed/detect inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from app.py, including
-defect D4 (docs/KNOWN_DEFECTS.md): the watermark bits are packed into
-bytes and then ``apply_watermark`` is called with ``watermark=None`` —
-the payload is discarded. **Never delete the packing as dead code.**
-Also preserved: D11 (both endpoints feed ``resample_audio`` the raw
-request list) and the unused device selection (dead, moves verbatim).
-detect's sanitize block converts to JSON-able values in place (its
-embedded ``.tolist()`` is part of the moved sequence), so app.py wraps
-the returned value without further serialization.
+The request watermark bits are packed into bytes and then discarded —
+``apply_watermark`` receives ``watermark=None`` and uses Perth's internal
+watermark (docs/KNOWN_DEFECTS.md D4). Both endpoints feed
+``resample_audio`` the raw request list (D11). ``detect`` returns a
+JSON-able scalar or list.
 """
 
 import logging
@@ -23,11 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 class Engine:
-    """Perth zero-bit embed/detect inference.
+    """Perth zero-bit embed/detect at the config sampling rate.
 
-    The watermarker loads at construction (startup-loaded stays
-    startup-loaded). The ``device`` computed here is unused by the current
-    code — preserved verbatim, do not wire it up.
+    The watermarker loads once at construction. The computed ``device`` is
+    logged and otherwise unused.
     """
 
     def __init__(self, config: dict, device: str | None = None):
@@ -40,14 +35,14 @@ class Engine:
         self.model = PerthImplicitWatermarker()
 
     def embed(self, audio: list, watermark_data: list, sampling_rate: int) -> np.ndarray:
-        """Embed Perth's internal watermark (the request payload is discarded — D4)."""
+        """Embed Perth's internal watermark; the request payload is unused (D4)."""
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data)
         if sampling_rate != self.config["sampling_rate"]:
             audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
 
-        # Preserved verbatim per KNOWN_DEFECTS D4 — the packed value is
-        # discarded (watermark=None below); do not fix here.
+        # The packed value is unused: apply_watermark receives watermark=None
+        # (docs/KNOWN_DEFECTS.md D4).
         watermark_arr = np.split(watermark_arr, len(watermark_arr) // 8)
         watermark_arr = [int("".join(map(str, arr)), 2) for arr in watermark_arr]
         watermarked_audio = self.model.apply_watermark(audio_arr,watermark=None,sample_rate=self.config["sampling_rate"])

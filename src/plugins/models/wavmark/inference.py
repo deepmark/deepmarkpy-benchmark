@@ -1,10 +1,7 @@
-"""All inference for the WavMark model service (REORG_PLAN.md §5.1).
+"""WavMark embed/detect inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from app.py (P1.1): the call
-sequence and argument values are identical to the pre-extraction code,
-including defect D11 (docs/KNOWN_DEFECTS.md): ``embed`` feeds
-``resample_audio`` the raw request list while ``detect`` feeds it the
-ndarray — preserved exactly, do not normalize here.
+``embed`` feeds ``resample_audio`` the raw request list while ``detect``
+feeds it the ndarray (docs/KNOWN_DEFECTS.md D11).
 """
 
 import logging
@@ -19,11 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class Engine:
-    """WavMark embed/detect inference.
+    """WavMark embed/detect at the config sampling rate.
 
-    Owns everything between "request parsed" and "response built": the
-    sampling-rate round-trips and the wavmark encode/decode calls. The model
-    loads at construction (startup-loaded stays startup-loaded).
+    Handles the request-rate resample round-trips around the wavmark
+    encode/decode calls. The model loads once at construction.
     """
 
     def __init__(self, config: dict, device: str | None = None):

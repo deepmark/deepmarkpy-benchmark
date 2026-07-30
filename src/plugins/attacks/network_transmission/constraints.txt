@@ -1,6 +1,6 @@
-# pip constraints captured from compose service 'network_transmission' image (REORG_PLAN P0.2).
-# Freeze-in-place: pins the image to its currently-resolved dependency
-# set; a no-op at capture time. Regenerate only with owner sign-off.
+# pip constraints captured from compose service 'network_transmission' image
+# by scripts/capture_image_constraints.py. Pins the image to its
+# resolved dependency set.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.14.2

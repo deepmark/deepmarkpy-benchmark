@@ -1,9 +1,7 @@
-# pip constraints captured from the aware image's stage-1 state (post editable
-# install, pre requirements.txt) on 2026-07-29 — REORG_PLAN P0.2 freeze-in-place.
-# The aware build is path-dependent: requirements.txt later upgrades some of
-# these (e.g. pydantic), so the final-state constraints.txt is unsatisfiable
-# for this step. Captured from the round-1 cached layer. Regenerate only with
-# owner sign-off.
+# pip constraints for aware's editable-install step (post editable install,
+# pre requirements.txt). requirements.txt later upgrades some of these pins
+# (e.g. pydantic), so the final constraints.txt is unsatisfiable for this
+# step; capture from a build stopped after the editable install.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.14.2

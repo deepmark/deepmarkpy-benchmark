@@ -10,8 +10,6 @@ COPY /src/plugins/models/perth/requirements.txt .
 COPY /src/plugins/models/perth/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-# Explicit COPYs: the host-side client (model.py) is not part of the image
-# (REORG_PLAN §5.1 — stop copying host-side files while touched).
 COPY src/plugins/models/perth/app.py .
 COPY src/plugins/models/perth/inference.py .
 COPY src/plugins/models/perth/config.json .

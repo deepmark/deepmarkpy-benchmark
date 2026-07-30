@@ -1,11 +1,8 @@
-"""All inference for the speech_enhancement_1 attack service (REORG_PLAN.md §5.1).
+"""SpeechBrain enhancement attack inference, HTTP-free.
 
-No FastAPI/HTTP imports. Logic moved verbatim from speech_brain.py.
-Conditionally deterministic (§4.3): the noise term draws from the unseeded
-global NumPy RNG, but ``noise_strength`` is request-controlled — contract
-fixtures are recorded with ``noise_strength=0.0``. Do not seed (REORG_PLAN
-§4.1); the ``noise_strength`` assert's failure shape (HTTP 500) is current
-behavior and stays.
+The noise term draws from the unseeded global NumPy RNG with a
+request-controlled ``noise_strength``; the magnitude assert propagates as
+the service's 500 error.
 """
 
 import numpy as np
@@ -19,12 +16,11 @@ from utils.utils import resample_audio
 
 
 class Engine:
-    """SpeechBrain enhancement attack.
+    """SpeechBrain enhancement at 16 kHz with request-rate round-trips.
 
-    The enhancement model loads at construction (startup-loaded stays
-    startup-loaded). ``device`` is accepted for signature uniformity but
-    unused — the current code manages no device placement, and that is
-    preserved.
+    The enhancement model loads once at construction. ``device`` is
+    accepted for interface uniformity and unused — no device placement
+    happens here.
     """
 
     def __init__(self, config: dict, device: str | None = None):

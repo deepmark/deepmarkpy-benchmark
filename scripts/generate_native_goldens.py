@@ -14,8 +14,8 @@ For every goldenable native attack this script:
    script);
 2. seeds the legacy global RNG with ``np.random.seed(GLOBAL_SEED)`` and the
    stdlib RNG with ``random.seed(GLOBAL_SEED)`` immediately before the attack
-   invocation (§4.3 protocol, extended 2026-07-30 with owner approval — pins
-   attacks drawing from ``np.random`` and ``crop_random``'s stdlib draws);
+   invocation (pins attacks drawing from ``np.random`` and ``crop_random``'s
+   stdlib draws);
 3. calls ``AttackCls().apply(input, sampling_rate=SAMPLING_RATE, **params)``
    with config-default parameters (``params`` is currently empty for every
    goldened attack; the hook exists for attacks whose config value is a list
@@ -129,9 +129,9 @@ EXCLUSIONS = {
         "WaveletAttack", "TimeStretchAttack", "PitchShiftAttack",
         "InvertedTimeStretchAttack",
     ],
-    "excluded per owner ruling 2026-07-30 (KNOWN_DEFECTS D16: pycodec2"
-    " carries C encoder state across in-process instantiations, so output"
-    " is invocation-history-dependent; same-process re-runs differ)": [
+    "not goldenable (KNOWN_DEFECTS D16): pycodec2 carries C encoder state"
+    " across in-process instantiations, so output is"
+    " invocation-history-dependent": [
         "Codec2VocoderAttack",
     ],
 }
