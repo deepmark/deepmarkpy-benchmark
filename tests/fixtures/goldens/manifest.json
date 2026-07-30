@@ -1,0 +1,238 @@
+{
+  "recorded": "2026-07-29",
+  "environment": "canonical (REORG_PLAN.md \u00a74.3): clean venv, pip install -r requirements.txt, CPython 3.11.5",
+  "machine": "Darwin arm64",
+  "ffmpeg": "ffmpeg version 8.0.1 Copyright (c) 2000-2025 the FFmpeg developers",
+  "numeric_env": {
+    "numpy": "2.2.6",
+    "scipy": "1.16.0",
+    "librosa": "0.11.0",
+    "soundfile": "0.13.1",
+    "torch": "2.7.1",
+    "torchaudio": "2.7.1",
+    "encodec": "0.1.1",
+    "descript-audio-codec": "1.0.0",
+    "audiocomplib": "0.2.0"
+  },
+  "sampling_rate": 16000,
+  "input_expression": "0.5 * np.random.default_rng(42).standard_normal(16000)",
+  "global_seed_before_each_invocation": 42,
+  "exclusions": {
+    "containerized (P0.4 contract fixtures)": [
+      "VAEAttack",
+      "DiffusionAttack",
+      "NeuralVocoderAttack",
+      "SpeechEnhancement1Attack",
+      "SpeechEnhancement2Attack",
+      "SpeechTokenizationAttack",
+      "OpusCodecAttack",
+      "NetworkTransmissionAttack"
+    ],
+    "model-callback (need live models/registry; protected by discovery locks + unit suite; collusion_2 additionally unseedable \u2014 fresh default_rng at attack.py:129)": [
+      "SameModelAttack",
+      "CrossModelAttack",
+      "CollusionAttack",
+      "Collusion2Attack",
+      "ZeroBitCollusionAttack"
+    ],
+    "corpus-dependent (need AIR_wav_files/ and music/ at CWD)": [
+      "ReplayAttack",
+      "MixingAttack"
+    ],
+    "absent from the canonical environment (KNOWN_DEFECTS D14)": [
+      "WaveletAttack",
+      "TimeStretchAttack",
+      "PitchShiftAttack",
+      "InvertedTimeStretchAttack"
+    ],
+    "escalated 2026-07-29 \u2014 determinism policy gap, owner decision pending": [
+      "CropRandomAttack",
+      "Codec2VocoderAttack"
+    ]
+  },
+  "attacks": {
+    "AdditiveNoiseAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "BandstopFilterAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "ChorusAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "CropBeginningAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        14400
+      ]
+    },
+    "CutSamplesAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        15973
+      ]
+    },
+    "DescriptAudioCodecAttack": {
+      "params": {},
+      "output_dtype": "float32",
+      "output_shape": [
+        16000
+      ]
+    },
+    "EchoAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "EncodecAttack": {
+      "params": {},
+      "output_dtype": "float32",
+      "output_shape": [
+        16000
+      ]
+    },
+    "EqualizerAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "FlangerAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "FlipSamplesAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "GaussianNoiseAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "HighpassFilterAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "LPCAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "LowpassFilterAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "Mp3CompressionAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "PCMQuantizationAttack": {
+      "params": {},
+      "output_dtype": "float32",
+      "output_shape": [
+        16000
+      ]
+    },
+    "PinkNoiseAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "QuantizationAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "ReplacementAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "Replacement2Attack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "ResamplingPolyAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "SignInversionAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "SmoothingAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "STFTQuantizationAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16384
+      ]
+    },
+    "ZeroCrossInsertsAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16020
+      ]
+    }
+  },
+  "nondeterministic": {}
+}
