@@ -9,7 +9,7 @@ import torch
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
-from xcodec import XCodec
+from inference import Engine
 
 from utils.utils import load_config, resample_audio
 
@@ -27,7 +27,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info(f"Using device: {device}")
 
-model = XCodec(config["model_name_speech_tokenization"], device)
+engine = Engine(config, device)
 
 
 class AttackRequest(BaseModel):
@@ -49,7 +49,7 @@ async def attack(request: AttackRequest):
             logger.info(f"Resampled audio length: {len(audio)}")
 
         logger.info("Starting model inference...")
-        audio = model.inference(audio, target_sr)
+        audio = engine.apply(audio, target_sr)
         logger.info(f"Inference complete. Output length: {len(audio)}")
 
         if sampling_rate != target_sr:
