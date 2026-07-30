@@ -2,9 +2,31 @@
   "service": "diffusion",
   "kind": "attack",
   "recorded": "2026-07-30",
-  "image_id": "unrecordable",
+  "image_id": "98050e45d1a0f21c7d3564db9281bc1ab493ab3717bbd041ef5d20466cc36835",
   "classification": "stochastic",
-  "classification_note": "Classified by \u00a74.3 code evidence: ddpm.py:27-28 draws a fresh OS-entropy torch seed per request \u2014 not even allclose across calls. Live recording BLOCKED on the designated machine: the container crashes at startup because the frozen base lineage carries torchaudio==2.11.0 against torch==2.7.1 (Dockerfile.base pins only torch); torchaudio 2.11's aarch64 wheel dlopens libcudart.so.13, triggered via diffusers -> transformers 5.14 loss_rnnt -> import torchaudio. Escalated to the owner (fix requires a dependency version change: pin torchaudio==2.7.1 in the base constraints and rebuild).",
-  "recording_blocked": true,
-  "endpoints": {}
+  "classification_note": null,
+  "endpoints": {
+    "/attack": {
+      "request_non_audio": {
+        "sampling_rate": 16000,
+        "diffusion_steps": 5
+      },
+      "response_status": 200,
+      "response_keys": [
+        "audio"
+      ],
+      "response_sha256": "8583f1b53a061ed7fb3a46f0abc6367842653d1d73ca99475b7c3d20ee6b0e14",
+      "double_call_identical": false,
+      "double_call_stats": [
+        {
+          "audio_len": 94738,
+          "audio_rms": 0.22204729394262612
+        },
+        {
+          "audio_len": 94738,
+          "audio_rms": 0.24257171992784307
+        }
+      ]
+    }
+  }
 }

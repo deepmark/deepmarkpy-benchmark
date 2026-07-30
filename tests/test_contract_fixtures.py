@@ -73,13 +73,11 @@ def test_classification_locked(service):
 @pytest.mark.parametrize("service", sorted(ALL_SERVICES))
 def test_recorded_fixtures_are_complete(service):
     contract = _contract(service)
-    if contract.get("recording_blocked"):
-        assert service == "diffusion", (
-            f"{service} is marked recording_blocked — only diffusion is "
-            "sanctioned as blocked (see contracts README / escalation)"
-        )
-        assert contract["classification_note"], "blocked contract needs a note"
-        return
+    assert not contract.get("recording_blocked"), (
+        f"{service} is marked recording_blocked — all 14 services have "
+        "recorded fixtures since 2026-07-30; a regression here needs owner "
+        "attention (see contracts README)"
+    )
     assert contract["endpoints"], f"{service}: no endpoints recorded"
     for path, endpoint in contract["endpoints"].items():
         assert endpoint["response_sha256"], f"{service} {path}: missing hash"
