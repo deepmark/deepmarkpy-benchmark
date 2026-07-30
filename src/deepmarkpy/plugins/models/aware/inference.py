@@ -3,7 +3,7 @@
 ``resample_audio`` receives the ndarray on both endpoints, and embed
 sanitizes before resampling back. The ``embed_watermark``/
 ``detect_watermark`` calls raise freely; app.py converts exceptions into
-the service's error responses (docs/KNOWN_DEFECTS.md D6).
+the service's error-in-200 responses (intentionally preserved shape).
 """
 
 import numpy as np

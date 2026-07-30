@@ -1,7 +1,7 @@
 """XCodec2 tokenize/detokenize attack inference, HTTP-free.
 
-The 16 kHz resample here duplicates app.py's request-level resample
-(docs/KNOWN_DEFECTS.md D9).
+The 16 kHz resample here intentionally duplicates app.py's request-level
+resample — a preserved redundancy.
 """
 
 import torch

@@ -3,8 +3,8 @@
 ClearVoice is constructed per request inside ``apply``; construction
 placement is part of the service's observable behavior. The config-driven
 noise term is unseeded, so the service is stochastic. app.py converts
-exceptions from ``apply`` into the error response
-(docs/KNOWN_DEFECTS.md D5).
+exceptions from ``apply`` into the error-in-200 response (intentionally
+preserved shape).
 """
 
 import logging
@@ -34,8 +34,7 @@ class Engine:
     def apply(self, audio: list, sampling_rate: int, **params) -> np.ndarray:
         """Enhance ``audio`` with the request's ClearVoice ``model_name``.
 
-        Raises on processing failure; app.py builds the error response
-        (docs/KNOWN_DEFECTS.md D5).
+        Raises on processing failure; app.py builds the error-in-200 response.
         """
         model_name = params["model_name"]
         audio_arr = np.array(audio)

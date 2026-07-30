@@ -25,10 +25,10 @@ suite parametrizes from); for reference the list is also recorded here:
   CrossModel, Collusion, Collusion2, ZeroBitCollusion;
 - corpus-dependent (need ``AIR_wav_files/`` and ``music/`` at CWD): Replay,
   Mixing;
-- absent from the canonical environment (KNOWN_DEFECTS D14): Wavelet,
+- absent from the canonical environment (deps outside requirements.txt):
+  Wavelet,
   TimeStretch, PitchShift, InvertedTimeStretch;
-- not goldenable (KNOWN_DEFECTS D16): Codec2Vocoder — pycodec2 carries C
-  encoder state across in-process instantiations, so its output is
+- not goldenable: Codec2Vocoder — pycodec2 carries C encoder state across in-process instantiations, so its output is
   invocation-history-dependent.
 
 ``test_goldens_and_exclusions_cover_the_attack_universe`` enforces that the

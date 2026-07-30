@@ -2,8 +2,8 @@
 
 The request watermark bits are packed into bytes and then discarded —
 ``apply_watermark`` receives ``watermark=None`` and uses Perth's internal
-watermark (docs/KNOWN_DEFECTS.md D4). Both endpoints feed
-``resample_audio`` the raw request list (D11). ``detect`` returns a
+watermark; the packing is intentionally kept. Both endpoints
+intentionally feed ``resample_audio`` the raw request list. ``detect`` returns a
 JSON-able scalar or list.
 """
 
@@ -35,14 +35,14 @@ class Engine:
         self.model = PerthImplicitWatermarker()
 
     def embed(self, audio: list, watermark_data: list, sampling_rate: int) -> np.ndarray:
-        """Embed Perth's internal watermark; the request payload is unused (D4)."""
+        """Embed Perth's internal watermark; the request payload is unused."""
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data)
         if sampling_rate != self.config["sampling_rate"]:
             audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
 
-        # The packed value is unused: apply_watermark receives watermark=None
-        # (docs/KNOWN_DEFECTS.md D4).
+        # The packed value is intentionally unused: apply_watermark receives
+        # watermark=None.
         watermark_arr = np.split(watermark_arr, len(watermark_arr) // 8)
         watermark_arr = [int("".join(map(str, arr)), 2) for arr in watermark_arr]
         watermarked_audio = self.model.apply_watermark(audio_arr,watermark=None,sample_rate=self.config["sampling_rate"])

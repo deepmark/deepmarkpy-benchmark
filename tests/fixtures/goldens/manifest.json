@@ -37,13 +37,13 @@
       "ReplayAttack",
       "MixingAttack"
     ],
-    "absent from the canonical environment (KNOWN_DEFECTS D14)": [
+    "absent from the canonical environment (deps outside requirements.txt)": [
       "WaveletAttack",
       "TimeStretchAttack",
       "PitchShiftAttack",
       "InvertedTimeStretchAttack"
     ],
-    "not goldenable (KNOWN_DEFECTS D16): pycodec2 carries C encoder state across in-process instantiations, so output is invocation-history-dependent": [
+    "not goldenable: pycodec2 carries C encoder state across in-process instantiations, so output is invocation-history-dependent": [
       "Codec2VocoderAttack"
     ]
   },

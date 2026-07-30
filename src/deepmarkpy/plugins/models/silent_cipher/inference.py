@@ -1,9 +1,10 @@
 """SilentCipher embed/detect inference, HTTP-free.
 
-The 44.1k checkpoint is loaded while the service config declares 16 kHz
-(docs/KNOWN_DEFECTS.md D3). Both endpoints feed ``resample_audio`` the raw
-request list (D11). ``detect`` returns a JSON-able bit list, or ``None``
-when decoding fails — the bare except swallows the failure (D10).
+The 44.1k checkpoint is loaded while the service config declares 16 kHz —
+intentional, preserved behavior. Both endpoints intentionally feed
+``resample_audio`` the raw request list. ``detect`` returns a JSON-able
+bit list, or ``None`` when decoding fails — the bare except intentionally
+swallows the failure.
 """
 
 import logging
@@ -26,7 +27,7 @@ class Engine:
     """
 
     def __init__(self, config: dict, device: str | None = None):
-        """Load the 44.1k SilentCipher model (D3) onto ``device``."""
+        """Load the 44.1k SilentCipher model onto ``device``."""
         self.config = config
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -51,7 +52,7 @@ class Engine:
         return watermarked_audio
 
     def detect(self, audio: list, sampling_rate: int):
-        """Decode the watermark to a bit list; ``None`` when decoding fails (D10)."""
+        """Decode the watermark to a bit list; ``None`` when decoding fails."""
         audio_arr = np.array(audio)
 
         if sampling_rate != self.config["sampling_rate"]:

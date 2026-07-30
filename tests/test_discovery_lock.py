@@ -24,8 +24,8 @@ install) not to change the registered sets. ``pycodec2>=4.0.0`` is a floating
 lower bound in ``requirements.txt``; it resolved to 4.1.1 at record time.
 
 In the canonical environment four attack classes are absent because their
-import-time dependencies are not in ``requirements.txt`` (frozen per
-docs/KNOWN_DEFECTS.md D14 — note D14 lists ``wavelet``, ``pitch_shift``,
+import-time dependencies are not in ``requirements.txt`` (a frozen,
+intentional gap — the register notes ``wavelet``, ``pitch_shift``,
 ``time_stretch``; empirically ``inverted_time_stretch`` also vanishes because
 it imports ``plugins.attacks.time_stretch.attack``). These four appear in
 ``OPTIONAL_DEP_ATTACKS`` below and may legitimately register in developer

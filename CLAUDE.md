@@ -4,7 +4,7 @@
 
 Open-source benchmarking framework for evaluating audio watermarking robustness. Evaluates watermarking models against 40+ attacks (signal processing, AI-based, transmission). Published in IEEE Access, vol. 14, 2026, pp. 62031-62044 (DOI 10.1109/ACCESS.2026.3685903).
 
-**Behavior freeze:** the v1.0.0 release line preserves benchmark behavior bit-for-bit. The defects in `docs/KNOWN_DEFECTS.md` are frozen until the dedicated deferred-fix release — do not fix them in passing. Discovery sets are locked by `tests/test_discovery_lock.py`; native-attack goldens and HTTP-contract fixtures (`tests/fixtures/`) gate any change to plugin behavior.
+**Behavior freeze:** the v1.0.0 release line preserves benchmark behavior bit-for-bit. Known behavior quirks are catalogued internally and frozen until a dedicated deferred-fix release — do not fix surprising-but-working behavior in passing. Discovery sets are locked by `tests/test_discovery_lock.py`; native-attack goldens and HTTP-contract fixtures (`tests/fixtures/`) gate any change to plugin behavior.
 
 ## Architecture
 
@@ -31,7 +31,7 @@ python -m pytest tests/ -v
 
 Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Tests import the installed `deepmarkpy` package (`pip install -e .`).
 
-Current: 210 tests, ~5s runtime. No Docker required for tests. Note: `test_attack_groups.py::TestGroupedAttacksMatchPlugins` fails in environments missing `pywt`/`pyrubberband` (frozen defect D14, `docs/KNOWN_DEFECTS.md` — this includes the §4.3 canonical environment) — pre-existing, not a regression. Golden replay tests (`test_native_goldens.py`) enforce only where the numeric environment matches their manifest and skip elsewhere.
+Current: 210 tests, ~5s runtime. No Docker required for tests. Note: `test_attack_groups.py::TestGroupedAttacksMatchPlugins` fails in environments missing `pywt`/`pyrubberband` (a frozen, intentional dependency gap — this includes the canonical clean-install environment) — pre-existing, not a regression. Golden replay tests (`test_native_goldens.py`) enforce only where the numeric environment matches their manifest and skip elsewhere.
 
 ## Running the Benchmark
 

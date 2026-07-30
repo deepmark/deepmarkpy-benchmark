@@ -467,9 +467,10 @@ We welcome contributions! Feel free to:
 - Suggest new features
 - Submit pull requests
 
-Before changing existing behavior, read [docs/KNOWN_DEFECTS.md](docs/KNOWN_DEFECTS.md):
-it lists known defects that are deliberately preserved in the current release
-line and are scheduled for a dedicated fix release.
+Benchmark behavior is intentionally frozen in this release line: known
+quirks are catalogued internally and scheduled for a dedicated fix
+release. Avoid changing observable behavior in passing — the golden and
+contract fixture suites under `tests/fixtures/` will fail if you do.
 
 ## Citation
 

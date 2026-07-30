@@ -1,7 +1,7 @@
 """WavMark embed/detect inference, HTTP-free.
 
-``embed`` feeds ``resample_audio`` the raw request list while ``detect``
-feeds it the ndarray (docs/KNOWN_DEFECTS.md D11).
+``embed`` intentionally feeds ``resample_audio`` the raw request list
+while ``detect`` feeds it the ndarray — a preserved inconsistency.
 """
 
 import logging

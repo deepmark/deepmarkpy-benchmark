@@ -3,7 +3,7 @@
 Imports follow the container layout: the ``wm_model`` variant modules and
 checkpoints resolve from the image's ``TimbreWatermarking/watermarking_model``
 clone via the working-directory-relative ``sys.path.append``. Both endpoints
-feed ``resample_audio`` the raw request list (docs/KNOWN_DEFECTS.md D11).
+intentionally feed ``resample_audio`` the raw request list.
 """
 
 import logging

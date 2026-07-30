@@ -41,7 +41,7 @@ Excluded (with rationale, also recorded in the manifest):
 - corpus-dependent attacks (replay, mixing — need on-disk corpora);
 - attacks absent from the canonical environment (wavelet, time_stretch, pitch_shift,
   inverted_time_stretch — import-time deps outside requirements.txt, absent
-  from the canonical environment; see docs/KNOWN_DEFECTS.md D14).
+  from the canonical environment).
 """
 
 import datetime
@@ -124,11 +124,11 @@ EXCLUSIONS = {
     "corpus-dependent (need AIR_wav_files/ and music/ at CWD)": [
         "ReplayAttack", "MixingAttack",
     ],
-    "absent from the canonical environment (KNOWN_DEFECTS D14)": [
+    "absent from the canonical environment (deps outside requirements.txt)": [
         "WaveletAttack", "TimeStretchAttack", "PitchShiftAttack",
         "InvertedTimeStretchAttack",
     ],
-    "not goldenable (KNOWN_DEFECTS D16): pycodec2 carries C encoder state"
+    "not goldenable: pycodec2 carries C encoder state"
     " across in-process instantiations, so output is"
     " invocation-history-dependent": [
         "Codec2VocoderAttack",

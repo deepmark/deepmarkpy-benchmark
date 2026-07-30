@@ -34,5 +34,5 @@ golden fixtures, and HTTP-contract fixtures for all 16 services).
 
 ### Known issues
 
-- The defects catalogued in `docs/KNOWN_DEFECTS.md` are intentionally
-  preserved in this release and deferred to a later fix release.
+- Known behavior quirks are intentionally preserved in this release and
+  deferred to a later fix release.

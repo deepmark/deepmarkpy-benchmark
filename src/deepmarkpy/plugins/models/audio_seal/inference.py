@@ -1,7 +1,7 @@
 """AudioSeal embed/detect inference, HTTP-free.
 
-Both endpoints feed ``resample_audio`` the raw request list
-(docs/KNOWN_DEFECTS.md D11). ``detect`` yields the empty result
+Both endpoints intentionally feed ``resample_audio`` the raw request
+list — a preserved inconsistency. ``detect`` yields the empty result
 ``([], 0.0)`` for too-short audio and on detector failure.
 """
 

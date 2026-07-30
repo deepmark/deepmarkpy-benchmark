@@ -29,8 +29,7 @@ out = engine.apply(audio, sampling_rate)      # attacks
   constructs ClearVoice per `apply` call — an intentional, frozen behavior).
 - Engines are deterministic per identical input except `vae`, `diffusion`,
   and `speech_enhancement_2` (see `tests/fixtures/contracts/README.md`), and
-  behavior quirks catalogued in `docs/KNOWN_DEFECTS.md` are preserved
-  intentionally — do not "fix" them downstream if you need benchmark parity.
+  a number of behavior quirks are preserved intentionally — do not "fix" them downstream if you need benchmark parity.
 
 ## Per-plugin build requirements
 
@@ -47,7 +46,7 @@ each image resolved is authoritative in its constraints file.
 | `audio_seal` | 2.7.1 | downloaded at startup (`audioseal_wm_16bits`, `audioseal_detector_16bits`) | — |
 | `aware` | 2.7.0 | loaded by the `aware` package | clone `github.com/deepmarkpy/aware` @ `fea9c49e3dfc57a421705ae411adedd80bcc6d09`, `pip install -e .` **constrained by `constraints.stage1.txt`**, then `requirements.txt` with `constraints.txt` — the two-step order matters (the editable install resolves aware's own exact pins, e.g. `pydantic==2.5.0`, which the second step upgrades). Needs `git` at build. |
 | `perth` | 2.7.1 | bundled in the `resemble-perth` wheel | fully pinned `requirements.txt` |
-| `silent_cipher` | 2.0.0 | 44.1k checkpoint downloaded at startup | config declares 16 kHz while the 44.1k model loads (KNOWN_DEFECTS D3 — intentional). `numpy<2` per its requirements. |
+| `silent_cipher` | 2.0.0 | 44.1k checkpoint downloaded at startup | config declares 16 kHz while the 44.1k model loads (intentional, preserved behavior). `numpy<2` per its requirements. |
 | `timbrewm` | 2.0.0 | checkpoints inside the upstream clone | clone `github.com/TimbreWatermarking/TimbreWatermarking` @ `c41e7d75637f162d462ef2159acc5149b6c8071a`; then apply the upstream adaptations exactly as in the shipped `Dockerfile` (normative): rename `watermarking_model/model` → `watermarking_model/wm_model`, then the five `sed` edits (relative-import fix in `mel_transform.py`, torchaudio-import removal and hifigan config/checkpoint path + CPU-map fixes in `conv2_mel_modules.py`). Serve from a working directory containing the `TimbreWatermarking/` clone. |
 | `wavmark` | 2.7.1 | downloaded from Hugging Face at startup | — |
 
