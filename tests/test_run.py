@@ -6,7 +6,6 @@ import pytest
 # Import directly since run.py defines it at module level
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from deepmarkpy.run import to_json_safe
 

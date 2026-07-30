@@ -52,11 +52,26 @@ def from_json_safe(obj):
     return obj
 
 def main():
-    benchmark = Benchmark()
+    # --plugins_dir must be known before Benchmark() runs, because the
+    # argument list below is built from the discovered plugins' configs.
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--plugins_dir", type=str, default=None)
+    pre_args, _ = pre_parser.parse_known_args()
+
+    benchmark = Benchmark(external_plugins_dir=pre_args.plugins_dir)
 
     models, attacks, valid_args = benchmark.get_available_args()
 
     parser = argparse.ArgumentParser(description="Run DeepMark Benchmark CLI")
+
+    parser.add_argument(
+        "--plugins_dir",
+        type=str,
+        default=None,
+        help="Directory containing third-party plugin directories "
+             "(attack.py/model.py + config.json); also settable via the "
+             "DEEPMARK_PLUGINS_DIR environment variable.",
+    )
 
     # Add model and attack selection
     parser.add_argument(

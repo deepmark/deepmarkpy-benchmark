@@ -20,11 +20,16 @@ class Benchmark:
     A class to perform various attacks on watermarking models and benchmark their performance.
     """
 
-    def __init__(self):
+    def __init__(self, external_plugins_dir=None):
         """
         Initialize Benchmark class with PluginManager.
+
+        Args:
+            external_plugins_dir: Optional directory of third-party plugin
+                directories, forwarded to PluginManager (defaults to the
+                DEEPMARK_PLUGINS_DIR environment variable).
         """
-        self.plugin_manager = PluginManager()
+        self.plugin_manager = PluginManager(external_plugins_dir=external_plugins_dir)
         # Now these are dicts of the form { "class_name": {"class": ActualClass, "config": {...}} }
         self.attacks = self.plugin_manager.get_attacks()
         self.models = self.plugin_manager.get_models()
