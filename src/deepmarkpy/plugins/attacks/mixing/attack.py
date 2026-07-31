@@ -224,11 +224,6 @@ class MixingAttack(BaseAttack):
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(attack_dir)))))
             music_folder = os.path.join(project_root, music_folder)
 
-        # Calculate audio amplitude reference
-        audio_max = np.max(np.abs(audio))
-        if audio_max == 0:
-            audio_max = 1.0
-
         audio, _ = self.apply_gain_staging(audio, -18)
 
         # Apply highpass filter
@@ -239,7 +234,7 @@ class MixingAttack(BaseAttack):
         # Apply equalizer
         eq_gains = kwargs.get("eq_gains_mixing", self.config.get("eq_gains_mixing", [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]))
         equalizer = EqualizerAttack()
-        audio = equalizer.apply(audio, sampling_rate=sampling_rate, gains=eq_gains)
+        audio = equalizer.apply(audio, sampling_rate=sampling_rate, gains_equalizer=eq_gains)
 
         # Ensure audio is 2D: (channels, samples)
         if audio.ndim == 1:
@@ -262,7 +257,14 @@ class MixingAttack(BaseAttack):
         else:
             audio = processed_audio_2d
 
-        # Calculate actual volume levels based on audio amplitude
+        # Reference the music level to the speech as it is *after* the
+        # processing chain. Taking it from the raw input peak instead made the
+        # music-to-speech ratio a property of the recording's level (measured
+        # ~19 dB of swing across a corpus) rather than of this attack's config.
+        audio_max = np.max(np.abs(audio))
+        if audio_max == 0:
+            audio_max = 1.0
+
         volume_high = audio_max * volume_high_ratio  # e.g., 50% of max audio when silent
         volume_low = audio_max * volume_low_ratio    # e.g., 10% of max audio during speech
 

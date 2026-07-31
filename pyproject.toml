@@ -30,13 +30,14 @@ dependencies = [
     "pesq",
     "pystoi",
     "matplotlib",
+    "pyrubberband",
+    "PyWavelets",
 ]
 
 [project.optional-dependencies]
 # ViSQOL is imported lazily and skipped when absent; NISQA has no PyPI
 # distribution and stays a documented manual install.
 metrics = ["visqol-python"]
-# Intentionally without pywt/pyrubberband.
 native-attacks = ["pycodec2>=4.0.0", "audiocomplib"]
 all = ["deepmarkpy[metrics,native-attacks]"]
 
