@@ -18,6 +18,9 @@ from deepmarkpy.core.inference import BaseAttackEngine
 
 logger = logging.getLogger(__name__)
 
+# Pinned so a rebuild cannot silently pick up a different upstream checkpoint.
+WEIGHTS_REVISION = "a098cdacf70bcbc28c6f2927824e18792f756f8f"
+
 
 class DiffusionEngine(BaseAttackEngine):
     """Audio-diffusion regeneration attack.
@@ -34,7 +37,9 @@ class DiffusionEngine(BaseAttackEngine):
         logger.info(f"Using device: {device}")
         self.device = device
         self.model = DiffusionPipeline.from_pretrained(
-            config["model_name_diffusion"], cache_dir="diffusers"
+            config["model_name_diffusion"],
+            cache_dir="diffusers",
+            revision=WEIGHTS_REVISION,
         )
         self.model.to(self.device)
 

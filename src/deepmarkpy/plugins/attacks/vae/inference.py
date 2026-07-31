@@ -20,6 +20,9 @@ from deepmarkpy.core.inference import BaseAttackEngine
 
 logger = logging.getLogger(__name__)
 
+# Pinned so a rebuild cannot silently pick up a different upstream checkpoint.
+WEIGHTS_REVISION = "c25a03d625840c40cd3a48779ed72f2a1947d7b4"
+
 
 class VAEEngine(BaseAttackEngine):
     """RAVE reconstruction through a 48 kHz round-trip.
@@ -48,7 +51,9 @@ class VAEEngine(BaseAttackEngine):
             logger.info(
                 f"Model '{model_filename}' not found. Downloading from Hugging Face..."
             )
-            downloaded_path = hf_hub_download(repo_id=repo_id, filename=model_filename)
+            downloaded_path = hf_hub_download(
+                repo_id=repo_id, filename=model_filename, revision=WEIGHTS_REVISION
+            )
             shutil.copy2(downloaded_path, local_model_path)
             model_path = local_model_path
         else:

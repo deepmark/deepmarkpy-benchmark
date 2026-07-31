@@ -17,7 +17,9 @@ COPY src/deepmarkpy/plugins/attacks/speech_tokenization/app.py .
 COPY src/deepmarkpy/plugins/attacks/speech_tokenization/inference.py .
 COPY src/deepmarkpy/plugins/attacks/speech_tokenization/config.json .
 
-RUN python -c "from xcodec2.modeling_xcodec2 import XCodec2Model; XCodec2Model.from_pretrained('HKUST-Audio/xcodec2')"
+# Weights baked at build, pinned so a rebuild cannot pick up a different
+# upstream checkpoint.
+RUN python -c "from xcodec2.modeling_xcodec2 import XCodec2Model; XCodec2Model.from_pretrained('HKUST-Audio/xcodec2', revision='e412427ed30f0cf9d5e3c95562113deb10a32d03')"
 
 # Expose the port defined by the build argument/environment variable
 EXPOSE ${APP_PORT}

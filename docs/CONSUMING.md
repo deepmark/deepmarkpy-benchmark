@@ -67,15 +67,20 @@ each image resolved is authoritative in its constraints file.
 
 | Plugin | Engine class | torch | Weights | Notes |
 |---|---|---|---|---|
-| `vae` | `VAEEngine` | 2.7.1 | `Intelligent-Instruments-Lab/rave-models` from HF at startup (model per `model_name_vae`) | stochastic (RAVE samples latents) |
-| `diffusion` | `DiffusionEngine` | 2.7.1 | `teticio/audio-diffusion-256` from HF at startup | stochastic (fresh OS-entropy seed per call); keep torchaudio matched to torch (an unmatched torchaudio wheel can dlopen CUDA on CPU-only hosts) |
-| `neural_vocoder` | `NeuralVocoderEngine` | 2.7.1 | BigVGAN checkpoint from HF at startup (per `model_name_neural_vocoder`) | clone `github.com/NVIDIA/BigVGAN` @ `7d2b454564a6c7d014227f635b7423881f14bdac`; install `big_vgan_requirements.txt` (shipped) constrained by `constraints.builder.txt`; run with the clone directory as the working directory (`bigvgan`/`meldataset` import from cwd) |
-| `speech_enhancement_1` | `SpeechEnhancement1Engine` | 2.7.1 | SpeechBrain models downloaded at startup (`mtl-mimic-voicebank` or `metricgan-plus-voicebank` per `type_se1`) | CPU wheels via the extra index URL in its `requirements.txt` |
+| `vae` | `VAEEngine` | 2.7.1 | `Intelligent-Instruments-Lab/rave-models` @ `c25a03d6` from HF at startup (model per `model_name_vae`) | stochastic (RAVE samples latents) |
+| `diffusion` | `DiffusionEngine` | 2.7.1 | `teticio/audio-diffusion-256` @ `a098cdac` from HF at startup | stochastic (fresh OS-entropy seed per call); keep torchaudio matched to torch (an unmatched torchaudio wheel can dlopen CUDA on CPU-only hosts) |
+| `neural_vocoder` | `NeuralVocoderEngine` | 2.7.1 | BigVGAN checkpoint @ `95a9d1dc` from HF at startup (per `model_name_neural_vocoder`) | clone `github.com/NVIDIA/BigVGAN` @ `7d2b454564a6c7d014227f635b7423881f14bdac`; install `big_vgan_requirements.txt` (shipped) constrained by `constraints.builder.txt`; run with the clone directory as the working directory (`bigvgan`/`meldataset` import from cwd) |
+| `speech_enhancement_1` | `SpeechEnhancement1Engine` | 2.7.1 | SpeechBrain models at startup: `mtl-mimic-voicebank` @ `51429337` or `metricgan-plus-voicebank` @ `a196ce26` per `type_se1` | CPU wheels via the extra index URL in its `requirements.txt` |
 | `speech_enhancement_2` | `SpeechEnhancement2Engine` | 2.13.0 | ClearVoice weights downloaded on first request | ClearVoice is constructed **per request** (frozen behavior); its env resolved torch 2.13.0 — do not force-match the 2.7.1 baseline |
-| `speech_tokenization` | `SpeechTokenizationEngine` | 2.4.1 | `HKUST-Audio/xcodec2` — bake at build (as the shipped Dockerfile does) or accept a slow first start | install order matters: `requirements.txt` (with constraints), then `xcodec2==0.1.3 --no-deps`, then `xcodec_requirements.txt` (with constraints) |
+| `speech_tokenization` | `SpeechTokenizationEngine` | 2.4.1 | `HKUST-Audio/xcodec2` @ `e412427e` — bake at build (as the shipped Dockerfile does) or accept a slow first start | install order matters: `requirements.txt` (with constraints), then `xcodec2==0.1.3 --no-deps`, then `xcodec_requirements.txt` (with constraints) |
 | `opus_codec` | `OpusCodecEngine` | none | none | apt: `opus-tools`, `libopus0`, `libsndfile1`; pure subprocess round-trip, works on `python:3.10-slim` |
 | `encodec` | `EncodecEngine` | 2.7.1 | `encodec_24khz` downloaded at startup | `encodec==0.1.1` |
 | `descript_audio_codec` | `DescriptAudioCodecEngine` | 2.7.1 | DAC `44khz` model downloaded at startup | `descript-audio-codec==1.0.0`; pulls `matplotlib` and friends transitively |
+
+All weight downloads are pinned to a specific upstream revision (recorded
+2026-07-31), so a rebuild cannot silently pick up a different checkpoint.
+The `network_transmission` image builds its Python binding from
+`deepmark/python-webrtc-audio-processing`, also commit-pinned.
 
 Licensing: each upstream model/repo carries its own license (Meta AudioSeal,
 NVIDIA BigVGAN, TimbreWatermarking, Resemble Perth, SpeechBrain, ClearVoice,
