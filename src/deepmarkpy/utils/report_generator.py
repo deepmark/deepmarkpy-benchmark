@@ -50,6 +50,13 @@ class BenchmarkReportGenerator:
         return float(value or 0.0)
 
     @staticmethod
+    def _stat_of(value: StatsValue, key: str, default=None):
+        """Return an arbitrary key from a per-attack stats dict, or ``default``."""
+        if isinstance(value, Mapping):
+            return value.get(key, default)
+        return default
+
+    @staticmethod
     def _metric_of(value: StatsValue, metric: str):
         """Return ``<metric>_mean`` from a per-attack stats dict, or None."""
         if isinstance(value, Mapping):
@@ -127,9 +134,9 @@ class BenchmarkReportGenerator:
         """
         sorted_attacks = sorted(stats.items())
 
-        col_spec = "lc" + "c" * len(_ALWAYS_ON_METRICS)
+        col_spec = "lcc" + "c" * len(_ALWAYS_ON_METRICS)
         metric_headers = " & ".join(_METRIC_HEADERS[m] for m in _ALWAYS_ON_METRICS)
-        header_row = f"    Attack Type & Accuracy & {metric_headers} \\\\"
+        header_row = f"    Attack Type & Accuracy & $n$ & {metric_headers} \\\\"
         caption_word = (
             "the attack type"
             if len(sorted_attacks) == 1
@@ -137,19 +144,53 @@ class BenchmarkReportGenerator:
         )
 
         table_rows = []
+        any_detection_failures = False
         for attack_name, value in sorted_attacks:
             display_name = display_attack_name(attack_name)
             accuracy = self._accuracy_of(value)
+            n_files = self._stat_of(value, "accuracy_n")
+            std = self._stat_of(value, "accuracy_std")
+            failures = self._stat_of(value, "detection_failures", 0) or 0
+
+            accuracy_cell = f"{accuracy:.2f}\\%"
+            if std is not None:
+                accuracy_cell += f" $\\pm$ {float(std):.2f}"
+            if failures:
+                # Marks means that include files where the detector returned
+                # no usable watermark and was scored at the random-guess floor.
+                accuracy_cell += f"\\textsuperscript{{({int(n_files) - int(failures)})}}"
+                any_detection_failures = True
+
             metric_cells = []
             for metric in _ALWAYS_ON_METRICS:
                 v = self._metric_of(value, metric)
-                metric_cells.append("N/A" if v is None else f"{float(v):.2f}")
+                if v is None:
+                    metric_cells.append("N/A")
+                    continue
+                cell = f"{float(v):.2f}"
+                metric_n = self._stat_of(value, f"{metric}_n")
+                # Only call out coverage when the metric averaged fewer files
+                # than the accuracy did.
+                if metric_n is not None and n_files is not None and metric_n < n_files:
+                    cell += f" ($n$={int(metric_n)})"
+                metric_cells.append(cell)
+
             row = (
-                f"    {display_name} & {accuracy:.2f}\\% & "
+                f"    {display_name} & {accuracy_cell} & "
+                + ("--" if n_files is None else str(int(n_files)))
+                + " & "
                 + " & ".join(metric_cells)
                 + " \\\\"
             )
             table_rows.append(row)
+
+        failure_note = (
+            "\n\n{\\noindent\\footnotesize A superscript count marks means that "
+            "include files where the detector returned no usable watermark; those "
+            "files are scored at the random-guess floor (50\\%), not measured.}\n"
+            if any_detection_failures
+            else ""
+        )
 
         table_code = (
             "{\\small\\setlength{\\tabcolsep}{4pt}\n"
@@ -170,12 +211,18 @@ class BenchmarkReportGenerator:
             + "\n".join(table_rows) + "\n"
             "\\end{longtable}\n"
             "}"
+            + failure_note
         )
 
         return table_code
 
     def calculate_mean_accuracy(self, stats: Dict[str, StatsValue]) -> float:
-        """Calculate overall mean accuracy across all attacks."""
+        """Mean of the per-attack means, weighting every attack equally.
+
+        This averages over the attacks actually run, not over any defined
+        attack distribution, so it moves when the attack selection changes.
+        Report it alongside that count (see ``generate_latex_report``).
+        """
         if not stats:
             return 0.0
         accuracies = [self._accuracy_of(v) for v in stats.values()]
@@ -196,6 +243,7 @@ class BenchmarkReportGenerator:
             Complete LaTeX document as string
         """
         mean_accuracy = self.calculate_mean_accuracy(stats)
+        attack_count = len(stats)
         table_code = self.generate_latex_table(stats)
 
         preamble = self._preamble(
@@ -234,7 +282,8 @@ class BenchmarkReportGenerator:
         {table_code}
 
         \\vspace{{1em}}
-        \\noindent\\textbf{{Overall Mean Accuracy:}} {mean_accuracy:.2f}\\%
+        \\noindent\\textbf{{Mean accuracy across the {attack_count} attacks run:}} {mean_accuracy:.2f}\\%
+        \\\\{{\\footnotesize Unweighted mean of the per-attack means; it depends on which attacks were selected.}}
 
         \\begin{{figure}}[H]
         \\centering

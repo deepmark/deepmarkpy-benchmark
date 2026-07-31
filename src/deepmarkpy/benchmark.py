@@ -15,6 +15,74 @@ from deepmarkpy.utils.attack_groups import get_metrics_for_attack
 logger = logging.getLogger(__name__)
 
 
+# Attacks whose calling convention differs from the plain apply(audio, **kwargs).
+_TUPLE_RETURNING_ATTACKS = {"CrossModelAttack"}
+_NEEDS_CLEAN_ORIGINAL = {"ZeroBitCollusionAttack"}
+_CODEC2_SUPPORTED = {700, 1200, 1300, 1400, 1600, 2400, 3200}
+
+
+def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, attack_kwargs):
+    """Apply an attack, honoring the conventions some attacks require.
+
+    ``target_audio`` is the signal being attacked; ``clean_audio`` is the
+    un-watermarked reference, which collusion-style attacks splice from and
+    which must never be the same array as ``target_audio`` (that would make
+    the attack a no-op).
+
+    Returns ``(attacked_audio, extra)`` where ``extra`` is the second element
+    for tuple-returning attacks and ``None`` otherwise.
+
+    Both the benchmark run loop and the detection-reliability pass call this,
+    so an attack's calling convention is defined once.
+    """
+    kwargs = dict(attack_kwargs)
+    extra = None
+
+    if attack_class_name in _NEEDS_CLEAN_ORIGINAL:
+        kwargs["original_audio_collusion"] = clean_audio
+
+    if attack_class_name in _TUPLE_RETURNING_ATTACKS:
+        attacked_audio, extra = attack_instance.apply(target_audio, **kwargs)
+    else:
+        attacked_audio = attack_instance.apply(target_audio, **kwargs)
+
+    if isinstance(attacked_audio, np.ndarray):
+        attacked_audio = np.squeeze(attacked_audio)
+    return attacked_audio, extra
+
+
+def expand_attacks(attack_types, attacks_registry):
+    """Expand attacks whose config carries a bitrate list into separate entries.
+
+    E.g. Codec2VocoderAttack with ``bitrate_codec2=[700, 1300, 2400]`` becomes
+    ``Codec2VocoderAttack_700``, ``_1300``, ``_2400``. Returns a list of
+    ``(class_name, display_name, kwargs_override)`` triples. Shared so every
+    mode reports the same attack set under the same labels.
+    """
+    expanded = []
+    for atk_name in attack_types:
+        if atk_name not in attacks_registry:
+            expanded.append((atk_name, atk_name, {}))
+            continue
+        config = attacks_registry[atk_name].get("config") or {}
+        bitrate_key = next(
+            (k for k in config if k == "bitrate_codec2" and isinstance(config[k], list)),
+            None,
+        )
+        if bitrate_key:
+            for val in config[bitrate_key]:
+                if val not in _CODEC2_SUPPORTED:
+                    logger.warning(
+                        f"Skipping unsupported Codec2 bitrate: {val}. "
+                        f"Supported: {sorted(_CODEC2_SUPPORTED)}"
+                    )
+                    continue
+                expanded.append((atk_name, f"{atk_name}_{val}", {bitrate_key: val}))
+        else:
+            expanded.append((atk_name, atk_name, {}))
+    return expanded
+
+
 class Benchmark:
     """
     A class to perform various attacks on watermarking models and benchmark their performance.
@@ -241,33 +309,7 @@ class Benchmark:
         # If user doesn't specify attacks, use them all
         attack_types = attack_types or list(self.attacks.keys())
 
-        # Expand attacks whose config has a bitrate list into separate entries.
-        # E.g. Codec2VocoderAttack with bitrate_codec2=[700,1300,2400] becomes
-        # three entries: Codec2VocoderAttack_700, Codec2VocoderAttack_1300, ...
-        expanded_attacks = []
-        for atk_name in attack_types:
-            if atk_name not in self.attacks:
-                expanded_attacks.append((atk_name, atk_name, {}))
-                continue
-            config = self.attacks[atk_name].get("config") or {}
-            bitrate_key = next(
-                (k for k in config if k == "bitrate_codec2" and isinstance(config[k], list)),
-                None,
-            )
-            if bitrate_key:
-                _CODEC2_SUPPORTED = {700, 1200, 1300, 1400, 1600, 2400, 3200}
-                for val in config[bitrate_key]:
-                    if val not in _CODEC2_SUPPORTED:
-                        logger.warning(
-                            f"Skipping unsupported Codec2 bitrate: {val}. "
-                            f"Supported: {sorted(_CODEC2_SUPPORTED)}"
-                        )
-                        continue
-                    expanded_attacks.append(
-                        (atk_name, f"{atk_name}_{val}", {bitrate_key: val})
-                    )
-            else:
-                expanded_attacks.append((atk_name, atk_name, {}))
+        expanded_attacks = expand_attacks(attack_types, self.attacks)
 
         results = {}
 
@@ -377,30 +419,19 @@ class Benchmark:
                 # Merge bitrate overrides into kwargs for this attack
                 current_attack_kwargs = {**attack_kwargs, **attack_overrides}
 
-                if (attack_class_name == "CrossModelAttack"):
-
+                if attack_class_name == "CrossModelAttack":
                     different_model_name = kwargs.get("different_model_name_cross_model")
                     logger.info(f"Different model is chosen and it's {different_model_name}")
                     different_model_cls = self.models[different_model_name]["class"]
                     different_model_instance = different_model_cls()
 
-                    attacked_audio, different_watermark = attack_instance.apply(
-                        watermarked_audio, **current_attack_kwargs
-                    )
-
-                #in case of the collusion mod attack
-                elif (attack_class_name == "ZeroBitCollusionAttack"):
-
-                    current_attack_kwargs["original_audio_collusion"] = audio
-
-                    attacked_audio = attack_instance.apply(
-                        watermarked_audio, **current_attack_kwargs
-                    )
-
-                else:
-                    attacked_audio = attack_instance.apply(
-                        watermarked_audio, **current_attack_kwargs
-                    )
+                attacked_audio, different_watermark = apply_attack(
+                    attack_instance,
+                    attack_class_name,
+                    target_audio=watermarked_audio,
+                    clean_audio=audio,
+                    attack_kwargs=current_attack_kwargs,
+                )
 
                 # Ensure consistent shape for all attacks
                 if isinstance(attacked_audio, np.ndarray):
@@ -452,11 +483,19 @@ class Benchmark:
                 if is_zero_bit:
                     raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
                     accuracy = float(raw) * 100
+                    detection_valid = True
                 else:
+                    # False when the detector returned nothing usable, in which
+                    # case `accuracy` is the RANDOM_GUESS_ACCURACY sentinel
+                    # rather than a measured bit-agreement.
+                    detection_valid = not self._is_invalid_detection(
+                        detected_message, file_watermark
+                    )
                     accuracy = self.compare_watermarks(file_watermark, detected_message)
 
                 results[filepath]["attacks"][attack_name] = {
                     "accuracy": accuracy,
+                    "detection_valid": detection_valid,
                     "attacked_audio_quality_wm": attacked_audio_quality_wm,
                 }
 
@@ -501,10 +540,13 @@ class Benchmark:
             results: Dictionary of results from ``run()``
 
         Returns:
-            Dictionary mapping each attack name to ``{"accuracy_mean": float,
-            "accuracy_cross_model_mean": float (optional), and
-            ``<metric>_mean`` for each always-on quality metric (PESQ,
-            ViSQOL, STOI) so the basic report can show them.``.
+            Dictionary mapping each attack name to ``accuracy_mean``,
+            ``accuracy_std``, ``accuracy_n``, ``detection_failures`` (files
+            whose detector returned nothing usable), optionally
+            ``accuracy_cross_model_mean``/``_n``, and ``<metric>_mean`` plus
+            ``<metric>_n`` for each always-on quality metric (PESQ, ViSQOL,
+            STOI). The ``_n`` counts state how many files each mean covers,
+            which varies when a metric is unavailable for some clips.
         """
         attack_accuracies = {}
 
@@ -516,10 +558,16 @@ class Benchmark:
                         "accuracy": [],
                         "accuracy_cross_model": [],
                         "confidence": [],
+                        "detection_valid": [],
                         "metrics": {m: [] for m in self.ALWAYS_ON_METRICS},
                     }
 
                 attack_accuracies[attack_name]["accuracy"].append(metrics["accuracy"])
+
+                if "detection_valid" in metrics:
+                    attack_accuracies[attack_name]["detection_valid"].append(
+                        bool(metrics["detection_valid"])
+                    )
 
                 if "accuracy_cross_model" in metrics:
                     attack_accuracies[attack_name]["accuracy_cross_model"].append(
@@ -541,18 +589,32 @@ class Benchmark:
         for attack_name, acc in attack_accuracies.items():
             mean_accuracies[attack_name] = {}
 
-            mean_accuracies[attack_name]["accuracy_mean"] = float(
-                np.mean([a for a in acc["accuracy"] if a is not None])
+            accuracies = [a for a in acc["accuracy"] if a is not None]
+            mean_accuracies[attack_name]["accuracy_mean"] = float(np.mean(accuracies))
+            mean_accuracies[attack_name]["accuracy_n"] = len(accuracies)
+            mean_accuracies[attack_name]["accuracy_std"] = (
+                float(np.std(accuracies, ddof=1)) if len(accuracies) > 1 else 0.0
             )
 
-            if acc["accuracy_cross_model"]:
-                mean_accuracies[attack_name]["accuracy_cross_model_mean"] = float(
-                    np.mean([a for a in acc["accuracy_cross_model"] if a is not None])
+            # Files whose detector returned nothing usable: their accuracy is
+            # the random-guess sentinel, not a measurement.
+            validity = acc["detection_valid"]
+            if validity:
+                mean_accuracies[attack_name]["detection_failures"] = int(
+                    len(validity) - sum(validity)
                 )
+
+            if acc["accuracy_cross_model"]:
+                cross = [a for a in acc["accuracy_cross_model"] if a is not None]
+                mean_accuracies[attack_name]["accuracy_cross_model_mean"] = float(
+                    np.mean(cross)
+                )
+                mean_accuracies[attack_name]["accuracy_cross_model_n"] = len(cross)
 
             for m, vals in acc["metrics"].items():
                 if vals:
                     mean_accuracies[attack_name][f"{m}_mean"] = float(np.mean(vals))
+                    mean_accuracies[attack_name][f"{m}_n"] = len(vals)
 
         return mean_accuracies
 

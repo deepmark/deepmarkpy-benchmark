@@ -453,7 +453,9 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
         output_dir: Optional directory for outputs (default: report/)
 
     Returns:
-        Tuple of (results, flattened_stats) for use in comparative reports
+        Tuple of (results, flattened_stats, stats): raw per-file results,
+        the attack->accuracy_mean mapping the comparative report ranks, and
+        the full per-attack stats (means, n, std, failure counts).
     """
     args_dict = vars(args).copy()
     args_dict["wm_model"] = model_name
@@ -509,7 +511,7 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
         except Exception as e:
             logger.error(f"Failed to generate detailed report: {e}")
 
-    return results, flattened_stats
+    return results, flattened_stats, stats
 
 
 def run_multiple_models(benchmark, filepaths, model_names, args):
@@ -520,6 +522,7 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
 
     all_results = {}
     all_stats = {}
+    all_meta = {}
 
     failed_models = []
     for model_name in model_names:
@@ -530,7 +533,7 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
         model_dir = os.path.join(report_base, model_name)
         _copy_deepmark_assets(report_base, model_dir)
         try:
-            results, flattened_stats = run_single_model(
+            results, flattened_stats, model_stats = run_single_model(
                 benchmark, filepaths, model_name, args, output_dir=model_dir,
             )
         except (MemoryError, ConnectionError, OSError) as e:
@@ -549,6 +552,18 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
 
         all_results[model_name] = results
         all_stats[model_name] = flattened_stats
+        # Metadata the comparative report needs to keep the columns honest:
+        # a zero-bit model's score is a detection rate (floor 0), a multi-bit
+        # model's is bit agreement (floor ~50), and payload width differs.
+        model_config = benchmark.models[model_name].get("config") or {}
+        all_meta[model_name] = {
+            "is_zero_bit": bool(model_config.get("is_zero_bit", False)),
+            "watermark_size": model_config.get("watermark_size"),
+            "sampling_rate": model_config.get("sampling_rate"),
+            "n_files": max(
+                (m.get("accuracy_n", 0) for m in model_stats.values()), default=0
+            ),
+        }
 
     if failed_models:
         logger.warning(
@@ -578,6 +593,7 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
             all_results, all_stats,
             calculate_quality_metrics=args.calculate_quality_metrics,
             crop_before_attack=args.crop_before_attack,
+            model_meta=all_meta,
         )
         logger.info(f"Comparative report saved to: {comp_dir}")
     except Exception as e:
