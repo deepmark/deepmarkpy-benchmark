@@ -55,6 +55,3 @@ class SpeechEnhancement1Engine(BaseAttackEngine):
         enhanced = resample_audio(enhanced, input_sr=16000, target_sr=sampling_rate)
         return enhanced
 
-
-# Stable import alias.
-Engine = SpeechEnhancement1Engine

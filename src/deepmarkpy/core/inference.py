@@ -16,8 +16,7 @@ shapes, which vary by plugin and are part of each service's frozen
 contract: most attacks return an ``np.ndarray`` but ``opus_codec`` returns
 ``(audio, output_sr)``; model ``detect`` returns an ndarray, a
 ``(watermark, confidence)`` tuple, a scalar, a bit list, or ``None``
-depending on the model. Each module also exposes the stable alias
-``Engine`` for its engine class.
+depending on the model.
 
 This module stays import-light (stdlib + numpy only) so consumers can
 type against it without pulling any ML runtime.

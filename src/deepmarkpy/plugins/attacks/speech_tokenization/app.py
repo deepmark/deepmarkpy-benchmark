@@ -9,7 +9,7 @@ import torch
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
-from inference import Engine
+from inference import SpeechTokenizationEngine
 
 from deepmarkpy.utils.utils import load_config, resample_audio
 
@@ -27,7 +27,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info(f"Using device: {device}")
 
-engine = Engine(config, device)
+engine = SpeechTokenizationEngine(config, device)
 
 
 class AttackRequest(BaseModel):

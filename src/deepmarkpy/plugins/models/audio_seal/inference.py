@@ -88,6 +88,3 @@ class AudioSealEngine(BaseModelEngine):
         message = message.squeeze().cpu().numpy()
         return message, confidence
 
-
-# Stable import alias.
-Engine = AudioSealEngine

@@ -19,7 +19,7 @@ _spec = importlib.util.spec_from_file_location(
 )
 _inference = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_inference)
-Engine = _inference.Engine
+NeuralVocoderEngine = _inference.NeuralVocoderEngine
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-engine = Engine(config)
+engine = NeuralVocoderEngine(config)
 
 
 class AttackRequest(BaseModel):

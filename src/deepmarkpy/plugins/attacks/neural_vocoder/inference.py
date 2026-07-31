@@ -50,6 +50,3 @@ class NeuralVocoderEngine(BaseAttackEngine):
 
         return resample_audio(output, input_sr=44100, target_sr=sampling_rate)
 
-
-# Stable import alias.
-Engine = NeuralVocoderEngine

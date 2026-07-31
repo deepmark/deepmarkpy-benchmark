@@ -18,14 +18,14 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from inference import Engine
+from inference import OpusCodecEngine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-engine = Engine({})
+engine = OpusCodecEngine({})
 
 
 class AttackRequest(BaseModel):

@@ -29,8 +29,7 @@ def serve(engine: BaseAttackEngine): ...
 
 - Module paths `deepmarkpy.plugins.{attacks,models}.<name>.inference`, the
   per-plugin engine class names (`VAEEngine`, `AudioSealEngine`, ... —
-  mirroring the client class names), the `Engine` alias each module keeps
-  for the v1.0.0 import path, the base classes
+  mirroring the client class names), the base classes
   `deepmarkpy.core.inference.{BaseAttackEngine,BaseModelEngine}`, and the
   signatures (`__init__(config, device=None)`; attacks `apply`, models
   `embed`/`detect`) are semver-stable. Anything else in plugin directories

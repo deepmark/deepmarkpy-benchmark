@@ -6,10 +6,9 @@
   `BaseModelEngine` (import-light, stdlib + numpy) type the per-plugin
   inference contract; every engine derives from the matching base.
 - Engines now carry their own class names (`VAEEngine`, `AudioSealEngine`,
-  ..., mirroring the client classes). Each module keeps `Engine` as a
-  stable alias, so all v1.0.0 imports keep working unchanged.
-- Additive only: no behavior, HTTP contract, or CLI change (all 16
-  service contract fixtures re-verified).
+  ..., mirroring the client classes).
+- No behavior, HTTP contract, or CLI change (all 16 service contract
+  fixtures re-verified).
 
 ## v1.0.0 — 2026-07-30
 

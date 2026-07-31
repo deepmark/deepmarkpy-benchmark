@@ -4,7 +4,7 @@ Engine modules import their ML runtimes (torch, clearvoice, ...), so they
 cannot be imported in the host test environment. These tests parse each
 plugin's ``inference.py`` with ``ast`` instead and lock the contract:
 exactly one engine class per module, named as registered below, deriving
-from the correct base, with the stable ``Engine`` alias assigned to it.
+from the correct base.
 ``deepmarkpy.core.inference`` itself must stay import-light so consumers
 can type against it without any ML runtime.
 """
@@ -64,21 +64,6 @@ def test_engine_class_name_base_and_methods(plugin):
     methods = {n.name for n in cls.body if isinstance(n, ast.FunctionDef)}
     missing = REQUIRED_METHODS[base] - methods
     assert not missing, f"{plugin}: {cls.name} missing {sorted(missing)}"
-
-
-@pytest.mark.parametrize("plugin", sorted(ENGINES))
-def test_stable_engine_alias(plugin):
-    name, _ = ENGINES[plugin]
-    tree = _module_tree(plugin)
-    for node in tree.body:
-        if (isinstance(node, ast.Assign)
-                and any(isinstance(t, ast.Name) and t.id == "Engine" for t in node.targets)
-                and isinstance(node.value, ast.Name)):
-            assert node.value.id == name, (
-                f"{plugin}: Engine aliases {node.value.id}, expected {name}"
-            )
-            return
-    pytest.fail(f"{plugin}: stable alias 'Engine = {name}' not found")
 
 
 def test_core_inference_is_import_light():

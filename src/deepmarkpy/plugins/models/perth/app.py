@@ -5,7 +5,7 @@ from typing import List
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from inference import Engine
+from inference import PerthEngine
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-engine = Engine(config)
+engine = PerthEngine(config)
 
 class EmbedRequest(BaseModel):
     audio: List[float]
@@ -41,6 +41,6 @@ async def embed(request: EmbedRequest):
 @app.post("/detect")
 async def detect(request: DetectRequest):
     """Detect a watermark from an audio file."""
-    # Engine.detect returns a JSON-able scalar or list.
+    # PerthEngine.detect returns a JSON-able scalar or list.
     message = engine.detect(request.audio, request.sampling_rate)
     return {"watermark": message}

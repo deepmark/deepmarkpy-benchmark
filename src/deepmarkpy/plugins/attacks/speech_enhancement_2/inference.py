@@ -84,6 +84,3 @@ class SpeechEnhancement2Engine(BaseAttackEngine):
             except Exception as e:
                 logger.warning(f"Failed to delete temporary file {tmp_path}: {str(e)}")
 
-
-# Stable import alias.
-Engine = SpeechEnhancement2Engine

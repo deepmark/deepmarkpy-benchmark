@@ -40,6 +40,3 @@ class SpeechTokenizationEngine(BaseAttackEngine):
 
         return resample_audio(output, input_sr=16000, target_sr=sampling_rate)
 
-
-# Stable import alias.
-Engine = SpeechTokenizationEngine

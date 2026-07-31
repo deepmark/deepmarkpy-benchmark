@@ -1,6 +1,6 @@
 """Opus encode/decode round-trip attack inference, HTTP-free.
 
-``Engine.apply`` returns ``(audio, output_sr)``: the response carries the
+``OpusCodecEngine.apply`` returns ``(audio, output_sr)``: the response carries the
 decoder's output rate and the client resamples back.
 """
 
@@ -108,6 +108,3 @@ class OpusCodecEngine(BaseAttackEngine):
             framesize=params["framesize"],
         )
 
-
-# Stable import alias.
-Engine = OpusCodecEngine

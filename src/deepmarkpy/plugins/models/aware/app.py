@@ -7,7 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from inference import Engine
+from inference import AwareEngine
 from deepmarkpy.utils.utils import load_config
 
 
@@ -24,7 +24,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
 
 try:
     logger.info("Loading AWARE models...")
-    engine = Engine(config)
+    engine = AwareEngine(config)
     logger.info("AWARE models loaded successfully")
 except Exception as e:
     logger.critical(f"Failed to load AWARE models: {e}. Application cannot start.")

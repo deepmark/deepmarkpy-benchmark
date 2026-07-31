@@ -91,6 +91,3 @@ class VAEEngine(BaseAttackEngine):
         reconstructed = reconstructed.cpu().numpy()
         return renormalize_audio(audio, reconstructed)
 
-
-# Stable import alias.
-Engine = VAEEngine

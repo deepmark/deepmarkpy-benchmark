@@ -7,7 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from inference import Engine
+from inference import EncodecEngine
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-engine = Engine(config)
+engine = EncodecEngine(config)
 
 
 class AttackRequest(BaseModel):

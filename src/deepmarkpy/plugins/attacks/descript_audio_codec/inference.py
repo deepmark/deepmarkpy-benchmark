@@ -117,6 +117,3 @@ class DescriptAudioCodecEngine(BaseAttackEngine):
         result = reconstructed.squeeze().cpu().numpy()
         return result
 
-
-# Stable import alias.
-Engine = DescriptAudioCodecEngine

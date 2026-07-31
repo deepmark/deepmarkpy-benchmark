@@ -88,6 +88,3 @@ class DiffusionEngine(BaseAttackEngine):
         output = resample_audio(output, mel_sample_rate, sampling_rate)
         return renormalize_audio(audio, output)
 
-
-# Stable import alias.
-Engine = DiffusionEngine

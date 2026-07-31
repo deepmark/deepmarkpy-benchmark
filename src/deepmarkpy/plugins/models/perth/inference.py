@@ -79,6 +79,3 @@ class PerthEngine(BaseModelEngine):
 
         return message
 
-
-# Stable import alias.
-Engine = PerthEngine

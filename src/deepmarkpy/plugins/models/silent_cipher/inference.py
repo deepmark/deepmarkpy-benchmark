@@ -71,6 +71,3 @@ class SilentCipherEngine(BaseModelEngine):
 
         return message
 
-
-# Stable import alias.
-Engine = SilentCipherEngine

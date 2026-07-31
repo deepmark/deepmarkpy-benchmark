@@ -153,6 +153,3 @@ class TimbreWMEngine(BaseModelEngine):
 
         return message
 
-
-# Stable import alias.
-Engine = TimbreWMEngine

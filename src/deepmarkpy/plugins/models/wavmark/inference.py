@@ -60,6 +60,3 @@ class WavMarkEngine(BaseModelEngine):
         message, _ = wavmark.decode_watermark(self.model, audio_arr, show_progress=False)
         return message
 
-
-# Stable import alias.
-Engine = WavMarkEngine

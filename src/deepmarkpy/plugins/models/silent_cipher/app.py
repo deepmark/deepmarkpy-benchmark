@@ -7,7 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from inference import Engine
+from inference import SilentCipherEngine
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-engine = Engine(config)
+engine = SilentCipherEngine(config)
 
 class EmbedRequest(BaseModel):
     audio: List[float]
@@ -43,7 +43,7 @@ async def embed(request: EmbedRequest):
 @app.post("/detect")
 async def detect(request: DetectRequest):
     """Detect a watermark from an audio file."""
-    # Engine.detect returns a JSON-able bit list, or None on decode failure.
+    # SilentCipherEngine.detect returns a JSON-able bit list, or None on decode failure.
     message = engine.detect(request.audio, request.sampling_rate)
     return {"watermark": message}
 

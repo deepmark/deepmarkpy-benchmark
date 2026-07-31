@@ -13,7 +13,7 @@ from deepmarkpy.utils.utils import load_config
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-from inference import Engine
+from inference import TimbreWMEngine
 
 app = FastAPI()
 
@@ -23,7 +23,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-engine = Engine(config)
+engine = TimbreWMEngine(config)
 
 class EmbedRequest(BaseModel):
     audio: List[float]
