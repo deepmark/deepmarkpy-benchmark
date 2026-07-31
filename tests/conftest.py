@@ -1,12 +1,7 @@
 """Shared fixtures for the DeepMarkPy benchmark test suite."""
 
-import sys
-import os
-
 import numpy as np
 import pytest
-
-# Add src/ to Python path so tests can import benchmark modules
 
 
 @pytest.fixture

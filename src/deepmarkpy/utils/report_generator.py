@@ -6,8 +6,11 @@ import subprocess
 from typing import Dict, Mapping, Union
 import matplotlib.pyplot as plt
 
-from deepmarkpy.utils.attack_groups import get_metric_caveat
-from deepmarkpy.utils.latex_helpers import display_attack_name, make_preamble
+from deepmarkpy.utils.latex_helpers import (
+    MetricCaveats,
+    display_attack_name,
+    make_preamble,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +149,7 @@ class BenchmarkReportGenerator:
 
         table_rows = []
         any_detection_failures = False
-        any_unreliable_metrics = False
+        caveats = MetricCaveats()
         for attack_name, value in sorted_attacks:
             display_name = display_attack_name(attack_name)
             accuracy = self._accuracy_of(value)
@@ -170,10 +173,8 @@ class BenchmarkReportGenerator:
                     metric_cells.append("N/A")
                     continue
                 cell = f"{float(v):.2f}"
-                if get_metric_caveat(attack_name, metric):
-                    # Reported, but the attack makes this metric unreliable.
-                    cell += "\\textsuperscript{\\dag}"
-                    any_unreliable_metrics = True
+                # Reported, but the attack may make this metric unreliable.
+                cell += caveats.mark(attack_name, metric)
                 metric_n = self._stat_of(value, f"{metric}_n")
                 # Only call out coverage when the metric averaged fewer files
                 # than the accuracy did.
@@ -190,14 +191,7 @@ class BenchmarkReportGenerator:
             )
             table_rows.append(row)
 
-        unreliable_note = (
-            "\n\n{\\noindent\\footnotesize \\textsuperscript{\\dag}This metric compares "
-            "the signals sample by sample, so for an attack that shifts the time "
-            "axis it reports the shift rather than a quality change. The value is "
-            "shown for completeness; do not read it as a quality score.}\n"
-            if any_unreliable_metrics
-            else ""
-        )
+        unreliable_note = caveats.footnote()
 
         failure_note = (
             "\n\n{\\noindent\\footnotesize A superscript count marks means that "

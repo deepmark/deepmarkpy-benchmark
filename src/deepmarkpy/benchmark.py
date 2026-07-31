@@ -45,6 +45,14 @@ def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, 
         attacked_audio, extra = attack_instance.apply(target_audio, **kwargs)
     else:
         attacked_audio = attack_instance.apply(target_audio, **kwargs)
+        if isinstance(attacked_audio, tuple):
+            # Unpacking is driven by the registry above, so an unregistered
+            # tuple would otherwise reach the metrics as a 0-d object array.
+            raise TypeError(
+                f"{attack_class_name}.apply() returned a tuple; attacks must "
+                "return the attacked audio unless their class name is listed "
+                "in benchmark._TUPLE_RETURNING_ATTACKS"
+            )
 
     if isinstance(attacked_audio, np.ndarray):
         attacked_audio = np.squeeze(attacked_audio)
@@ -491,7 +499,7 @@ class Benchmark:
                 else:
                     detected_message = model_instance.detect(attacked_audio, sampling_rate)
 
-                if (attack_name =="CrossModelAttack"):
+                if attack_class_name == "CrossModelAttack":
                     different_detected_message = different_model_instance.detect(attacked_audio, sampling_rate)
                     diff_model_config = self.models.get(different_model_name, {}).get("config") or {}
                     diff_is_zero_bit = diff_model_config.get("is_zero_bit", False)
@@ -539,7 +547,7 @@ class Benchmark:
                 if confidence is not None:
                     results[filepath]["attacks"][attack_name]["confidence"] = confidence
 
-                if attack_name == "CrossModelAttack":
+                if attack_class_name == "CrossModelAttack":
                     results[filepath]["attacks"][attack_name]["accuracy_cross_model"] = different_accuracy
 
         return results

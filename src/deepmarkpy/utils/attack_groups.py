@@ -119,6 +119,7 @@ ATTACK_GROUPS = {
 # reference-free and therefore immune.
 _ALIGNMENT_SENSITIVE_METRICS = ("psnr", "si_sdr", "stoi", "mcd", "ncm")
 
+# Each caveat completes the sentence "This metric ..." in a report footnote.
 _DESYNC_CAVEAT = (
     "compares samples by index, so it reports the attack's timing shift "
     "rather than a quality change"
@@ -130,7 +131,7 @@ _ATTACK_METRIC_CAVEATS = {
     # SI-SDR is scale-invariant and a sign flip is a scale of -1, so the
     # residual collapses and the score is pinned at the epsilon ceiling.
     "SignInversionAttack": {
-        "si_sdr": "scale-invariant, so it cannot see polarity inversion",
+        "si_sdr": "is scale-invariant, so it cannot see polarity inversion",
     },
 }
 

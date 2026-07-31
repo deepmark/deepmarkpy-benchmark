@@ -190,3 +190,54 @@ def compile_latex(report_dir: str, tex_basename: str) -> Optional[str]:
         if os.path.exists(aux):
             os.remove(aux)
     return pdf_path
+
+
+class MetricCaveats:
+    """Marks metric cells an attack makes unreliable, and explains why.
+
+    ``get_metric_caveat`` returns a different reason per case, so a single
+    hardcoded footnote describes only one of them: a table containing both a
+    desynchronization row and SignInversion's SI-SDR would explain the timing
+    shift twice and the scale-invariance not at all. Collecting the reasons
+    while a table is built gives each its own marker and its own sentence.
+
+    Every report generator that prints per-attack quality metrics uses this,
+    so a caveat added to ``attack_groups`` reaches all of them.
+    """
+
+    _MARKERS = ("\\dag", "\\ddag", "\\S", "\\P")
+
+    def __init__(self):
+        self._reasons = []
+
+    def mark(self, attack_name, metric):
+        """Return the superscript for this cell, or '' when it needs none."""
+        from deepmarkpy.utils.attack_groups import get_metric_caveat
+
+        reason = get_metric_caveat(attack_name, metric)
+        if not reason:
+            return ""
+        if reason not in self._reasons:
+            self._reasons.append(reason)
+        return f"\\textsuperscript{{{self._marker(reason)}}}"
+
+    def _marker(self, reason):
+        return self._MARKERS[self._reasons.index(reason) % len(self._MARKERS)]
+
+    @property
+    def any_flagged(self):
+        return bool(self._reasons)
+
+    def footnote(self):
+        """One sentence per distinct reason, or '' when nothing was marked."""
+        if not self._reasons:
+            return ""
+        sentences = " ".join(
+            f"\\textsuperscript{{{self._marker(r)}}}This metric {r}."
+            for r in self._reasons
+        )
+        return (
+            "\n\n{\\noindent\\footnotesize " + sentences
+            + " Values are shown for completeness; do not read them as "
+            "quality scores.}\n"
+        )

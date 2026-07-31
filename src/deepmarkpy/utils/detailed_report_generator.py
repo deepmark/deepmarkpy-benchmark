@@ -5,8 +5,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from deepmarkpy.utils.attack_groups import get_metric_caveat, group_attacks, ATTACK_GROUPS
+from deepmarkpy.utils.attack_groups import group_attacks, ATTACK_GROUPS
 from deepmarkpy.utils.latex_helpers import (
+    MetricCaveats,
     build_longtable,
     compile_latex,
     display_attack_name,
@@ -411,26 +412,21 @@ class DetailedReportGenerator:
             )
             rows.append("    \\midrule")
 
-        any_unreliable = False
+        caveats = MetricCaveats()
         for a in available:
             data = aggregated["attacks"][a][data_key]
             display = self._display_name(a)
             cells = []
             for m in metrics:
                 cell = self._format_val(data.get(m, {"mean": None}))
-                if cell != "N/A" and get_metric_caveat(a, m):
-                    # Reported, but this attack makes the metric unreliable.
-                    cell += "\\textsuperscript{\\dag}"
-                    any_unreliable = True
+                if cell != "N/A":
+                    # Reported, but this attack may make the metric unreliable.
+                    cell += caveats.mark(a, m)
                 cells.append(cell)
             rows.append(f"    {display} & " + " & ".join(cells) + " \\\\")
 
-        if any_unreliable:
-            caption += (
-                " \\textsuperscript{\\dag}Sample-aligned metric on a "
-                "time-shifting attack: the value reflects the shift, not a "
-                "quality change."
-            )
+        if caveats.any_flagged:
+            caption += " " + caveats.footnote().strip()
 
         return build_longtable(
             col_spec, f"Condition & {header_str}", rows, caption, label,

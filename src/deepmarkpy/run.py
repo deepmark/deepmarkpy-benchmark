@@ -14,6 +14,7 @@ from deepmarkpy import __version__
 from deepmarkpy.benchmark import Benchmark
 from deepmarkpy.utils.report_generator import generate_benchmark_report
 from deepmarkpy.utils.attack_groups import ATTACK_GROUPS, get_attacks_for_groups
+from deepmarkpy.utils.metrics import nisqa_status
 from deepmarkpy.utils.utils import load_env_file
 
 logging.basicConfig(
@@ -510,6 +511,9 @@ def write_run_metadata(report_dir, args, benchmark, model_names, extra=None):
             "models_discovered": sorted(benchmark.models),
             "failed_imports": benchmark.plugin_manager.failed,
         },
+        # A metric that could not run leaves N/A cells that look identical to
+        # a metric that ran and had nothing to say.
+        "metrics": {"nisqa": nisqa_status()},
     }
     if extra:
         metadata.update(extra)
