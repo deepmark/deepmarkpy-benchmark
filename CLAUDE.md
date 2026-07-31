@@ -44,6 +44,12 @@ deepmark-benchmark --wav_files_dir /path/to/wavs --wm_model AudioSealModel --att
 
 ## Development Conventions
 
+- **CPU only** — no service requests a GPU and none is expected to. Install
+  `+cpu` torch wheels; never pin `nvidia-*`, `triton`, or a `+cuXXX` build.
+  The default wheel now bundles CUDA on arm64 too, so an unconstrained
+  `pip install torch` silently adds gigabytes that cannot execute.
+  `tests/test_cpu_only_builds.py` enforces this across every pin file
+
 - **Attack parameter names must be unique across all attacks** — they share a flat CLI namespace. Suffix with attack name (e.g., `snr_db_replay`, `order_bandstop`). The system warns on collisions but doesn't prevent them
 - **Model capabilities declared in config.json** — use `returns_confidence: true/false` and `is_zero_bit: true/false` for general dispatch. For detection reliability, models must implement `is_watermarked(detect_output) -> bool` in `model.py`
 - **Native attacks** need only `attack.py` + `config.json` in their directory
