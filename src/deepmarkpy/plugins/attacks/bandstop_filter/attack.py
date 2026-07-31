@@ -32,8 +32,17 @@ class BandstopFilterAttack(BaseAttack):
        
         nyquist = 0.5 * sampling_rate
 
-        b, a = signal.butter(order,[freq_range[0]/nyquist, freq_range[1]/nyquist], btype='bandstop', analog=False)
+        # Second-order sections rather than (b, a): at the low normalized
+        # frequencies this band sits at, the transfer-function form loses
+        # enough precision to drive the output to ~1e147 by 48 kHz.
+        sos = signal.butter(
+            order,
+            [freq_range[0] / nyquist, freq_range[1] / nyquist],
+            btype='bandstop',
+            analog=False,
+            output='sos',
+        )
 
-        filtered_signal = signal.filtfilt(b, a, audio)
+        filtered_signal = signal.sosfiltfilt(sos, audio)
 
         return filtered_signal

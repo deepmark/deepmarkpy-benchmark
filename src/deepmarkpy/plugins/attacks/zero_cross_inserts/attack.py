@@ -38,14 +38,20 @@ class ZeroCrossInsertsAttack(BaseAttack):
         zero_crossings = np.where(np.diff(np.sign(audio)))[0]
 
         modified_audio = []
+        # How far the output has been filled, kept separate from the spacing
+        # cursor: the latter starts negative so the first crossing always
+        # qualifies, and slicing with it would skip the head of any file
+        # longer than min_sample_distance.
+        emitted_to = 0
         last_insert_pos = -min_sample_distance
 
         for i in zero_crossings:
             if i - last_insert_pos >= min_sample_distance:
-                modified_audio.extend(audio[last_insert_pos:i])
+                modified_audio.extend(audio[emitted_to:i])
                 modified_audio.extend([0] * pause_length)
+                emitted_to = i
                 last_insert_pos = i
 
-        modified_audio.extend(audio[last_insert_pos:])
+        modified_audio.extend(audio[emitted_to:])
 
         return np.array(modified_audio, dtype=audio.dtype)

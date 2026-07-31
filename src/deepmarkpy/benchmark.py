@@ -496,6 +496,9 @@ class Benchmark:
                 results[filepath]["attacks"][attack_name] = {
                     "accuracy": accuracy,
                     "detection_valid": detection_valid,
+                    "attack_snr_db": self._attack_snr_db(
+                        watermarked_audio, attacked_audio
+                    ),
                     "attacked_audio_quality_wm": attacked_audio_quality_wm,
                 }
 
@@ -623,6 +626,29 @@ class Benchmark:
     # matches the random-guess baseline for a uniform binary message, so
     # comparisons against this value cleanly identify "detector failed".
     RANDOM_GUESS_ACCURACY = 50.00
+
+    @staticmethod
+    def _attack_snr_db(reference, attacked):
+        """Signal-to-noise ratio of what an attack added, in dB.
+
+        Makes each attack's real strength visible per file. Attacks that fix an
+        absolute noise amplitude rather than an SNR vary here with input
+        loudness, so this is what shows whether two noise attacks were applied
+        at comparable severity on a given file.
+
+        Returns None when the two signals cannot be compared sample-wise (any
+        attack that changes length) or when the attack made no difference.
+        """
+        if not isinstance(attacked, np.ndarray) or not isinstance(reference, np.ndarray):
+            return None
+        ref, att = np.squeeze(reference), np.squeeze(attacked)
+        if ref.shape != att.shape:
+            return None
+        noise_power = float(np.mean(np.square(att - ref)))
+        signal_power = float(np.mean(np.square(ref)))
+        if noise_power <= 0 or signal_power <= 0:
+            return None
+        return float(10 * np.log10(signal_power / noise_power))
 
     @staticmethod
     def _is_invalid_detection(detected, original) -> bool:

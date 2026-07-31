@@ -6,11 +6,22 @@ class QuantizationAttack(BaseAttack):
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
         """
-        Perform a quantization attack on an audio signal. 
+        Perform a quantization attack on an audio signal.
+
+        The levels span each file's own peak-to-peak range, not full scale, and
+        the original range is restored afterwards. ``bit_quantization: 256`` is
+        therefore not 8-bit PCM -- it is 256 steps across whatever range that
+        file occupies, which is far finer than 8-bit for any file below full
+        scale, and the resulting distortion tracks the file's crest factor
+        rather than its bit depth. Per-file SNR consequently varies across a
+        corpus even for one speaker in one recording. ``PCMQuantizationAttack``
+        is the fixed-bit-depth quantizer.
+
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the quantization attack:
-                - bit_quantization (tuple): Number of quantization levels (e.g., 256 for 8-bit).
+                - bit_quantization (tuple): Number of quantization levels spanning
+                  the file's own range.
         Returns:
             np.ndarray: The processed quantized audio signal.
 

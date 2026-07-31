@@ -91,7 +91,7 @@ def _webrtc_apm_process(
     # APM works on int16 PCM. Clip first so out-of-range samples don't
     # wrap on cast.
     apm_audio = np.clip(audio, -1.0, 1.0)
-    audio_int16 = (apm_audio * 32767).astype(np.int16)
+    audio_int16 = np.round(apm_audio * 32767).astype(np.int16)
 
     frame_size = fs // 100  # 10ms => 160 samples at 16 kHz
     processed_frames = []
@@ -295,7 +295,7 @@ def _opus_encode_frames(
             encoder.encoder_state, _ctl.set_packet_loss_perc, int(expected_loss)
         )
 
-    audio_int16 = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+    audio_int16 = np.round(np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
     frames = []
     for i in range(0, len(audio_int16) - frame_size + 1, frame_size):
         frame_data = audio_int16[i:i + frame_size].tobytes()

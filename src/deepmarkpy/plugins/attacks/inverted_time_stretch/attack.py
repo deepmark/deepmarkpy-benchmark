@@ -49,7 +49,8 @@ class InvertedTimeStretchAttack(BaseAttack):
                 stretch_rate_time_stretch=1 / stretch_rate
             )
         except Exception as e:
+            # Returning the input unchanged would be scored as a successful
+            # attack, reporting whatever the detector scores on unattacked
+            # audio -- its ceiling, and typically the best number in the table.
             logger.error(f"Error in inverted time stretch: {str(e)}")
-            # If an error occurs, return the original audio as a fallback
-            logger.warning("Returning original audio due to error in inverted time stretch")
-            return audio
+            raise

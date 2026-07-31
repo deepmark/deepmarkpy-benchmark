@@ -42,7 +42,7 @@ class Codec2VocoderAttack(BaseAttack):
             audio_8k = audio
 
         audio_8k = np.clip(audio_8k, -1.0, 1.0)
-        audio_int16 = (audio_8k * 32767).astype(np.int16)
+        audio_int16 = np.round(audio_8k * 32767).astype(np.int16)
 
         codec = pycodec2.Codec2(bitrate)
         samples_per_frame = codec.samples_per_frame()

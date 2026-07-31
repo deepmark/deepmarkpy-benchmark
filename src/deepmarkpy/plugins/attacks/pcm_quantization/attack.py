@@ -28,15 +28,15 @@ class PCMQuantizationAttack(BaseAttack):
         # Convert to specified PCM bit depth and back (simulates quantization)
         if pcm == 8:
             # 8-bit signed: -128 to 127
-            audio_int = np.clip(audio * 127.0, -128, 127).astype(np.int8)
+            audio_int = np.clip(np.round(audio * 127.0), -128, 127).astype(np.int8)
             audio = audio_int.astype(np.float32) / 127.0
         elif pcm == 16:   
             # 16-bit signed: -32768 to 32767
-            audio_int = np.clip(audio * 32767.0, -32768, 32767).astype(np.int16)
+            audio_int = np.clip(np.round(audio * 32767.0), -32768, 32767).astype(np.int16)
             audio = audio_int.astype(np.float32) / 32767.0
         elif pcm == 24:
             # 24-bit signed: -8388608 to 8388607
-            audio_int = np.clip(audio * 8388607.0, -8388608, 8388607).astype(np.int32)
+            audio_int = np.clip(np.round(audio * 8388607.0), -8388608, 8388607).astype(np.int32)
             audio = audio_int.astype(np.float32) / 8388607.0
         else:
             raise ValueError(f"Unsupported PCM bit depth: {pcm}")
