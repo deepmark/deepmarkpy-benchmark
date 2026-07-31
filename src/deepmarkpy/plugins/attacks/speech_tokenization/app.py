@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from inference import SpeechTokenizationEngine
 
-from deepmarkpy.utils.utils import load_config, resample_audio
+from deepmarkpy.utils.utils import load_config
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -42,20 +42,12 @@ async def attack(request: AttackRequest):
         logger.info(f"Received request: sampling_rate={sampling_rate}, audio_length={len(request.audio)}")
         audio = np.array(request.audio)
 
-        target_sr = 16000
-        if sampling_rate != target_sr:
-            logger.info(f"Resampling from {sampling_rate} to {target_sr}")
-            audio = resample_audio(audio, sampling_rate, target_sr)
-            logger.info(f"Resampled audio length: {len(audio)}")
-
+        # The engine resamples to the model's 16 kHz and back, so the request
+        # rate goes straight through. Resampling here as well left the engine
+        # converting 16 kHz to 16 kHz, which resample_audio short-circuits.
         logger.info("Starting model inference...")
-        audio = engine.apply(audio, target_sr)
+        audio = engine.apply(audio, sampling_rate)
         logger.info(f"Inference complete. Output length: {len(audio)}")
-
-        if sampling_rate != target_sr:
-            logger.info(f"Resampling output from {target_sr} to {sampling_rate}")
-            audio = resample_audio(audio, target_sr, sampling_rate)
-            logger.info(f"Final output length: {len(audio)}")
 
         return {"audio": audio.tolist()}
     except Exception as e:

@@ -90,8 +90,11 @@ class OpusCodecAttack(BaseAttack):
             raise RuntimeError(f"Opus codec service unavailable: {e}")
 
         response_data = response.json()
-        if "audio" not in response_data:
-            raise KeyError("Missing 'audio' in response from service")
+        if response_data.get("audio") is None:
+            raise RuntimeError(
+                f"OpusCodecAttack: service returned no audio "
+                f"({response_data.get('error', 'no error reported')})"
+            )
 
         attacked = np.asarray(response_data["audio"], dtype=np.float32)
         decoded_sr = int(response_data.get("sampling_rate", sampling_rate))

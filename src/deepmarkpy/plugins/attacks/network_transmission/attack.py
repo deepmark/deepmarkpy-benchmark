@@ -110,9 +110,11 @@ class NetworkTransmissionAttack(BaseAttack):
             raise RuntimeError(f"Network transmission service unavailable: {e}")
 
         response_data = response.json()
-        if "audio" not in response_data:
-            logger.error("Response does not contain 'audio' key.")
-            raise KeyError("Missing 'audio' in response from network_transmission service")
+        if response_data.get("audio") is None:
+            raise RuntimeError(
+                f"NetworkTransmissionAttack: service returned no audio "
+                f"({response_data.get('error', 'no error reported')})"
+            )
 
         logger.info(
             f"NetworkTransmission attack: bitrate={params['bitrate_bps_netem']}bps, "

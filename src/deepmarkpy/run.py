@@ -14,6 +14,7 @@ from deepmarkpy import __version__
 from deepmarkpy.benchmark import Benchmark
 from deepmarkpy.utils.report_generator import generate_benchmark_report
 from deepmarkpy.utils.attack_groups import ATTACK_GROUPS, get_attacks_for_groups
+from deepmarkpy.utils.utils import load_env_file
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -58,6 +59,10 @@ def from_json_safe(obj):
     return obj
 
 def main():
+    # Must precede Benchmark(): plugin clients read their service port in
+    # __init__, so a port set in .env has to be in the environment by then.
+    load_env_file()
+
     # --plugins_dir must be known before Benchmark() runs, because the
     # argument list below is built from the discovered plugins' configs.
     pre_parser = argparse.ArgumentParser(add_help=False)

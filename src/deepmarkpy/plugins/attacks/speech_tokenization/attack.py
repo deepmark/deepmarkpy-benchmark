@@ -40,9 +40,11 @@ class SpeechTokenizationAttack(BaseAttack):
             logger.error(f"SpeechTokenizationAttack request failed: {e}")
             raise
         
-        if "audio" not in response_data:
-             logger.error("'/apply' response does not contain 'audio' key.")
-             raise KeyError("Missing 'audio' in response from /apply")
+        if response_data.get("audio") is None:
+            raise RuntimeError(
+                f"SpeechTokenizationAttack: service returned no audio "
+                f"({response_data.get('error', 'no error reported')})"
+            )
         result = np.array(response_data["audio"])
         logger.info(f"[SpeechTokenization] Output length={len(result)}, sampling_rate={sampling_rate}")
         return result

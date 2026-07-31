@@ -47,8 +47,12 @@ class AudioSealModel(BaseModel):
         threshold = self._config.get("detection_threshold", 0.5)
         return float(confidence) >= threshold
 
-    def detect(self, audio: np.ndarray, sampling_rate: int) -> np.ndarray:
-        """Detects a watermark in the audio using the AudioSeal service."""
+    def detect(self, audio: np.ndarray, sampling_rate: int) -> "tuple[np.ndarray, float]":
+        """Detects a watermark in the audio using the AudioSeal service.
+
+        Returns the watermark bits and the model's confidence. Callers dispatch
+        on the ``returns_confidence`` config flag rather than on this type.
+        """
         # Sanitize audio: replace NaN with 0 and clip Inf to valid float range
         audio = np.nan_to_num(audio, nan=0.0, posinf=1.0, neginf=-1.0)
         payload = {"audio": audio.tolist(), "sampling_rate": sampling_rate}

@@ -307,7 +307,11 @@ class Benchmark:
             logger.info(f"Audio will be saved to: {output_dir}")
 
         # If user doesn't specify attacks, use them all
+        explicitly_requested = attack_types is not None
         attack_types = attack_types or list(self.attacks.keys())
+
+        if explicitly_requested:
+            self._require_attacks_available(attack_types)
 
         expanded_attacks = expand_attacks(attack_types, self.attacks)
 
@@ -626,6 +630,29 @@ class Benchmark:
     # matches the random-guess baseline for a uniform binary message, so
     # comparisons against this value cleanly identify "detector failed".
     RANDOM_GUESS_ACCURACY = 50.00
+
+    def _require_attacks_available(self, attack_types):
+        """Fail when an explicitly requested attack is not loadable.
+
+        A missing model already raises; a missing attack used to warn and skip,
+        so a run finished with exit 0 and a report whose attack count silently
+        dropped. ``--attack_groups`` resolves through a static table rather than
+        the registry, so it reaches this with attacks whose plugin failed to
+        import -- most often an optional dependency that is not installed.
+        """
+        missing = [name for name in attack_types if name not in self.attacks]
+        if not missing:
+            return
+
+        message = [f"Requested attacks are not available: {sorted(missing)}"]
+        failures = getattr(self.plugin_manager, "failed", {}) or {}
+        if failures:
+            message.append("Plugins that failed to import:")
+            message += [f"  {module}: {error}" for module, error in sorted(failures.items())]
+        else:
+            message.append(f"Discovered attacks: {sorted(self.attacks)}")
+
+        raise ValueError("\n".join(message))
 
     @staticmethod
     def _attack_snr_db(reference, attacked):

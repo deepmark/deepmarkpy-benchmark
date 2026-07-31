@@ -2,8 +2,7 @@
 
 Imports follow the container layout: the ``wm_model`` variant modules and
 checkpoints resolve from the image's ``TimbreWatermarking/watermarking_model``
-clone via the working-directory-relative ``sys.path.append``. Both endpoints
-intentionally feed ``resample_audio`` the raw request list.
+clone via the working-directory-relative ``sys.path.append``.
 """
 
 import logging
@@ -105,7 +104,7 @@ class TimbreWMEngine(BaseModelEngine):
 
         if sampling_rate != self.config["sampling_rate"]:
             logger.debug(f"Resampling from {sampling_rate} to {self.config['sampling_rate']}")
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         wav = torch.tensor(audio_arr, dtype=torch.float32)
         wav = wav.unsqueeze(0).unsqueeze(0).to(self.device)
@@ -135,7 +134,7 @@ class TimbreWMEngine(BaseModelEngine):
 
         if sampling_rate != self.config["sampling_rate"]:
             logger.debug(f"Resampling from {sampling_rate} to {self.config['sampling_rate']}")
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         wav = torch.tensor(audio_arr, dtype=torch.float32)
         wav = wav.unsqueeze(0).unsqueeze(0).to(self.device)

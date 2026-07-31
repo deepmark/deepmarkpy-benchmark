@@ -28,18 +28,26 @@ class SpeechEnhancement1Attack(BaseAttack):
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
 
-        response = requests.post(
-            self.endpoint + "/attack",
-            json={
-                "audio": audio.tolist(),
-                "sampling_rate": sampling_rate,
-                "noise_strength": noise_strength,
-            },
-        )
-        response_data = response.json()
+        try:
+            response = requests.post(
+                self.endpoint + "/attack",
+                json={
+                    "audio": audio.tolist(),
+                    "sampling_rate": sampling_rate,
+                    "noise_strength": noise_strength,
+                },
+                timeout=600,
+            )
+            response.raise_for_status()
+            response_data = response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"SpeechEnhancement1Attack request failed: {e}")
+            raise
         
-        if "audio" not in response_data:
-             logger.error("'/apply' response does not contain 'audio' key.")
-             raise KeyError("Missing 'audio' in response from /apply")
+        if response_data.get("audio") is None:
+            raise RuntimeError(
+                f"SpeechEnhancement1Attack: service returned no audio "
+                f"({response_data.get('error', 'no error reported')})"
+            )
         result = np.array(response_data["audio"])
         return result

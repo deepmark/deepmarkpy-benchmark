@@ -2,9 +2,9 @@
 
 The request watermark bits are packed into bytes and then discarded —
 ``apply_watermark`` receives ``watermark=None`` and uses Perth's internal
-watermark; the packing is intentionally kept. Both endpoints
-intentionally feed ``resample_audio`` the raw request list. ``detect`` returns a
-JSON-able scalar or list.
+watermark. The packing is kept: it also rejects a watermark whose length
+is not a multiple of 8, which nothing else validates. ``detect`` returns
+a JSON-able scalar or list.
 """
 
 import logging
@@ -41,7 +41,7 @@ class PerthEngine(BaseModelEngine):
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data)
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         # The packed value is intentionally unused: apply_watermark receives
         # watermark=None.
@@ -62,7 +62,7 @@ class PerthEngine(BaseModelEngine):
         audio_arr = np.array(audio)
 
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         message = self.model.get_watermark(audio_arr, self.config["sampling_rate"], round=True)
         if isinstance(message, np.ndarray) and message.ndim == 0:

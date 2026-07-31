@@ -44,8 +44,10 @@ class EncodecAttack(BaseAttack):
             logger.error(f"EncodecAttack request failed: {e}")
             raise
 
-        if "audio" not in response_data:
-            logger.error("'/attack' response does not contain 'audio' key.")
-            raise KeyError("Missing 'audio' in response from /attack")
+        if response_data.get("audio") is None:
+            raise RuntimeError(
+                f"EncodecAttack: service returned no audio "
+                f"({response_data.get('error', 'no error reported')})"
+            )
 
         return np.array(response_data["audio"])
