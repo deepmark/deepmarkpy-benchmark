@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  tests:
+    name: Test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Native attacks shell out to these. Without them four plugins fail to
+      # import and the discovery lock fails, which is the point of the lock.
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg rubberband-cli libsndfile1 libcodec2-dev
+
+      # requirements.txt, not the pyproject extras: it is what the canonical
+      # environment installs and the only set that discovers all 47 attacks.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e . --no-deps
+          pip install pytest
+
+      - name: Run tests
+        run: pytest tests/ -q
+
+      # The golden replays compare bytes, which is a same-machine claim: they
+      # were recorded on Darwin arm64 and skip here by design. Print what ran
+      # so a green tick is not mistaken for "the goldens passed on Linux".
+      - name: Report what was skipped
+        if: always()
+        run: |
+          echo "Golden replays skip off the recording machine (Darwin arm64)."
+          echo "They are enforced locally; CI covers everything else."
+          pytest tests/ -q -rs 2>&1 | tail -25
