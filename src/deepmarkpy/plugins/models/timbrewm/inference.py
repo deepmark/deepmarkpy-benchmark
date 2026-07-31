@@ -60,14 +60,29 @@ def load_model(process_config, model_config, train_config, device):
         decoder = Decoder(model_config, msg_length, win_dim, embedding_dim, nlayers_decoder=nlayers_decoder, attention_heads=attention_heads_decoder).to(device)
     path_model = os.path.join("TimbreWatermarking/watermarking_model", model_config["test"]["model_path"])
     model_name = model_config["test"]["model_name"]
+    # weights_only rejects arbitrary pickle opcodes. The checkpoint comes from
+    # a SHA-pinned clone so nothing untrusted reaches it today, but the flag
+    # costs nothing and this is the pattern image-security policies flag.
     if model_name:
-        model = torch.load(os.path.join(path_model, model_name), map_location=device)
+        model = torch.load(
+            os.path.join(path_model, model_name),
+            map_location=device, weights_only=True,
+        )
     else:
+        # The shipped config sets model_name False, so selection falls to
+        # mtime order. One checkpoint ships, which makes it deterministic;
+        # a second would make the choice depend on layer write order.
         index = model_config["test"]["index"]
         model_list = os.listdir(path_model)
         model_list = sorted(model_list, key=lambda x: os.path.getmtime(os.path.join(path_model, x)))
+        if len(model_list) > 1:
+            logger.warning(
+                "%d checkpoints in %s; selecting by mtime is not reproducible "
+                "across builds. Set test.model_name in model.yaml.",
+                len(model_list), path_model,
+            )
         model_path = os.path.join(path_model, model_list[index])
-        model = torch.load(model_path, map_location=device)
+        model = torch.load(model_path, map_location=device, weights_only=True)
     encoder.load_state_dict(model["encoder"])
     decoder.load_state_dict(model["decoder"], strict=False)
     encoder.eval()

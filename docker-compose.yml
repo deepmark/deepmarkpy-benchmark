@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/models/audio_seal/Dockerfile
     ports:
-      - "${AUDIOSEAL_PORT}:${AUDIOSEAL_PORT}" # Reads from .env
+      - "127.0.0.1:${AUDIOSEAL_PORT}:${AUDIOSEAL_PORT}" # Reads from .env
     environment:
       - APP_PORT=${AUDIOSEAL_PORT} # Injects into container
 
@@ -13,7 +13,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/models/silent_cipher/Dockerfile
     ports:
-      - "${SILENTCIPHER_PORT}:${SILENTCIPHER_PORT}"
+      - "127.0.0.1:${SILENTCIPHER_PORT}:${SILENTCIPHER_PORT}"
     environment:
       - APP_PORT=${SILENTCIPHER_PORT}
 
@@ -22,7 +22,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/models/wavmark/Dockerfile
     ports:
-      - "${WAVMARK_PORT}:${WAVMARK_PORT}"
+      - "127.0.0.1:${WAVMARK_PORT}:${WAVMARK_PORT}"
     environment:
       - APP_PORT=${WAVMARK_PORT}
 
@@ -31,7 +31,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/models/aware/Dockerfile
     ports:
-      - "${AWARE_PORT}:${AWARE_PORT}"
+      - "127.0.0.1:${AWARE_PORT}:${AWARE_PORT}"
     environment:
       - APP_PORT=${AWARE_PORT}
 
@@ -40,7 +40,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/vae/Dockerfile
     ports:
-      - "${VAE_PORT}:${VAE_PORT}"
+      - "127.0.0.1:${VAE_PORT}:${VAE_PORT}"
     environment:
       - APP_PORT=${VAE_PORT}
 
@@ -49,7 +49,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/encodec/Dockerfile
     ports:
-      - "${ENCODEC_PORT}:${ENCODEC_PORT}"
+      - "127.0.0.1:${ENCODEC_PORT}:${ENCODEC_PORT}"
     environment:
       - APP_PORT=${ENCODEC_PORT}
 
@@ -58,7 +58,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/descript_audio_codec/Dockerfile
     ports:
-      - "${DESCRIPT_AUDIO_CODEC_PORT}:${DESCRIPT_AUDIO_CODEC_PORT}"
+      - "127.0.0.1:${DESCRIPT_AUDIO_CODEC_PORT}:${DESCRIPT_AUDIO_CODEC_PORT}"
     environment:
       - APP_PORT=${DESCRIPT_AUDIO_CODEC_PORT}
 
@@ -67,7 +67,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/diffusion/Dockerfile
     ports:
-      - "${DIFFUSION_PORT}:${DIFFUSION_PORT}"
+      - "127.0.0.1:${DIFFUSION_PORT}:${DIFFUSION_PORT}"
     environment:
       - APP_PORT=${DIFFUSION_PORT}
 
@@ -76,7 +76,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/speech_tokenization/Dockerfile
     ports:
-      - "${SPEECH_TOKENIZATION_PORT}:${SPEECH_TOKENIZATION_PORT}"
+      - "127.0.0.1:${SPEECH_TOKENIZATION_PORT}:${SPEECH_TOKENIZATION_PORT}"
     environment:
       - APP_PORT=${SPEECH_TOKENIZATION_PORT}
 
@@ -85,7 +85,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/neural_vocoder/Dockerfile
     ports:
-      - "${NEURAL_VOCODER_PORT}:${NEURAL_VOCODER_PORT}"
+      - "127.0.0.1:${NEURAL_VOCODER_PORT}:${NEURAL_VOCODER_PORT}"
     environment:
       - APP_PORT=${NEURAL_VOCODER_PORT}
 
@@ -94,7 +94,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/speech_enhancement_1/Dockerfile
     ports:
-      - "${SPEECH_ENHANCEMENT_PORT1}:${SPEECH_ENHANCEMENT_PORT1}"
+      - "127.0.0.1:${SPEECH_ENHANCEMENT_PORT1}:${SPEECH_ENHANCEMENT_PORT1}"
     environment:
       - APP_PORT=${SPEECH_ENHANCEMENT_PORT1}
 
@@ -103,7 +103,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/speech_enhancement_2/Dockerfile
     ports:
-      - "${SPEECH_ENHANCEMENT_PORT2}:${SPEECH_ENHANCEMENT_PORT2}"
+      - "127.0.0.1:${SPEECH_ENHANCEMENT_PORT2}:${SPEECH_ENHANCEMENT_PORT2}"
     environment:
       - APP_PORT=${SPEECH_ENHANCEMENT_PORT2}
     mem_limit: 14g
@@ -114,7 +114,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/models/timbrewm/Dockerfile
     ports:
-      - "${TIMBREWM_PORT}:${TIMBREWM_PORT}"
+      - "127.0.0.1:${TIMBREWM_PORT}:${TIMBREWM_PORT}"
     environment:
       - APP_PORT=${TIMBREWM_PORT}
 
@@ -123,7 +123,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/models/perth/Dockerfile
     ports:
-      - "${PERTH_PORT}:${PERTH_PORT}"
+      - "127.0.0.1:${PERTH_PORT}:${PERTH_PORT}"
     environment:
       - APP_PORT=${PERTH_PORT}
 
@@ -132,7 +132,7 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/network_transmission/Dockerfile
     ports:
-      - "${NETWORK_TRANSMISSION_PORT}:${NETWORK_TRANSMISSION_PORT}"
+      - "127.0.0.1:${NETWORK_TRANSMISSION_PORT}:${NETWORK_TRANSMISSION_PORT}"
     environment:
       - APP_PORT=${NETWORK_TRANSMISSION_PORT}
     cap_add:
@@ -143,6 +143,6 @@ services:
       context: .
       dockerfile: src/deepmarkpy/plugins/attacks/opus_codec/Dockerfile
     ports:
-      - "${OPUS_CODEC_PORT}:${OPUS_CODEC_PORT}"
+      - "127.0.0.1:${OPUS_CODEC_PORT}:${OPUS_CODEC_PORT}"
     environment:
       - APP_PORT=${OPUS_CODEC_PORT}

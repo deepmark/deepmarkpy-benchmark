@@ -28,7 +28,9 @@ import numpy as np
 import soundfile as sf
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES
 from webrtc_audio_processing import AudioProcessingModule as AP
 
 logging.basicConfig(level=logging.INFO)
@@ -410,7 +412,8 @@ def voip_pipeline(
     total_frames = len(opus_frames)
     if total_frames == 0:
         logger.warning("No frames encoded -- audio too short")
-        return np.zeros(original_len, dtype=np.float32)
+        # Returns before netem is ever set up, so nothing was impaired.
+        return np.zeros(original_len, dtype=np.float32), False
 
     # --- Build RTP packets ---
     ssrc = random.randint(1, 0xFFFFFFFF)
@@ -431,7 +434,13 @@ def voip_pipeline(
     receiver_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     received_packets = []
     try:
-        network.setup(delay_ms, jitter_ms, packet_loss, duplication, reorder, corruption)
+        # Whether the kernel impairment actually engaged. tc needs NET_ADMIN
+        # and a netem-capable kernel; without both the RTP round-trip still
+        # runs and returns audio that was never impaired, which the benchmark
+        # would otherwise score as a successful attack.
+        netem_active = network.setup(
+            delay_ms, jitter_ms, packet_loss, duplication, reorder, corruption
+        )
 
         receiver_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         receiver_sock.bind(("127.0.0.1", port))
@@ -490,7 +499,7 @@ def voip_pipeline(
     elif len(decoded) < original_len:
         decoded = np.pad(decoded, (0, original_len - len(decoded)))
 
-    return decoded.astype(np.float32)
+    return decoded.astype(np.float32), netem_active
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +507,7 @@ def voip_pipeline(
 # ---------------------------------------------------------------------------
 
 class AttackRequest(BaseModel):
-    audio: List[float]
+    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
     sampling_rate: int
     bitrate_bps_netem: int = 24000
     frame_duration_ms_netem: int = 20
@@ -521,7 +530,7 @@ class AttackRequest(BaseModel):
 async def attack(request: AttackRequest):
     try:
         audio = np.array(request.audio, dtype=np.float32)
-        result = voip_pipeline(
+        result, netem_active = voip_pipeline(
             audio=audio,
             fs=request.sampling_rate,
             bitrate_bps=request.bitrate_bps_netem,
@@ -540,7 +549,13 @@ async def attack(request: AttackRequest):
             agc_target_lufs=request.agc_target_lufs_netem,
             playout_delay_ms=request.playout_delay_ms_netem,
         )
-        return {"audio": result.tolist()}
+        if not netem_active:
+            logger.warning(
+                "netem did not engage; the audio made the codec and "
+                "jitter-buffer round trip but carries no kernel-level "
+                "delay, loss or reordering"
+            )
+        return {"audio": result.tolist(), "netem_active": netem_active}
     except Exception as e:
         logger.error(f"Attack failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

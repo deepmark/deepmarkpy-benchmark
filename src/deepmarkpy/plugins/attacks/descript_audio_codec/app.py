@@ -5,9 +5,10 @@ from typing import List, Optional
 
 import uvicorn
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from inference import DescriptAudioCodecEngine
+from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ engine = DescriptAudioCodecEngine(config)
 
 
 class AttackRequest(BaseModel):
-    audio: List[float]
+    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
     sampling_rate: int
     n_codebooks_dac: Optional[int] = None
 

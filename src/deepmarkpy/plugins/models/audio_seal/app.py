@@ -5,9 +5,10 @@ from typing import List
 
 import uvicorn
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from inference import AudioSealEngine
+from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES, MAX_WATERMARK_BITS
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -23,12 +24,12 @@ except (FileNotFoundError, ValueError, IOError) as e:
 engine = AudioSealEngine(config)
 
 class EmbedRequest(BaseModel):
-    audio: List[float]
-    watermark_data: List[int]
+    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    watermark_data: List[int] = Field(..., max_length=MAX_WATERMARK_BITS)
     sampling_rate: int
 
 class DetectRequest(BaseModel):
-    audio: List[float]
+    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
     sampling_rate: int
 
 

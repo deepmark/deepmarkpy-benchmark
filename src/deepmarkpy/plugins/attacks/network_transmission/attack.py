@@ -121,4 +121,15 @@ class NetworkTransmissionAttack(BaseAttack):
             f"delay={params['delay_ms_netem']}ms, jitter={params['jitter_ms_netem']}ms, "
             f"loss={params['packet_loss_netem']}%, fec={params['fec_enabled_netem']}"
         )
+        if response_data.get("netem_active") is False:
+            # The container needs NET_ADMIN and a netem-capable kernel. Docker
+            # Desktop's VM provides neither, so the delay/loss/reorder settings
+            # above were requested and not applied: the result is a codec and
+            # jitter-buffer round trip only, and is not comparable with a run
+            # where the impairment engaged.
+            logger.warning(
+                "NetworkTransmissionAttack: kernel netem did not engage, so no "
+                "delay, loss or reordering was applied. Results are not "
+                "comparable with runs where it did."
+            )
         return np.array(response_data["audio"], dtype=np.float32)

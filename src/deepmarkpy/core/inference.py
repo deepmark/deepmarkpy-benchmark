@@ -27,6 +27,17 @@ import abc
 import numpy as np
 
 
+# Upper bound on the audio arrays a service will accept. Every request model
+# declared a bare List[float], and FastAPI buffers and parses the whole body
+# before validation, so a single large POST could exhaust a container that has
+# no memory limit. Ten minutes at 48 kHz is far beyond any benchmark clip --
+# the corpora are seconds long -- while still bounding the cost of one request.
+MAX_AUDIO_SAMPLES = 48_000 * 600
+
+# Watermark payloads are tens of bits; nothing legitimate approaches this.
+MAX_WATERMARK_BITS = 4096
+
+
 class BaseAttackEngine(abc.ABC):
     """An audio attack: transforms audio, returning the attacked signal."""
 

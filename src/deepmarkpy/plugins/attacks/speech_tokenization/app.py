@@ -8,9 +8,10 @@ import numpy as np
 import torch
 import uvicorn
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from inference import SpeechTokenizationEngine
 
+from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES
 from deepmarkpy.utils.utils import load_config
 
 logging.basicConfig(level=logging.DEBUG)
@@ -31,7 +32,7 @@ engine = SpeechTokenizationEngine(config, device)
 
 
 class AttackRequest(BaseModel):
-    audio: List[float]
+    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
     sampling_rate: int
 
 

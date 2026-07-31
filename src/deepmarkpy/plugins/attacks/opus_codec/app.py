@@ -16,7 +16,9 @@ from typing import List
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES
 
 from inference import OpusCodecEngine
 
@@ -29,7 +31,7 @@ engine = OpusCodecEngine({})
 
 
 class AttackRequest(BaseModel):
-    audio: List[float]
+    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
     sampling_rate: int
     bitrate: int = 16
     framesize: float = 20
