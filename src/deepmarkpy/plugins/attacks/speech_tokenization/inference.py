@@ -9,8 +9,10 @@ from xcodec2.modeling_xcodec2 import XCodec2Model
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseAttackEngine
 
-class Engine:
+
+class SpeechTokenizationEngine(BaseAttackEngine):
     """XCodec2 tokenize/detokenize round-trip attack.
 
     The codec loads once at construction onto the ``device`` chosen by
@@ -37,3 +39,7 @@ class Engine:
             output = self.model.decode_code(vq_code)[0, 0, :].cpu().numpy()
 
         return resample_audio(output, input_sr=16000, target_sr=sampling_rate)
+
+
+# Stable import alias.
+Engine = SpeechTokenizationEngine

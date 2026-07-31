@@ -14,8 +14,10 @@ from speechbrain.inference.enhancement import (
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseAttackEngine
 
-class Engine:
+
+class SpeechEnhancement1Engine(BaseAttackEngine):
     """SpeechBrain enhancement at 16 kHz with request-rate round-trips.
 
     The enhancement model loads once at construction. ``device`` is
@@ -52,3 +54,7 @@ class Engine:
 
         enhanced = resample_audio(enhanced, input_sr=16000, target_sr=sampling_rate)
         return enhanced
+
+
+# Stable import alias.
+Engine = SpeechEnhancement1Engine

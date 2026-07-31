@@ -15,10 +15,12 @@ import torch
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseModelEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class SilentCipherEngine(BaseModelEngine):
     """SilentCipher embed/detect with byte-level message packing.
 
     The model loads once at construction. The request watermark is a flat
@@ -68,3 +70,7 @@ class Engine:
             message = None
 
         return message
+
+
+# Stable import alias.
+Engine = SilentCipherEngine

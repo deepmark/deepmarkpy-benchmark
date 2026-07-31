@@ -15,10 +15,12 @@ from perth.perth_net.perth_net_implicit.perth_watermarker import PerthImplicitWa
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseModelEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class PerthEngine(BaseModelEngine):
     """Perth zero-bit embed/detect at the config sampling rate.
 
     The watermarker loads once at construction. The computed ``device`` is
@@ -76,3 +78,7 @@ class Engine:
                 message = 0.0
 
         return message
+
+
+# Stable import alias.
+Engine = PerthEngine

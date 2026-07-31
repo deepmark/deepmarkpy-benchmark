@@ -12,10 +12,12 @@ import wavmark
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseModelEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class WavMarkEngine(BaseModelEngine):
     """WavMark embed/detect at the config sampling rate.
 
     Handles the request-rate resample round-trips around the wavmark
@@ -57,3 +59,7 @@ class Engine:
             audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
         message, _ = wavmark.decode_watermark(self.model, audio_arr, show_progress=False)
         return message
+
+
+# Stable import alias.
+Engine = WavMarkEngine

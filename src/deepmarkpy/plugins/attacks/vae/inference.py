@@ -16,10 +16,12 @@ from huggingface_hub import hf_hub_download
 
 from deepmarkpy.utils.utils import renormalize_audio, resample_audio
 
+from deepmarkpy.core.inference import BaseAttackEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class VAEEngine(BaseAttackEngine):
     """RAVE reconstruction through a 48 kHz round-trip.
 
     The TorchScript export loads once at construction, downloading into the
@@ -88,3 +90,7 @@ class Engine:
 
         reconstructed = reconstructed.cpu().numpy()
         return renormalize_audio(audio, reconstructed)
+
+
+# Stable import alias.
+Engine = VAEEngine

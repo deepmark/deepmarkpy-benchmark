@@ -16,6 +16,8 @@ import yaml
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseModelEngine
+
 # Named "app" so the debug lines below keep their existing format in the
 # service log output ("DEBUG:app:...").
 logger = logging.getLogger("app")
@@ -74,7 +76,7 @@ def load_model(process_config, model_config, train_config, device):
     return encoder, decoder, msg_length
 
 
-class Engine:
+class TimbreWMEngine(BaseModelEngine):
     """TimbreWatermarking embed/detect with bipolar message mapping.
 
     The Encoder/Decoder pair loads once at construction from the upstream
@@ -150,3 +152,7 @@ class Engine:
         logger.debug(f"Processed message shape: {message.shape}")
 
         return message
+
+
+# Stable import alias.
+Engine = TimbreWMEngine

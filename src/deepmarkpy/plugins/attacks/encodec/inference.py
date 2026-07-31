@@ -11,10 +11,12 @@ import numpy as np
 import torch
 from encodec import EncodecModel
 
+from deepmarkpy.core.inference import BaseAttackEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class EncodecEngine(BaseAttackEngine):
     """Encodec encode/decode round-trip at the configured bandwidth.
 
     The pre-trained codec (24 kHz or 48 kHz variant, from
@@ -68,3 +70,7 @@ class Engine:
         result = reconstructed.squeeze().cpu().numpy()
 
         return result
+
+
+# Stable import alias.
+Engine = EncodecEngine

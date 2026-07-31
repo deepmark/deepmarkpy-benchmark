@@ -1,0 +1,59 @@
+"""Base classes for the per-plugin inference engines.
+
+Every containerized plugin ships an ``inference.py`` whose engine class
+derives from one of the bases below and follows one constructor
+convention::
+
+    EngineClass(config: dict, device: str | None = None)
+
+``config`` is the plugin's ``config.json`` dict. ``device`` of ``None``
+means the engine decides (typically cuda-when-available). Construction
+loads weights, with one exception: ``speech_enhancement_2`` constructs its
+ClearVoice model per ``apply`` call — an intentional, preserved behavior.
+
+The bases type the method names and parameters, not the exact return
+shapes, which vary by plugin and are part of each service's frozen
+contract: most attacks return an ``np.ndarray`` but ``opus_codec`` returns
+``(audio, output_sr)``; model ``detect`` returns an ndarray, a
+``(watermark, confidence)`` tuple, a scalar, a bit list, or ``None``
+depending on the model. Each module also exposes the stable alias
+``Engine`` for its engine class.
+
+This module stays import-light (stdlib + numpy only) so consumers can
+type against it without pulling any ML runtime.
+"""
+
+import abc
+
+import numpy as np
+
+
+class BaseAttackEngine(abc.ABC):
+    """An audio attack: transforms audio, returning the attacked signal."""
+
+    @abc.abstractmethod
+    def apply(self, audio, sampling_rate: int, **params):
+        """Apply the attack to ``audio`` at ``sampling_rate``.
+
+        ``params`` carries the attack's request-level parameters (names as
+        in the plugin's ``config.json``). Returns the attacked audio as an
+        ``np.ndarray`` — except ``opus_codec``, which returns
+        ``(np.ndarray, int)`` carrying the decoder's output rate.
+        """
+
+
+class BaseModelEngine(abc.ABC):
+    """A watermarking model: embeds and detects watermarks in audio."""
+
+    @abc.abstractmethod
+    def embed(self, audio, watermark_data, sampling_rate: int) -> np.ndarray:
+        """Embed ``watermark_data`` into ``audio``; returns the watermarked signal."""
+
+    @abc.abstractmethod
+    def detect(self, audio, sampling_rate: int):
+        """Detect the watermark in ``audio``.
+
+        The return shape is model-specific: an ndarray of bits, a
+        ``(watermark, confidence)`` tuple, a scalar score, a bit list, or
+        ``None`` on decode failure.
+        """

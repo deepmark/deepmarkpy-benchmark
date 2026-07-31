@@ -13,10 +13,12 @@ from audioseal import AudioSeal
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseModelEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class AudioSealEngine(BaseModelEngine):
     """AudioSeal embed/detect at the config sampling rate.
 
     Generator and detector load once at construction. ``device`` is
@@ -85,3 +87,7 @@ class Engine:
 
         message = message.squeeze().cpu().numpy()
         return message, confidence
+
+
+# Stable import alias.
+Engine = AudioSealEngine

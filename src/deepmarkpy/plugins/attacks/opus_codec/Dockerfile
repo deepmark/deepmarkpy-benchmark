@@ -14,6 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Install the deepmarkpy package (modules only; runtime deps are the
+# image's own frozen set)
+COPY pyproject.toml README.md LICENSE /tmp/deepmarkpy-pkg/
+COPY src/deepmarkpy /tmp/deepmarkpy-pkg/src/deepmarkpy
+RUN pip install --no-cache-dir --no-deps /tmp/deepmarkpy-pkg && rm -rf /tmp/deepmarkpy-pkg
+
 COPY src/deepmarkpy/plugins/attacks/opus_codec/requirements.txt .
 COPY src/deepmarkpy/plugins/attacks/opus_codec/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt

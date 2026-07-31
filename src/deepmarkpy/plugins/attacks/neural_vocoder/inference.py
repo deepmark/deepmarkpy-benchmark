@@ -13,10 +13,12 @@ from deepmarkpy.utils.utils import resample_audio
 import bigvgan
 from meldataset import get_mel_spectrogram
 
+from deepmarkpy.core.inference import BaseAttackEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class NeuralVocoderEngine(BaseAttackEngine):
     """BigVGAN mel-vocoder resynthesis through a 44.1 kHz round-trip.
 
     The vocoder loads once at construction.
@@ -47,3 +49,7 @@ class Engine:
         output = output.squeeze().cpu().numpy()
 
         return resample_audio(output, input_sr=44100, target_sr=sampling_rate)
+
+
+# Stable import alias.
+Engine = NeuralVocoderEngine

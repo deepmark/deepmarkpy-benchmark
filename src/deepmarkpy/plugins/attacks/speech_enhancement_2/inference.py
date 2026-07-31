@@ -17,10 +17,12 @@ from clearvoice import ClearVoice
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseAttackEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class SpeechEnhancement2Engine(BaseAttackEngine):
     """ClearVoice speech-enhancement attack.
 
     ``__init__`` loads nothing — ClearVoice is constructed per request
@@ -81,3 +83,7 @@ class Engine:
                     logger.info(f"Deleted temporary file: {tmp_path}")
             except Exception as e:
                 logger.warning(f"Failed to delete temporary file {tmp_path}: {str(e)}")
+
+
+# Stable import alias.
+Engine = SpeechEnhancement2Engine

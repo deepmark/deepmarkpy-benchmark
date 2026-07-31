@@ -12,10 +12,12 @@ import numpy as np
 import torch
 import dac
 
+from deepmarkpy.core.inference import BaseAttackEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class DescriptAudioCodecEngine(BaseAttackEngine):
     """DAC encode/decode round-trip with a selectable codebook count.
 
     The model variant from ``config['model_type_dac']`` downloads and loads
@@ -114,3 +116,7 @@ class Engine:
 
         result = reconstructed.squeeze().cpu().numpy()
         return result
+
+
+# Stable import alias.
+Engine = DescriptAudioCodecEngine

@@ -9,18 +9,32 @@ pip install "deepmarkpy @ git+https://github.com/deepmark/deepmarkpy-benchmark@v
 ```
 
 ```python
-from deepmarkpy.plugins.attacks.vae.inference import Engine
-engine = Engine(config)                       # config: the plugin's config.json dict
+from deepmarkpy.plugins.attacks.vae.inference import VAEEngine
+engine = VAEEngine(config)                    # config: the plugin's config.json dict
 out = engine.apply(audio, sampling_rate)      # attacks
 # models: engine.embed(audio, watermark_data, sampling_rate) / engine.detect(audio, sampling_rate)
 ```
 
+Every engine derives from `deepmarkpy.core.inference.BaseAttackEngine` or
+`BaseModelEngine` (import-light: stdlib + numpy), so generic serving code
+can be typed once per family:
+
+```python
+from deepmarkpy.core.inference import BaseAttackEngine
+
+def serve(engine: BaseAttackEngine): ...
+```
+
 ## Stable API (from v1.0.0)
 
-- Module paths `deepmarkpy.plugins.{attacks,models}.<name>.inference` and the
-  `Engine` signatures (`__init__(config, device=None)`; attacks `apply`,
-  models `embed`/`detect`) are semver-stable. Anything else in plugin
-  directories is internal.
+- Module paths `deepmarkpy.plugins.{attacks,models}.<name>.inference`, the
+  per-plugin engine class names (`VAEEngine`, `AudioSealEngine`, ... —
+  mirroring the client class names), the `Engine` alias each module keeps
+  for the v1.0.0 import path, the base classes
+  `deepmarkpy.core.inference.{BaseAttackEngine,BaseModelEngine}`, and the
+  signatures (`__init__(config, device=None)`; attacks `apply`, models
+  `embed`/`detect`) are semver-stable. Anything else in plugin directories
+  is internal.
 - Each plugin directory ships its `config.json`, `requirements.txt`, captured
   `constraints*.txt` (the exact dependency set of this repo's verified
   images), and reference `Dockerfile` as package data — use them as the

@@ -12,6 +12,8 @@ import tempfile
 import numpy as np
 import soundfile as sf
 
+from deepmarkpy.core.inference import BaseAttackEngine
+
 # Named "app" so the INFO line in process_opus_codec keeps its existing
 # format in the service log output ("INFO:app:...").
 logger = logging.getLogger("app")
@@ -82,7 +84,7 @@ def process_opus_codec(
                 pass
 
 
-class Engine:
+class OpusCodecEngine(BaseAttackEngine):
     """Opus encode/decode round-trip attack (external opusenc/opusdec tools).
 
     Nothing loads at construction — the codec is a subprocess tool pair.
@@ -105,3 +107,7 @@ class Engine:
             bitrate=params["bitrate"],
             framesize=params["framesize"],
         )
+
+
+# Stable import alias.
+Engine = OpusCodecEngine

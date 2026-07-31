@@ -13,10 +13,12 @@ from diffusers import DiffusionPipeline
 
 from deepmarkpy.utils.utils import renormalize_audio, resample_audio
 
+from deepmarkpy.core.inference import BaseAttackEngine
+
 logger = logging.getLogger(__name__)
 
 
-class Engine:
+class DiffusionEngine(BaseAttackEngine):
     """Audio-diffusion regeneration attack.
 
     The pipeline loads once at construction; ``apply`` regenerates the
@@ -85,3 +87,7 @@ class Engine:
                 not_first = 1
         output = resample_audio(output, mel_sample_rate, sampling_rate)
         return renormalize_audio(audio, output)
+
+
+# Stable import alias.
+Engine = DiffusionEngine

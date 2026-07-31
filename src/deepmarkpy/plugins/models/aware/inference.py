@@ -13,8 +13,10 @@ from aware.utils.models import load
 
 from deepmarkpy.utils.utils import resample_audio
 
+from deepmarkpy.core.inference import BaseModelEngine
 
-class Engine:
+
+class AwareEngine(BaseModelEngine):
     """AWARE embed/detect via the ``aware`` package.
 
     The embedder/detector pair loads once at construction. ``device`` is
@@ -78,3 +80,7 @@ class Engine:
 
 
         return detected_watermark, confidence
+
+
+# Stable import alias.
+Engine = AwareEngine
