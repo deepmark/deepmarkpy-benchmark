@@ -56,13 +56,19 @@ class TestEnvFileReachesTheHost:
 
 
 class TestMissingAttacksAreFatal:
-    """--attack_groups resolves from a static table, so it can name an attack
-    whose plugin never imported. That must stop the run, not shrink it."""
+    """A requested attack that is not loadable must stop the run.
 
-    def _benchmark(self):
+    These exercise the path a user actually takes. An earlier version of this
+    class only called ``_require_attacks_available`` directly with an
+    unfiltered list, which passed while ``--attack_groups`` was still dropping
+    unavailable attacks before the guard could see them.
+    """
+
+    def _benchmark(self, failed=None):
         bench = Benchmark.__new__(Benchmark)
         bench.attacks = {"GaussianNoiseAttack": {}, "EchoAttack": {}}
-        bench.plugin_manager = type("PM", (), {"failed": {}})()
+        bench.models = {"FakeModel": {}}
+        bench.plugin_manager = type("PM", (), {"failed": failed or {}})()
         return bench
 
     def test_requested_but_absent_attack_raises(self):
@@ -70,22 +76,69 @@ class TestMissingAttacksAreFatal:
         with pytest.raises(ValueError, match="not available"):
             bench._require_attacks_available(["GaussianNoiseAttack", "WaveletAttack"])
 
-    def test_error_names_the_missing_attack(self):
-        bench = self._benchmark()
-        with pytest.raises(ValueError, match="WaveletAttack"):
-            bench._require_attacks_available(["WaveletAttack"])
-
     def test_import_failure_reason_is_surfaced(self):
-        bench = self._benchmark()
-        bench.plugin_manager.failed = {
-            "deepmarkpy.plugins.attacks.wavelet.attack": "No module named 'pywt'"
-        }
+        bench = self._benchmark(
+            {"deepmarkpy.plugins.attacks.wavelet.attack": "No module named 'pywt'"}
+        )
         with pytest.raises(ValueError, match="No module named 'pywt'"):
             bench._require_attacks_available(["WaveletAttack"])
 
     def test_all_present_is_silent(self):
-        bench = self._benchmark()
-        bench._require_attacks_available(["GaussianNoiseAttack", "EchoAttack"])
+        self._benchmark()._require_attacks_available(["GaussianNoiseAttack", "EchoAttack"])
 
-    def test_empty_request_is_silent(self):
-        self._benchmark()._require_attacks_available([])
+    def test_run_rejects_an_unavailable_attack_before_touching_files(self):
+        """run() must refuse the request, not quietly measure a smaller set."""
+        bench = self._benchmark()
+        with pytest.raises(ValueError, match="WaveletAttack"):
+            bench.run(filepaths=["/nonexistent.wav"], wm_model="FakeModel",
+                      attack_types=["GaussianNoiseAttack", "WaveletAttack"])
+
+    def test_run_refuses_an_empty_explicit_request(self):
+        """An explicitly empty set must not fall back to the whole registry.
+
+        This is what a group whose plugins all failed to import used to
+        produce: asking for one group and silently getting every attack.
+        """
+        bench = self._benchmark()
+        with pytest.raises(ValueError, match="empty"):
+            bench.run(filepaths=["/nonexistent.wav"], wm_model="FakeModel",
+                      attack_types=[])
+
+    def test_run_with_no_request_still_uses_every_attack(self):
+        """The default path must keep working: None means all."""
+        bench = self._benchmark()
+        # Fails on the missing model, which proves it got past attack selection.
+        with pytest.raises(ValueError, match="Model"):
+            bench.run(filepaths=["/nonexistent.wav"], wm_model="NoSuchModel",
+                      attack_types=None)
+
+
+class TestAttackGroupsReachTheGuard:
+    """--attack_groups must hand its resolved list over unfiltered.
+
+    Filtering unavailable attacks out in run.py left the guard with nothing to
+    catch, so a group ran short silently; when every plugin in a group failed,
+    the empty list fell through to "run everything".
+    """
+
+    def test_run_py_does_not_filter_group_results(self):
+        import inspect
+        from deepmarkpy import run as run_module
+
+        src = inspect.getsource(run_module.main)
+        start = src.index("if args.attack_groups:")
+        block = src[start:start + 600]
+        assert "available = set(attacks)" not in block, (
+            "run.py filters group-resolved attacks against the registry again; "
+            "unavailable ones are dropped before Benchmark.run can object"
+        )
+
+    def test_group_resolution_returns_declared_attacks_not_discovered_ones(self):
+        from deepmarkpy.utils.attack_groups import ATTACK_GROUPS, get_attacks_for_groups
+
+        group = "audio_editing"
+        resolved = get_attacks_for_groups([group])
+        assert set(resolved) == set(ATTACK_GROUPS[group]["attacks"]), (
+            "group resolution must reflect what the group declares, so a "
+            "missing plugin is visible rather than absent"
+        )

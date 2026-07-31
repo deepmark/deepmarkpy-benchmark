@@ -25,7 +25,11 @@ from typing import Dict, Iterable, List, Optional
 import numpy as np
 import soundfile as sf
 
-from deepmarkpy.benchmark import apply_attack, expand_attacks
+from deepmarkpy.benchmark import (
+    apply_attack,
+    expand_attacks,
+    require_attacks_available,
+)
 from deepmarkpy.utils.metrics import ALL_METRICS, compute_metrics
 from deepmarkpy.utils.attack_groups import get_metrics_for_attack
 from deepmarkpy.utils.utils import load_audio
@@ -148,6 +152,13 @@ def run_detection_reliability(
         )
 
     attack_types = list(attack_types or [])
+    # expand_attacks passes unknown names straight through, and the per-file
+    # loop below indexes benchmark.attacks with them, so an unavailable attack
+    # would surface as a KeyError partway through the run.
+    require_attacks_available(
+        attack_types, benchmark.attacks,
+        getattr(getattr(benchmark, "plugin_manager", None), "failed", None),
+    )
     # Same expansion (and therefore the same row labels) as benchmark.run.
     expanded_attacks = expand_attacks(attack_types, benchmark.attacks)
     n_files = len(filepaths)

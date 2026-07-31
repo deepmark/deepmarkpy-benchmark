@@ -235,12 +235,21 @@ def main():
         np.random.seed(args.seed)
         logger.info(f"Host-side RNGs seeded with {args.seed}")
 
+    # `--attack_types` with no values parses to [], which has always meant
+    # "run them all". Normalizing to None keeps that, and lets an empty set
+    # arriving any other way stay an error.
+    if args.attack_types == [] and not args.attack_groups:
+        args.attack_types = None
+
     # Resolve attack groups into individual attack types
     if args.attack_groups:
+        # Unavailable attacks are deliberately NOT filtered out here. Dropping
+        # them silently shrank the measured set: a group whose plugins failed
+        # to import reported fewer attacks than the group defines, and a group
+        # where every plugin failed resolved to an empty list, which the run
+        # loop then treats as "no selection" and expands to every attack.
+        # Benchmark.run() raises on whatever is missing instead.
         attacks_from_groups = get_attacks_for_groups(args.attack_groups)
-        # Filter to only attacks that are actually available
-        available = set(attacks)
-        attacks_from_groups = [a for a in attacks_from_groups if a in available]
         if args.attack_types:
             # Combine with explicitly listed attacks
             combined = list(dict.fromkeys(args.attack_types + attacks_from_groups))

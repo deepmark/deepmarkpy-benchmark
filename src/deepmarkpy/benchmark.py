@@ -51,6 +51,29 @@ def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, 
     return attacked_audio, extra
 
 
+def require_attacks_available(attack_types, attacks_registry, plugin_failures=None):
+    """Raise when a requested attack is absent from ``attacks_registry``.
+
+    A missing model already raises; a missing attack used to warn and skip, so
+    a run finished with exit 0 and a report whose attack count had silently
+    dropped. Most often the plugin failed to import because an optional
+    dependency is not installed, so the import error is quoted when known.
+    """
+    missing = [name for name in attack_types if name not in attacks_registry]
+    if not missing:
+        return
+
+    message = [f"Requested attacks are not available: {sorted(missing)}"]
+    failures = plugin_failures or {}
+    if failures:
+        message.append("Plugins that failed to import:")
+        message += [f"  {module}: {error}" for module, error in sorted(failures.items())]
+    else:
+        message.append(f"Discovered attacks: {sorted(attacks_registry)}")
+
+    raise ValueError("\n".join(message))
+
+
 def expand_attacks(attack_types, attacks_registry):
     """Expand attacks whose config carries a bitrate list into separate entries.
 
@@ -306,11 +329,17 @@ class Benchmark:
             os.makedirs(output_dir, exist_ok=True)
             logger.info(f"Audio will be saved to: {output_dir}")
 
-        # If user doesn't specify attacks, use them all
-        explicitly_requested = attack_types is not None
-        attack_types = attack_types or list(self.attacks.keys())
-
-        if explicitly_requested:
+        # If user doesn't specify attacks, use them all. An explicitly empty
+        # request is not the same thing: falling back there would silently run
+        # the whole registry for a caller who asked for a specific, and
+        # entirely unavailable, set.
+        if attack_types is None:
+            attack_types = list(self.attacks.keys())
+        else:
+            if not attack_types:
+                raise ValueError(
+                    "No attacks to run: the requested attack set is empty."
+                )
             self._require_attacks_available(attack_types)
 
         expanded_attacks = expand_attacks(attack_types, self.attacks)
@@ -632,27 +661,11 @@ class Benchmark:
     RANDOM_GUESS_ACCURACY = 50.00
 
     def _require_attacks_available(self, attack_types):
-        """Fail when an explicitly requested attack is not loadable.
-
-        A missing model already raises; a missing attack used to warn and skip,
-        so a run finished with exit 0 and a report whose attack count silently
-        dropped. ``--attack_groups`` resolves through a static table rather than
-        the registry, so it reaches this with attacks whose plugin failed to
-        import -- most often an optional dependency that is not installed.
-        """
-        missing = [name for name in attack_types if name not in self.attacks]
-        if not missing:
-            return
-
-        message = [f"Requested attacks are not available: {sorted(missing)}"]
-        failures = getattr(self.plugin_manager, "failed", {}) or {}
-        if failures:
-            message.append("Plugins that failed to import:")
-            message += [f"  {module}: {error}" for module, error in sorted(failures.items())]
-        else:
-            message.append(f"Discovered attacks: {sorted(self.attacks)}")
-
-        raise ValueError("\n".join(message))
+        """Fail when an explicitly requested attack is not loadable."""
+        require_attacks_available(
+            attack_types, self.attacks,
+            getattr(self.plugin_manager, "failed", None),
+        )
 
     @staticmethod
     def _attack_snr_db(reference, attacked):
