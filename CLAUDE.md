@@ -31,7 +31,7 @@ python -m pytest tests/ -v
 
 Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Tests import the installed `deepmarkpy` package (`pip install -e .`).
 
-Current: 390 tests, ~5s runtime. No Docker required for tests. `pywt` and `pyrubberband` are declared dependencies, so the full attack set loads and `test_attack_groups.py` is expected to pass. Golden replay tests (`test_native_goldens.py`) enforce only where the numeric environment matches their manifest and skip elsewhere, so around 29 of them skip outside the recording environment (numpy 2.2.6 / scipy 1.16.0 / librosa 0.11.0).
+Current: 438 tests as of `bb8b6c7`, ~5s runtime (the count moves whenever tests are added — `pytest tests/ --collect-only -q | tail -1` is authoritative). No Docker required for tests. `pywt` and `pyrubberband` are declared dependencies, so the full attack set loads and `test_attack_groups.py` is expected to pass. Golden replay tests (`test_native_goldens.py`) enforce only where the numeric environment matches their manifest and skip elsewhere, so around 29 of them skip outside the recording environment (numpy 2.2.6 / scipy 1.16.0 / librosa 0.11.0).
 
 ## Running the Benchmark
 
@@ -59,7 +59,7 @@ deepmark-benchmark --wav_files_dir /path/to/wavs --wm_model AudioSealModel --att
 
 ## Common Gotchas
 
-- Plugin loading imports ALL plugins at startup. If a dependency is missing (e.g., `pycodec2`, `audiocomplib`), that plugin does not load; the failure is recorded in `PluginManager.failed` and in `run_metadata.json`, and asking for that attack by name or via `--attack_groups` now raises rather than measuring a smaller set
+- Plugin loading imports ALL plugins at startup. If a dependency is missing (e.g., `pycodec2`, `audiocomplib`), that plugin does not load; the failure is recorded in `PluginManager.failed`, and asking for that attack by name or via `--attack_groups` raises rather than measuring a smaller set. `run_metadata.json` carries the same list, but only `run_single_model` writes it — `--no_attacks` and `--detection_reliability` produce no metadata file
 - `.env` is tracked in git even though `.gitignore` lists it (the entry never untracked it) — local port edits show up as modifications; `.env.example` mirrors it. `run.py` loads it into the environment before plugins are constructed, so a port set there reaches the host clients as well as Compose; real environment variables still win
 - Accuracy values are percentages (0-100), NOT decimals (0-1). All thresholds and comparisons must use percentage scale
 - `CrossModelAttack.apply()` returns a tuple `(audio, watermark)`, not just audio — handled specially in benchmark.py

@@ -39,6 +39,7 @@ explicitly goldened or excluded.
 
 import importlib.metadata
 import json
+import platform
 import os
 import random
 import shutil
@@ -64,10 +65,29 @@ with open(_MANIFEST_PATH) as _f:
 SAMPLING_RATE = MANIFEST["sampling_rate"]
 GLOBAL_SEED = MANIFEST["global_seed_before_each_invocation"]
 
+# Ceiling on how far a golden may drift when the environment does not match
+# the recording one. Chosen from measurement, not taste: macOS arm64 against
+# Linux aarch64 on identical pins produced at most 4.3e-07 relative (ffmpeg's
+# MP3 encoder; everything else was 5.8e-14 or better), and the smallest real
+# behavior change made in this repo moved output by 3.1e-05.
+CROSS_ENV_RTOL = 1e-6
+
 
 def _numeric_env_mismatches():
-    """Packages whose installed version differs from the recording environment."""
+    """What differs between here and where the goldens were recorded.
+
+    The platform counts as much as the package versions: identical numpy on
+    Linux and on macOS does not have to produce identical floats, and in
+    practice does not. Anything listed here means byte-identity is not a
+    claim that can be made, so the caller compares within tolerance instead.
+    """
     mismatches = []
+    recorded_machine = MANIFEST.get("machine")
+    current_machine = f"{platform.system()} {platform.machine()}"
+    if recorded_machine and recorded_machine != current_machine:
+        mismatches.append(
+            f"machine: recorded {recorded_machine}, running {current_machine}"
+        )
     for pkg, recorded in MANIFEST["numeric_env"].items():
         try:
             installed = importlib.metadata.version(pkg)
@@ -92,12 +112,6 @@ def _canonical_input():
 @pytest.mark.parametrize("cls_name", sorted(MANIFEST["attacks"]))
 def test_native_attack_matches_golden(cls_name, pm):
     mismatches = _numeric_env_mismatches()
-    if mismatches:
-        pytest.skip(
-            "numeric environment differs from the goldens' recording "
-            "environment — byte-identity is a same-environment claim: "
-            f"{'; '.join(mismatches)}"
-        )
     if cls_name == "Mp3CompressionAttack" and shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg not on PATH — required by Mp3CompressionAttack")
     attacks = pm.get_attacks()
@@ -123,9 +137,26 @@ def test_native_attack_matches_golden(cls_name, pm):
     assert list(out.shape) == meta["output_shape"], (
         f"{cls_name}: output shape {out.shape} != recorded {meta['output_shape']}"
     )
-    assert np.array_equal(out, golden), (
-        f"{cls_name}: output differs from its golden fixture — behavior "
-        "changed relative to the recorded state"
+    if not mismatches:
+        assert np.array_equal(out, golden), (
+            f"{cls_name}: output differs from its golden fixture — behavior "
+            "changed relative to the recorded state"
+        )
+        return
+
+    # Off the recording environment, byte-identity is not a claim anyone can
+    # make: the same numpy on Linux and macOS need not produce identical
+    # floats. Measured across those two, every attack agreed to 4.3e-07 or
+    # better, while the smallest deliberate behavior change in this repo's
+    # history moved output by 3.1e-05. The tolerance sits between them, so the
+    # goldens still catch a real change on any platform.
+    scale = max(float(np.abs(golden).max()), 1e-12)
+    diff = float(np.abs(out - golden).max())
+    assert diff / scale <= CROSS_ENV_RTOL, (
+        f"{cls_name}: differs from its golden by {diff / scale:.2e} relative, "
+        f"above the {CROSS_ENV_RTOL:.0e} cross-environment tolerance — too "
+        f"large to be platform arithmetic, so behavior changed. Environment "
+        f"differences: {'; '.join(mismatches)}"
     )
 
 
