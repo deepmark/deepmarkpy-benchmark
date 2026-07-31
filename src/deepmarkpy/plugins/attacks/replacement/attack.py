@@ -10,6 +10,23 @@ class ReplacementAttack(BaseAttack):
         """
         Perform a replacement attack on an audio signal.
 
+        Expensive, and steeply so on speech. Cost is dominated by a
+        least-squares solve that runs once per block whose match set is
+        non-empty, on a basis of up to ``k`` blocks. Whether that set is empty
+        depends on the content, not the length: broadband noise produces no
+        matches within ``upper_bound`` and the solve never runs, while speech
+        is self-similar enough that it runs on nearly every block. Measured at
+        16 kHz with the shipped defaults, 4 s of noise took 0.39 s and 4 s of
+        speech took 109 s. 32 s of speech has been reported at ~18 minutes.
+        Budget for it when selecting this attack over a corpus, or narrow
+        ``upper_bound_replacement`` to shrink the match sets.
+
+        The candidate search is also quadratic -- every block is compared
+        against every other -- but that part costs the same on noise and
+        speech, so it is not where the time goes. Both are known and
+        deliberately left alone: a faster least-squares would reorder floating
+        point operations and move the recorded output.
+
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the replacement attack:
