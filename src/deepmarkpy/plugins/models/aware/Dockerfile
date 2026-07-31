@@ -16,7 +16,7 @@ WORKDIR /app
 COPY /src/deepmarkpy/plugins/models/aware/constraints.stage1.txt /app/constraints.stage1.txt
 COPY /src/deepmarkpy/plugins/models/aware/constraints.txt /app/constraints.txt
 RUN git clone https://github.com/deepmarkpy/aware.git aware && \
-    cd aware && git checkout fea9c49e3dfc57a421705ae411adedd80bcc6d09 && \
+    cd aware && git checkout 9f0fe884a4f5b9bbb13d881c77bbbc9e121110c3 && \
     pip install --no-cache-dir -e . -c /app/constraints.stage1.txt
 
 # Go back to app directory
