@@ -28,10 +28,12 @@ COPY src/deepmarkpy/plugins/attacks/network_transmission/requirements.txt .
 COPY src/deepmarkpy/plugins/attacks/network_transmission/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-# Build python-webrtc-audio-processing from the same fork v1 uses, with
-# the pinned upstream commit known to compile cleanly.
-RUN git clone https://github.com/nesovicelena/python-webrtc-audio-processing.git /tmp/python-webrtc-audio-processing && \
+# Build the Python binding from the DeepMark fork, which carries the build
+# fixes this image needs; both it and the vendored upstream sources are
+# pinned so the image is reproducible.
+RUN git clone https://github.com/deepmark/python-webrtc-audio-processing.git /tmp/python-webrtc-audio-processing && \
     cd /tmp/python-webrtc-audio-processing && \
+    git checkout d8231843956bba2a04a4b95777aa5424ecb2939c && \
     git clone https://gitlab.freedesktop.org/pulseaudio/webrtc-audio-processing.git webrtc-audio-processing && \
     cd webrtc-audio-processing && git checkout ee8cfef49b8417c2f0ba65a249d2ee8c360d19ab && cd .. && \
     python setup.py build && \

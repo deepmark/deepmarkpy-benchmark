@@ -1,10 +1,16 @@
 import argparse
+import datetime
 import json
+import platform
+import subprocess
+import sys
 import os
+import random
 import shutil
 
 import logging
 
+from deepmarkpy import __version__
 from deepmarkpy.benchmark import Benchmark
 from deepmarkpy.utils.report_generator import generate_benchmark_report
 from deepmarkpy.utils.attack_groups import ATTACK_GROUPS, get_attacks_for_groups
@@ -64,6 +70,16 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run DeepMark Benchmark CLI")
 
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed the host-side RNGs so a run can be reproduced. Omitted by "
+             "default, which keeps drawing a fresh watermark per file and "
+             "fresh attack noise per run. Seeds host-side randomness only: "
+             "the diffusion, vae, speech_enhancement_2 and "
+             "network_transmission services stay stochastic server-side.",
+    )
     parser.add_argument(
         "--report_dir",
         type=str,
@@ -207,6 +223,13 @@ def main():
 
     args = parser.parse_args()
 
+    if args.seed is not None:
+        # Every stochastic attack and generate_watermark() draws from these
+        # process-global streams, so seeding them here covers all of them.
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        logger.info(f"Host-side RNGs seeded with {args.seed}")
+
     # Resolve attack groups into individual attack types
     if args.attack_groups:
         attacks_from_groups = get_attacks_for_groups(args.attack_groups)
@@ -280,7 +303,9 @@ def main():
         # --- Single-model mode (--wm_model or --wm_models with one entry) ---
         model_name = args.wm_models[0] if args.wm_models else args.wm_model
         _clean_report_dir(args.report_dir)
-        run_single_model(benchmark, filepaths, model_name, args)
+        run_single_model(
+            benchmark, filepaths, model_name, args, output_dir=args.report_dir,
+        )
 
 
 _DEEPMARK_ASSETS = {"deepmark.cls", "deepmark-logo.png", "deepmark-logo.pdf", "deepmark-logo.jpg"}
@@ -290,6 +315,13 @@ def _clean_report_dir(report_dir):
     """Remove generated files from report dir, preserving deepmark assets."""
     if not os.path.exists(report_dir):
         return
+    doomed = [i for i in sorted(os.listdir(report_dir)) if i not in _DEEPMARK_ASSETS]
+    if doomed:
+        logger.info(
+            f"Clearing {len(doomed)} item(s) from {report_dir}/ before this run: "
+            + ", ".join(doomed[:10])
+            + (" ..." if len(doomed) > 10 else "")
+        )
     for item in os.listdir(report_dir):
         if item in _DEEPMARK_ASSETS:
             continue
@@ -442,6 +474,53 @@ def run_detection_reliability_mode(benchmark, filepaths, model_name, args):
         logger.error(f"Failed to generate detection reliability report: {e}")
 
 
+def write_run_metadata(report_dir, args, benchmark, model_names, extra=None):
+    """Write run_metadata.json beside the results so a run can be situated later.
+
+    Deliberately a sibling file rather than a wrapper around the existing
+    artifacts: the report generators read benchmark_stats.json's top-level
+    keys as attack names, and embedding a timestamp inside a result file
+    would make byte-comparing two runs impossible.
+    """
+    metadata = {
+        "deepmarkpy_version": __version__,
+        "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "git_revision": _git_revision(),
+        "command": sys.argv,
+        "seed": getattr(args, "seed", None),
+        "models": list(model_names),
+        "python": platform.python_version(),
+        "platform": f"{platform.system()} {platform.machine()}",
+        "plugins": {
+            "attacks_discovered": sorted(benchmark.attacks),
+            "models_discovered": sorted(benchmark.models),
+            "failed_imports": benchmark.plugin_manager.failed,
+        },
+    }
+    if extra:
+        metadata.update(extra)
+
+    path = os.path.join(report_dir, "run_metadata.json")
+    os.makedirs(report_dir, exist_ok=True)
+    with open(path, "w") as fp:
+        json.dump(to_json_safe(metadata), fp, indent=4)
+    logger.info(f"Run metadata saved to {path}")
+    return path
+
+
+def _git_revision():
+    """Short git revision when running from a checkout, else None."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None if out.returncode == 0 else None
+
+
 def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
     """Run benchmark for a single model, save results and generate reports.
 
@@ -486,6 +565,22 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
         json.dump(to_json_safe(stats), fp, indent=4)
     logger.info(f"Statistics saved to {stats_path}")
 
+    write_run_metadata(
+        report_dir, args, benchmark, [model_name],
+        extra={
+            # The rate actually used, resolved from the model's config —
+            # previously this was only logged to stderr and then lost.
+            "sampling_rate": (benchmark.models.get(model_name, {}).get("config") or {}).get(
+                "sampling_rate"
+            ),
+            "watermark_size": (benchmark.models.get(model_name, {}).get("config") or {}).get(
+                "watermark_size"
+            ),
+            "attacks_run": sorted(stats),
+            "n_files": len(filepaths),
+        },
+    )
+
     try:
         latex_path, chart_path = generate_benchmark_report(
             stats_file=stats_path,
@@ -516,9 +611,8 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
 
 def run_multiple_models(benchmark, filepaths, model_names, args):
     """Run benchmark for multiple models and generate comparative report."""
-    report_base = "report"
+    report_base = args.report_dir
     _clean_report_dir(report_base)
-    logger.info(f"Cleaned previous results from {report_base}/")
 
     all_results = {}
     all_stats = {}

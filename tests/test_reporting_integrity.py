@@ -317,7 +317,12 @@ class TestMultiModelPath:
             type("_M", (), {"ComparativeReportGenerator": _FakeGenerator}),
         )
 
-        args = argparse.Namespace(calculate_quality_metrics=False, crop_before_attack=None)
+        args = argparse.Namespace(
+            calculate_quality_metrics=False,
+            crop_before_attack=None,
+            report_dir=str(tmp_path / "report"),
+            seed=None,
+        )
         run_module.run_multiple_models(
             benchmark, ["f.wav"], ["ZeroBitModel", "MultiBitModel"], args,
         )

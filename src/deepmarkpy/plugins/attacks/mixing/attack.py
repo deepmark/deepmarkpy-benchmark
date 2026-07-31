@@ -168,8 +168,8 @@ class MixingAttack(BaseAttack):
             Music audio array of target_length
         """
         # Get list of music files
-        music_files = [f for f in os.listdir(music_folder)
-                      if f.endswith(('.wav', '.mp3'))]
+        music_files = sorted(f for f in os.listdir(music_folder)
+                             if f.endswith(('.wav', '.mp3')))
 
         if not music_files:
             raise ValueError(f"No music files found in {music_folder}")

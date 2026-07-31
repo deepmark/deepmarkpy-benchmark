@@ -2,7 +2,8 @@
 
 The denoising start step is derived as ``1000 - diffusion_steps``. Each
 request draws a fresh OS-entropy seed via ``generator.seed()``, so output
-is stochastic across calls.
+is stochastic across calls; within a request the seed advances per slice so
+slices are denoised from independent noise.
 """
 
 import logging
@@ -62,7 +63,10 @@ class DiffusionEngine(BaseAttackEngine):
         new_audio_slice = np.array([])
         not_first = 0
         for sample in range(len(audio) // stride):
-            generator.manual_seed(seed)
+            # Advance per slice: reusing one seed denoised every slice from
+            # the identical noise realization, correlating the regeneration
+            # across slice boundaries.
+            generator.manual_seed(seed + sample)
             audio_slice = np.array(
                 audio[sample * stride : sample * stride + slice_size]
             )
