@@ -44,4 +44,4 @@ COPY src/deepmarkpy/plugins/attacks/network_transmission .
 
 EXPOSE 10020
 
-CMD uvicorn app:app --host=$HOST --port=$APP_PORT
+CMD ["sh", "-c", "exec uvicorn app:app --host=$HOST --port=$APP_PORT"]

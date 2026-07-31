@@ -30,4 +30,4 @@ COPY src/deepmarkpy/plugins/attacks/opus_codec/config.json .
 
 EXPOSE 10023
 
-CMD uvicorn app:app --host=$HOST --port=$APP_PORT
+CMD ["sh", "-c", "exec uvicorn app:app --host=$HOST --port=$APP_PORT"]

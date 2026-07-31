@@ -35,4 +35,4 @@ COPY src/deepmarkpy/plugins/models/aware/config.json .
 EXPOSE ${APP_PORT}
 
 # Run the FastAPI server using Uvicorn
-CMD uvicorn app:app --host=$HOST --port=$APP_PORT
+CMD ["sh", "-c", "exec uvicorn app:app --host=$HOST --port=$APP_PORT"]
