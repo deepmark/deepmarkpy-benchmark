@@ -9,10 +9,12 @@ DeepMark Benchmark is a modular and scalable Python platform for evaluating the 
    model/attack services managed by docker-compose. This is the workflow the
    rest of this README describes.
 2. **Additional — consume the plugin engines.** Install `deepmarkpy` as a
-   library and import any plugin's inference engine
-   (`deepmarkpy.plugins.{attacks,models}.<name>.inference.Engine`) to embed
-   the watermarking models and attacks in your own serving stack, without
-   this repo's HTTP layer or orchestrator. See
+   library and import any plugin's inference engine — for example
+   `from deepmarkpy.plugins.attacks.vae.inference import VAEEngine` — to
+   embed the watermarking models and attacks in your own serving stack,
+   without this repo's HTTP layer or orchestrator. Engines derive from
+   `deepmarkpy.core.inference.BaseAttackEngine` / `BaseModelEngine`, so
+   generic serving code can be typed once per family. See
    [docs/CONSUMING.md](docs/CONSUMING.md).
 
 ## Features
@@ -25,11 +27,11 @@ DeepMark Benchmark is a modular and scalable Python platform for evaluating the 
 
 ## Architecture Overview
 
-This benchmark uses a client-server architecture. Core watermarking models and complex attacks (often AI-based) run as independent web services managed by Docker Compose. The main benchmark script (`src/run.py`) acts as a client, communicating with these services via HTTP requests over a Docker network to perform embedding, attacking, and detection. This isolates complex dependencies within containers.
+This benchmark uses a client-server architecture. Core watermarking models and complex attacks (often AI-based) run as independent web services managed by Docker Compose. The benchmark runner (`deepmark-benchmark`, i.e. `src/deepmarkpy/run.py`) acts as a client, communicating with these services via HTTP requests to perform embedding, attacking, and detection. This isolates complex dependencies within containers. Each containerized plugin keeps all of its inference logic in one `inference.py` engine class behind a thin FastAPI adapter, which is also what makes those engines importable as a library.
 
 ## Prerequisites
 
-*   Python 3.9+
+*   Python 3.10+
 *   Docker (Install Docker)
 *   Docker Compose (Install Docker Compose)
 
@@ -354,9 +356,9 @@ DeepMark Benchmark is designed to allow easy addition of new attacks and waterma
 
 1.	Create a New Attack Folder
 
-Inside src/plugins/attacks, create a new folder with the attack name:
+Inside `src/deepmarkpy/plugins/attacks`, create a new folder with the attack name:
 ```Shell
-mkdir src/plugins/attacks/new_attack
+mkdir src/deepmarkpy/plugins/attacks/new_attack
 ```
 2.	Add attack.py
 Create a file attack.py inside your folder:
@@ -388,8 +390,29 @@ class NewAttack(BaseAttack):
 
 4.	Dockerizing (Optional)
 
-    If your attack requires AI models:
-  - Add app.py for FastAPI service.
+    If your attack requires AI models, it runs as a container and
+    `attack.py` becomes a thin HTTP client. The container side follows the
+    standard layout:
+
+  - Add `inference.py` holding all inference logic in one class deriving
+    from `BaseAttackEngine`, named after the plugin, plus the stable alias:
+
+    ```python
+    import numpy as np
+    from deepmarkpy.core.inference import BaseAttackEngine
+
+    class NewAttackEngine(BaseAttackEngine):
+        def __init__(self, config: dict, device: str | None = None):
+            self.config = config          # load weights here
+
+        def apply(self, audio, sampling_rate: int, **params) -> np.ndarray:
+            """Return the attacked audio."""
+
+    Engine = NewAttackEngine
+    ```
+
+  - Add `app.py`: a thin FastAPI adapter that parses the request, calls the
+    engine, and serializes the result. Keep inference out of it.
   - Add port to the .env file.
   - Write a Dockerfile to containerize it.
   - Add it to docker-compose.yml.
@@ -403,9 +426,9 @@ deepmark-benchmark --wav_files_dir /path/to/audio --wm_model AudioSealModel --at
 
 1.	Create a New Model Folder
 
-Inside src/plugins/models, create a folder:
+Inside `src/deepmarkpy/plugins/models`, create a folder:
 ```Shell 
-mkdir src/plugins/models/new_model
+mkdir src/deepmarkpy/plugins/models/new_model
 ```
 
 2.	Add model.py
@@ -444,7 +467,31 @@ class NewModel(BaseModel):
 }
 ```
 
-4.	Run the Benchmark with the New Model
+4.	Dockerizing (Optional)
+
+    Models that load ML weights run as containers, with `model.py` acting as
+    a thin HTTP client. Add `inference.py` with an engine class deriving
+    from `BaseModelEngine`, plus a thin `app.py`, a Dockerfile, a port in
+    `.env`, and a `docker-compose.yml` service:
+
+    ```python
+    import numpy as np
+    from deepmarkpy.core.inference import BaseModelEngine
+
+    class NewModelEngine(BaseModelEngine):
+        def __init__(self, config: dict, device: str | None = None):
+            self.config = config          # load weights here
+
+        def embed(self, audio, watermark_data, sampling_rate: int) -> np.ndarray:
+            """Return the watermarked audio."""
+
+        def detect(self, audio, sampling_rate: int):
+            """Return the detected watermark."""
+
+    Engine = NewModelEngine
+    ```
+
+5.	Run the Benchmark with the New Model
 ```Shell
 deepmark-benchmark --wav_files_dir /path/to/audio --wm_model NewModel --attack_types CutSamplesAttack
 ```
