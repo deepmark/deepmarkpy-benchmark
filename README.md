@@ -176,14 +176,23 @@ covers. Groups can be combined with `--attack_types` to add individual attacks.
 |-----|---------|
 | `process_disruption` | `CrossModelAttack`, `CollusionAttack`, `ZeroBitCollusionAttack`, `Collusion2Attack`, `SameModelAttack` |
 | `audio_editing` | `CutSamplesAttack`, `CropBeginningAttack`, `CropRandomAttack`, `WaveletAttack`, `LowpassFilterAttack`, `HighpassFilterAttack`, `BandstopFilterAttack`, `SmoothingAttack`, `ChorusAttack`, `FlangerAttack`, `EchoAttack`, `EqualizerAttack`, `QuantizationAttack`, `STFTQuantizationAttack`, `PCMQuantizationAttack`, `Mp3CompressionAttack`, `EncodecAttack`, `DescriptAudioCodecAttack`, `OpusCodecAttack`, `Codec2VocoderAttack`, `ResamplingPolyAttack`, `MixingAttack` |
-| `audio_distortion` | `GaussianNoiseAttack`, `PinkNoiseAttack`, `SignInversionAttack`, `LPCAttack` |
+| `audio_distortion` | `GaussianNoiseAttack`, `PinkNoiseAttack`, `SignInversionAttack`, `LPCAttack`, `AdditiveNoiseAttack` |
 | `desynchronization` | `TimeStretchAttack`, `PitchShiftAttack`, `InvertedTimeStretchAttack`, `ZeroCrossInsertsAttack`, `FlipSamplesAttack`, `ReplacementAttack`, `Replacement2Attack` |
-| `ai_attacks` | `SpeechEnhancement1Attack`, `SpeechEnhancement2Attack`, `SpeechTokenizationAttack`, `NeuralVocoderAttack`, `DiffusionAttack` |
+| `ai_attacks` | `SpeechEnhancement1Attack`, `SpeechEnhancement2Attack`, `SpeechTokenizationAttack`, `NeuralVocoderAttack`, `DiffusionAttack`, `VAEAttack` |
 | `transmission` | `ReplayAttack`, `NetworkTransmissionAttack` |
 
-Attacks not listed in any group fall under "Other Attacks" in the detailed
-report. The canonical mapping lives in `src/utils/attack_groups.py` — update it
-there when adding a new attack so the reports pick the right metrics for it.
+Every attack belongs to exactly one group; the canonical mapping lives in
+`src/deepmarkpy/utils/attack_groups.py` — update it there when adding a new
+attack so the reports pick the right metrics for it, and a test will fail if
+one is left ungrouped.
+
+Metrics that compare the two signals sample by sample (PSNR, SI-SDR, STOI,
+MCD, NCM) report an attack's timing shift as if it were quality loss. The
+benchmark does not resynchronize — a desynchronization attack is meant to move
+the time axis — so those values are still reported for the desynchronization
+group but marked with a dagger in the tables. Read them as evidence the attack
+shifted the signal, not as quality scores; the group's NISQA columns are
+reference-free and remain valid.
 
 **Codec2 Vocoder Attack:**
 
