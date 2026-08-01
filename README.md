@@ -203,14 +203,6 @@ Attack parameters are added to this list dynamically from each plugin's
 `config.json`, so `deepmark-benchmark --help` is the complete and current
 reference — for example `--snr_db_gaussian_noise` or `--order_bandstop`.
 
-`ReplacementAttack` is far slower than the rest and disproportionately so on
-speech: its cost is driven by a per-block least-squares solve that only runs
-when a block finds matches, and speech finds them where noise does not. At
-16 kHz with the shipped defaults, 4 s of noise took 0.39 s and 4 s of speech
-took 109 s; 32 s of speech has been reported at around 18 minutes. Allow for
-it when running the `desynchronization` group over a corpus, or lower
-`--upper_bound_replacement` to shrink the match sets.
-
 Every attack belongs to exactly one group; the canonical mapping lives in
 `src/deepmarkpy/utils/attack_groups.py` — update it there when adding a new
 attack so the reports pick the right metrics for it, and a test will fail if

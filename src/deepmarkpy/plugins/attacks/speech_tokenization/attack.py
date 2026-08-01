@@ -4,6 +4,7 @@ import os
 import numpy as np
 import requests
 
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.core.base_attack import BaseAttack
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ class SpeechTokenizationAttack(BaseAttack):
         try:
             response = requests.post(
                 self.endpoint + "/attack",
-                json={"audio": audio.tolist(), "sampling_rate": sampling_rate},
+                json={"audio": encode_audio(audio), "sampling_rate": sampling_rate},
                 timeout=600,
             )
             response.raise_for_status()
@@ -45,7 +46,7 @@ class SpeechTokenizationAttack(BaseAttack):
                 f"SpeechTokenizationAttack: service returned no audio "
                 f"({response_data.get('error', 'no error reported')})"
             )
-        result = np.array(response_data["audio"])
+        result = decode_audio(response_data["audio"])
         logger.info(f"[SpeechTokenization] Output length={len(result)}, sampling_rate={sampling_rate}")
         return result
 

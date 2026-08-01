@@ -1,9 +1,10 @@
 {
   "service": "silentcipher",
   "kind": "model",
-  "recorded": "2026-07-30",
-  "image_id": "0e5f923d0547895ea5401896540030e2a9b3631c331fde9499b9e99be68c9e67",
+  "recorded": "2026-08-01",
+  "image_id": "eeaee817dc55e2fa0f73c08837cba1f8505d1054b8071eb0075a59e9d1a5682e",
   "classification": "deterministic",
+  "classification_note": null,
   "endpoints": {
     "/embed": {
       "request_non_audio": {
@@ -13,7 +14,7 @@
       "response_keys": [
         "watermarked_audio"
       ],
-      "response_sha256": "a3cfd18b5cba05ab3b31d4890396bc5c5c273d67ca858ce5c5810791623c9246",
+      "response_sha256": "77647244ed5fc40eae5fc920d780ab0715965bf7ea48ba2f4f726df7f4fa837e",
       "double_call_identical": true,
       "double_call_stats": [
         {

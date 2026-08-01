@@ -1,8 +1,8 @@
 {
   "service": "encodec",
   "kind": "attack",
-  "recorded": "2026-07-30",
-  "image_id": "d561127aad994dd7eee629e871df9b37b39fcc8abea79759499f48ac71dd690a",
+  "recorded": "2026-08-01",
+  "image_id": "1b230e0ef3346c503a8dc8965b252ab4f1f4e26874996ceaec1bbc8264bcad6e",
   "classification": "deterministic",
   "classification_note": null,
   "endpoints": {
@@ -14,7 +14,7 @@
       "response_keys": [
         "audio"
       ],
-      "response_sha256": "519ba4964f0b0c4b140ccb00a2215faffc52f02cba48531d3a31423cd05c8db2",
+      "response_sha256": "d6de9637c90f0fd08afdd856d4063dd1821b4afe00a6b4c17cd47282b1555813",
       "double_call_identical": true,
       "double_call_stats": [
         {

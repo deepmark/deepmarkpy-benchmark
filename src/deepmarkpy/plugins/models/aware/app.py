@@ -5,10 +5,12 @@ from typing import List, Optional
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from inference import AwareEngine
-from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES, MAX_WATERMARK_BITS
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS, MAX_WATERMARK_BITS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.utils.utils import load_config
 
 
@@ -35,13 +37,13 @@ except Exception as e:
 
 
 class EmbedRequest(BaseModel):
-    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     watermark_data: List[int] = Field(..., max_length=MAX_WATERMARK_BITS)
     sampling_rate: int
 
 
 class DetectRequest(BaseModel):
-    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
 
 
@@ -50,17 +52,17 @@ async def embed(request: EmbedRequest):
     """Embed a watermark in an audio file using AWARE."""
     try:
         watermarked_audio = engine.embed(
-            request.audio, request.watermark_data, request.sampling_rate
+            decode_audio(request.audio), request.watermark_data, request.sampling_rate
         )
     except Exception as e:
         logger.error(f"Error embedding watermark: {e}")
         import traceback
         traceback.print_exc()
-        return {"error": str(e)}
+        return JSONResponse({"error": str(e)})
 
-    return {
-        "watermarked_audio": watermarked_audio.tolist(),
-    }
+    return JSONResponse({
+        "watermarked_audio": encode_audio(watermarked_audio),
+    })
 
 
 @app.post("/detect")
@@ -68,18 +70,18 @@ async def detect(request: DetectRequest):
     """Detect a watermark from an audio file using AWARE."""
     try:
         detected_watermark, confidence = engine.detect(
-            request.audio, request.sampling_rate
+            decode_audio(request.audio), request.sampling_rate
         )
     except Exception as e:
         logger.error(f"Error detecting watermark: {e}")
         import traceback
         traceback.print_exc()
-        return {"error": str(e)}
+        return JSONResponse({"error": str(e)})
 
-    return {
+    return JSONResponse({
         "watermark": detected_watermark.tolist() if detected_watermark is not None else None,
         "confidence": float(confidence)
-    }
+    })
 
 
 if __name__ == "__main__":

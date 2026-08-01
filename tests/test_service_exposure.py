@@ -60,8 +60,11 @@ def test_audio_arrays_are_length_capped(path):
             f"{os.path.basename(os.path.dirname(path))}: audio is declared with "
             "no length bound, so one request can size the allocation"
         )
-        assert "MAX_AUDIO_SAMPLES" in ast.unparse(field.value), (
-            f"{path}: audio bound is not the shared MAX_AUDIO_SAMPLES"
+        bound = ast.unparse(field.value)
+        assert "MAX_AUDIO_B64_CHARS" in bound, (
+            f"{path}: audio bound is not the shared MAX_AUDIO_B64_CHARS. "
+            "Audio crosses the wire base64-encoded, so the cap must be in "
+            "characters -- a sample-count cap would not bound the body."
         )
 
 
@@ -142,3 +145,48 @@ class TestStandaloneImagesCarryWhatTheyImport:
             "image neither builds on ml-services-base nor installs the package. "
             "The container will die at import with ModuleNotFoundError."
         )
+
+
+class TestPackagedModulesReachTheImages:
+    """Every module a service imports must be in the package the image ships.
+
+    ml-services-base carries deepmarkpy and is built by hand, outside compose
+    (README's install section). `docker-compose build` therefore reports
+    success while every dependent image still holds whatever package the base
+    was last built with -- and a service importing a module added since then
+    dies at startup, which the contract check reports only as a port timeout.
+
+    This checks the source side of that: a module imported by an app.py has to
+    exist in the tree the base image installs from. It does not prove the base
+    image is current -- only a rebuild does that -- but it catches the case
+    where a module is referenced and simply is not there.
+    """
+
+    def _package_modules(self):
+        pkg = os.path.join(REPO, "src", "deepmarkpy")
+        found = set()
+        for root, _dirs, files in os.walk(pkg):
+            rel = os.path.relpath(root, os.path.dirname(pkg))
+            for f in files:
+                if f.endswith(".py"):
+                    mod = os.path.join(rel, f[:-3]).replace(os.sep, ".")
+                    found.add(mod.removesuffix(".__init__"))
+        return found
+
+    @pytest.mark.parametrize("path", APPS, ids=lambda p: os.path.basename(os.path.dirname(p)))
+    def test_every_deepmarkpy_import_exists(self, path):
+        modules = self._package_modules()
+        tree = ast.parse(open(path).read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("deepmarkpy"):
+                assert node.module in modules, (
+                    f"{os.path.basename(os.path.dirname(path))}/app.py imports "
+                    f"{node.module}, which is not in src/deepmarkpy. The image "
+                    "will fail at startup, and the contract check will report it "
+                    "as a port timeout rather than an ImportError."
+                )
+
+    def test_the_wire_module_is_packaged(self):
+        """It is imported by all 16 services and was added after the base was
+        last built, which is exactly how the stale-base failure happened."""
+        assert "deepmarkpy.core.wire" in self._package_modules()

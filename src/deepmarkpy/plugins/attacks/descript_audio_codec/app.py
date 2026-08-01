@@ -5,10 +5,12 @@ from typing import List, Optional
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from inference import DescriptAudioCodecEngine
-from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -25,7 +27,7 @@ engine = DescriptAudioCodecEngine(config)
 
 
 class AttackRequest(BaseModel):
-    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
     n_codebooks_dac: Optional[int] = None
 
@@ -35,9 +37,9 @@ async def attack(request: AttackRequest):
     kwargs = {}
     if request.n_codebooks_dac is not None:
         kwargs["n_codebooks_dac"] = request.n_codebooks_dac
-    audio = engine.apply(request.audio, request.sampling_rate, **kwargs)
+    audio = engine.apply(decode_audio(request.audio), request.sampling_rate, **kwargs)
 
-    return {"audio": audio.tolist()}
+    return JSONResponse({"audio": encode_audio(audio)})
 
 
 if __name__ == "__main__":

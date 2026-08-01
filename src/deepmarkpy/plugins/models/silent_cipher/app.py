@@ -5,10 +5,12 @@ from typing import List
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from inference import SilentCipherEngine
-from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES, MAX_WATERMARK_BITS
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS, MAX_WATERMARK_BITS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -24,29 +26,29 @@ except (FileNotFoundError, ValueError, IOError) as e:
 engine = SilentCipherEngine(config)
 
 class EmbedRequest(BaseModel):
-    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     watermark_data: List[int] = Field(..., max_length=MAX_WATERMARK_BITS)
     sampling_rate: int
 
 class DetectRequest(BaseModel):
-    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
 
 @app.post("/embed")
 async def embed(request: EmbedRequest):
     """Embed a watermark in an audio file."""
     watermarked_audio = engine.embed(
-        request.audio, request.watermark_data, request.sampling_rate
+        decode_audio(request.audio), request.watermark_data, request.sampling_rate
     )
-    return {"watermarked_audio": watermarked_audio.tolist()}
+    return JSONResponse({"watermarked_audio": encode_audio(watermarked_audio)})
 
 
 @app.post("/detect")
 async def detect(request: DetectRequest):
     """Detect a watermark from an audio file."""
     # SilentCipherEngine.detect returns a JSON-able bit list, or None on decode failure.
-    message = engine.detect(request.audio, request.sampling_rate)
-    return {"watermark": message}
+    message = engine.detect(decode_audio(request.audio), request.sampling_rate)
+    return JSONResponse({"watermark": message})
 
 if __name__ == "__main__":
     # Use the default as a fallback if APP_PORT is not set in the environment

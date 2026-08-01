@@ -28,9 +28,11 @@ import numpy as np
 import soundfile as sf
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from webrtc_audio_processing import AudioProcessingModule as AP
 
 logging.basicConfig(level=logging.INFO)
@@ -507,7 +509,7 @@ def voip_pipeline(
 # ---------------------------------------------------------------------------
 
 class AttackRequest(BaseModel):
-    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
     bitrate_bps_netem: int = 24000
     frame_duration_ms_netem: int = 20
@@ -529,7 +531,7 @@ class AttackRequest(BaseModel):
 @app.post("/attack")
 async def attack(request: AttackRequest):
     try:
-        audio = np.array(request.audio, dtype=np.float32)
+        audio = decode_audio(request.audio).astype(np.float32)
         result, netem_active = voip_pipeline(
             audio=audio,
             fs=request.sampling_rate,
@@ -555,7 +557,7 @@ async def attack(request: AttackRequest):
                 "jitter-buffer round trip but carries no kernel-level "
                 "delay, loss or reordering"
             )
-        return {"audio": result.tolist(), "netem_active": netem_active}
+        return JSONResponse({"audio": encode_audio(result), "netem_active": netem_active})
     except Exception as e:
         logger.error(f"Attack failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -563,7 +565,7 @@ async def attack(request: AttackRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "network_transmission"}
+    return JSONResponse({"status": "healthy", "service": "network_transmission"})
 
 
 if __name__ == "__main__":

@@ -4,7 +4,9 @@
 
 Open-source benchmarking framework for evaluating audio watermarking robustness. Evaluates watermarking models against 40+ attacks (signal processing, AI-based, transmission). Published in IEEE Access, vol. 14, 2026, pp. 62031-62044 (DOI 10.1109/ACCESS.2026.3685903).
 
-**Behavior freeze:** the v1.0.0 release line preserves benchmark behavior bit-for-bit. Known behavior quirks are catalogued internally and frozen until a dedicated deferred-fix release — do not fix surprising-but-working behavior in passing. Discovery sets are locked by `tests/test_discovery_lock.py`; native-attack goldens and HTTP-contract fixtures (`tests/fixtures/`) gate any change to plugin behavior.
+**Behavior:** v1.x preserved pre-package behavior bit-for-bit. **v2.0.0 is the deferred-fix release** and deliberately changes attack outputs — four attacks were corrected (equalizer, bandstop, PCM/MP3 rounding) and four more became available once `pywt`/`pyrubberband` were declared. Results are not comparable across the v1/v2 boundary.
+
+Within v2.x the same discipline applies: discovery sets are locked by `tests/test_discovery_lock.py`, and native-attack goldens plus HTTP-contract fixtures (`tests/fixtures/`) gate any change to plugin behavior. Do not change a golden without deciding to. A handful of quirks remain deliberately frozen — SilentCipher's sampling-rate and eval-mode issues both move published numbers and are catalogued internally for a later release.
 
 ## Architecture
 

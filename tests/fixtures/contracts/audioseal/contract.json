@@ -1,9 +1,10 @@
 {
   "service": "audioseal",
   "kind": "model",
-  "recorded": "2026-07-30",
-  "image_id": "6fee081b0950113ba319683ae57a8ccf0e4a71a11c47e04901f59a87a5688d5b",
+  "recorded": "2026-08-01",
+  "image_id": "ab1272d451c15062a48561e392826cd1369647c5d0b12d27f3052ca688e24a87",
   "classification": "deterministic",
+  "classification_note": null,
   "endpoints": {
     "/embed": {
       "request_non_audio": {
@@ -13,7 +14,7 @@
       "response_keys": [
         "watermarked_audio"
       ],
-      "response_sha256": "7321c3da5ae3f975a59e93f3c2d64e89c50079cfd23674488e300ef9d1e9221d",
+      "response_sha256": "5ae7865a68cf7beb1ff9176cf41ee64c78631f22a848d5ef795dcbbf1d34c678",
       "double_call_identical": true,
       "double_call_stats": [
         {

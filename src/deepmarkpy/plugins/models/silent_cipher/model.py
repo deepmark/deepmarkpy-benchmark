@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.core.base_model import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class SilentCipherModel(BaseModel):
     ) -> np.ndarray:
         """Embeds a watermark using the SilentCipher service."""
         payload = {
-            "audio": audio.tolist(),
+            "audio": encode_audio(audio),
             "watermark_data": watermark_data.tolist(),
             "sampling_rate": sampling_rate,
         }
@@ -35,11 +36,11 @@ class SilentCipherModel(BaseModel):
         if "watermarked_audio" not in response_data:
              logger.error("'/embed' response did not contain 'watermarked_audio' key.")
              raise KeyError("Missing 'watermarked_audio' in response from /embed")
-        return np.array(response_data["watermarked_audio"])
+        return decode_audio(response_data["watermarked_audio"])
 
     def detect(self, audio: np.ndarray, sampling_rate: int) -> np.ndarray:
         """Detects a watermark using the SilentCipher service."""
-        payload = {"audio": audio.tolist(), "sampling_rate": sampling_rate}
+        payload = {"audio": encode_audio(audio), "sampling_rate": sampling_rate}
         # Use the helper method from BaseModel
         response_data = self._make_request(endpoint="/detect", json_data=payload, method="POST")
 

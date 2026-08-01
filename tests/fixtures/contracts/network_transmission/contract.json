@@ -1,8 +1,8 @@
 {
   "service": "network_transmission",
   "kind": "attack",
-  "recorded": "2026-07-31",
-  "image_id": "83beaa594cfd7791f046c2ffd109c4109f7057299688a907577fff7e071edb38",
+  "recorded": "2026-08-01",
+  "image_id": "6135701ccff7072bafa4ee34409ceebf4e2540dc9e74a3b1d26c3ccdf1346ae8",
   "classification": "stochastic",
   "classification_note": "instance-dependent RTP path: same-container double call identical, fresh-container call differs; netem does not engage under Docker Desktop",
   "endpoints": {
@@ -30,8 +30,8 @@
         "audio",
         "netem_active"
       ],
-      "response_sha256": "06a12fe466b2d2d09d9d510d04be5632f57deeea63bfe9e3776ebb99f5bb2b37",
-      "double_call_identical": true,
+      "response_sha256": "989925a5ee6c4abcab1bcf1ad77cac1280c5fc3e18fb93d8d7e190f9b2b1f727",
+      "double_call_identical": false,
       "double_call_stats": [
         {
           "audio_len": 16000,
@@ -39,7 +39,7 @@
         },
         {
           "audio_len": 16000,
-          "audio_rms": 0.09542811445096237
+          "audio_rms": 0.09522499364244248
         }
       ]
     }

@@ -8,10 +8,12 @@ import numpy as np
 import torch
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from inference import SpeechTokenizationEngine
 
-from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.utils.utils import load_config
 
 logging.basicConfig(level=logging.DEBUG)
@@ -32,7 +34,7 @@ engine = SpeechTokenizationEngine(config, device)
 
 
 class AttackRequest(BaseModel):
-    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
 
 
@@ -40,8 +42,9 @@ class AttackRequest(BaseModel):
 async def attack(request: AttackRequest):
     try:
         sampling_rate = request.sampling_rate
-        logger.info(f"Received request: sampling_rate={sampling_rate}, audio_length={len(request.audio)}")
-        audio = np.array(request.audio)
+        audio_arr = decode_audio(request.audio)
+        logger.info(f"Received request: sampling_rate={sampling_rate}, audio_length={len(audio_arr)}")
+        audio = audio_arr
 
         # The engine resamples to the model's 16 kHz and back, so the request
         # rate goes straight through. Resampling here as well left the engine
@@ -50,7 +53,7 @@ async def attack(request: AttackRequest):
         audio = engine.apply(audio, sampling_rate)
         logger.info(f"Inference complete. Output length: {len(audio)}")
 
-        return {"audio": audio.tolist()}
+        return JSONResponse({"audio": encode_audio(audio)})
     except Exception as e:
         logger.error(f"Error in /attack: {e}")
         logger.error(traceback.format_exc())

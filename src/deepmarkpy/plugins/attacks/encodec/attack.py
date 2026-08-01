@@ -4,6 +4,7 @@ import os
 import numpy as np
 import requests
 
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.core.base_attack import BaseAttack
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ class EncodecAttack(BaseAttack):
         try:
             response = requests.post(
                 self.endpoint + "/attack",
-                json={"audio": audio.tolist(), "sampling_rate": sampling_rate},
+                json={"audio": encode_audio(audio), "sampling_rate": sampling_rate},
                 timeout=600,
             )
             response.raise_for_status()
@@ -50,4 +51,4 @@ class EncodecAttack(BaseAttack):
                 f"({response_data.get('error', 'no error reported')})"
             )
 
-        return np.array(response_data["audio"])
+        return decode_audio(response_data["audio"])

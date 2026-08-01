@@ -1,8 +1,8 @@
 {
   "service": "descript_audio_codec",
   "kind": "attack",
-  "recorded": "2026-07-30",
-  "image_id": "f20d78f07229aba3b9283797e1064af4f140c628d119d24fe7a996ef5912e6e6",
+  "recorded": "2026-08-01",
+  "image_id": "1191b99ffcfec8665a9071ededaff93852e011e5f4736a9bcdb12938796a077d",
   "classification": "deterministic",
   "classification_note": null,
   "endpoints": {
@@ -15,7 +15,7 @@
       "response_keys": [
         "audio"
       ],
-      "response_sha256": "266de4ac5c4ca29b8d7ed0b634ef821afdbf7ce6875b87e9bd13357f89603c0c",
+      "response_sha256": "f872806cfae1c6880506004df2429cb1c35d60a6a475c4c4197ba1939b902762",
       "double_call_identical": true,
       "double_call_stats": [
         {

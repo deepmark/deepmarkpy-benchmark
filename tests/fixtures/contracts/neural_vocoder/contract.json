@@ -1,9 +1,10 @@
 {
   "service": "neural_vocoder",
   "kind": "attack",
-  "recorded": "2026-07-30",
-  "image_id": "d3a9f9939c1f3d0047af6fd102f2ccb0e9b36a91d2a969443b0b5ad0734119cd",
+  "recorded": "2026-08-01",
+  "image_id": "b9c5f22e22e54541aa829bef16f5339ab35eb4cb06149b8006dc1e42a0b190c2",
   "classification": "deterministic",
+  "classification_note": null,
   "endpoints": {
     "/attack": {
       "request_non_audio": {
@@ -13,7 +14,7 @@
       "response_keys": [
         "audio"
       ],
-      "response_sha256": "0975d1ba8912c64e9c4711771911be206a461fbd1d7d827202be87a9e753e680",
+      "response_sha256": "a7709a185b113d6256ed9b7ea02dcafc64fac88f021bc458a8b031858c7d6aa4",
       "double_call_identical": true,
       "double_call_stats": [
         {

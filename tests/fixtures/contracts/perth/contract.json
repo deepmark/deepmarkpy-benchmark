@@ -1,9 +1,10 @@
 {
   "service": "perth",
   "kind": "model",
-  "recorded": "2026-07-30",
-  "image_id": "1e924473cf0400e662a378f511a7fb88b26db7ed150d49bff28f9795eda38025",
+  "recorded": "2026-08-01",
+  "image_id": "4b5ab83b4c134d0f0ea03158ef3ad02c01e95d352543350b09bda3a4ef233308",
   "classification": "deterministic",
+  "classification_note": null,
   "endpoints": {
     "/embed": {
       "request_non_audio": {
@@ -13,7 +14,7 @@
       "response_keys": [
         "watermarked_audio"
       ],
-      "response_sha256": "cb0d518e774159cf4debdd8eead1c921673a215203398fc67c4138e3e019b65c",
+      "response_sha256": "07ffc2ecfd73d77f13a437cef46a0a3d06d0633e3e897566108d7fb847dafb4a",
       "double_call_identical": true,
       "double_call_stats": [
         {

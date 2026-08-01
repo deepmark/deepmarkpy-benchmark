@@ -6,9 +6,11 @@ from typing import List
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from deepmarkpy.core.inference import MAX_AUDIO_SAMPLES
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.utils.utils import load_config
 
 # The upstream BigVGAN clone ships its own inference.py, and the service's
@@ -36,15 +38,15 @@ engine = NeuralVocoderEngine(config)
 
 
 class AttackRequest(BaseModel):
-    audio: List[float] = Field(..., max_length=MAX_AUDIO_SAMPLES)
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
 
 
 @app.post("/attack")
 async def attack(request: AttackRequest):
-    audio = engine.apply(request.audio, request.sampling_rate)
+    audio = engine.apply(decode_audio(request.audio), request.sampling_rate)
 
-    return {"audio": audio.tolist()}
+    return JSONResponse({"audio": encode_audio(audio)})
 
 
 if __name__ == "__main__":

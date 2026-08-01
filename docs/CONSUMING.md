@@ -5,7 +5,7 @@ plugin's engine class in its own serving layer and images. It never imports this
 repo's `app.py` and never depends on the HTTP layer.
 
 ```bash
-pip install "deepmarkpy @ git+https://github.com/deepmark/deepmarkpy-benchmark@v1.0.0"
+pip install "deepmarkpy @ git+https://github.com/deepmark/deepmarkpy-benchmark@v2.0.0"
 ```
 
 ```python
@@ -25,7 +25,7 @@ from deepmarkpy.core.inference import BaseAttackEngine
 def serve(engine: BaseAttackEngine): ...
 ```
 
-## Stable API (from v1.0.0)
+## Stable API (since v1.0.0)
 
 - Module paths `deepmarkpy.plugins.{attacks,models}.<name>.inference`, the
   per-plugin engine class names (`VAEEngine`, `AudioSealEngine`, ... —
@@ -59,7 +59,7 @@ each image resolved is authoritative in its constraints file.
 | `audio_seal` | `AudioSealEngine` | 2.7.1+cpu | downloaded at startup (`audioseal_wm_16bits`, `audioseal_detector_16bits`) | — |
 | `aware` | `AwareEngine` | 2.7.1+cpu | loaded by the `aware` package | clone `github.com/deepmarkpy/aware` @ `9f0fe884a4f5b9bbb13d881c77bbbc9e121110c3`, `pip install -e .` **constrained by `constraints.stage1.txt`**, then `requirements.txt` with `constraints.txt` — the two-step order matters (the editable install resolves aware's own exact pins, e.g. `pydantic==2.5.0`, which the second step upgrades). Needs `git` at build. |
 | `perth` | `PerthEngine` | 2.7.1+cpu | bundled in the `resemble-perth` wheel | fully pinned `requirements.txt` |
-| `silent_cipher` | `SilentCipherEngine` | 2.0.0 | 44.1k checkpoint downloaded at startup | config declares 16 kHz while the 44.1k model loads. The library resamples to its own 44.1 kHz internally, so the rate is not misread, but the checkpoint carries its message in the lowest 1024 STFT bins (0–11.025 kHz) and a 16 kHz working rate band-limits the signal near 7.6 kHz — roughly a third of the message band is unusable, and SilentCipher's output is lowpassed relative to its own input in a way no other 16 kHz model here is, so its quality metrics are not directly comparable with theirs. Frozen for v1.0.0: changing it moves published numbers. The library's `16k` checkpoint is **not** a drop-in alternative — its message geometry cannot satisfy the 40-bit payload. `numpy<2` per its requirements. |
+| `silent_cipher` | `SilentCipherEngine` | 2.0.0 | 44.1k checkpoint downloaded at startup | config declares 16 kHz while the 44.1k model loads. The library resamples to its own 44.1 kHz internally, so the rate is not misread, but the checkpoint carries its message in the lowest 1024 STFT bins (0–11.025 kHz) and a 16 kHz working rate band-limits the signal near 7.6 kHz — roughly a third of the message band is unusable, and SilentCipher's output is lowpassed relative to its own input in a way no other 16 kHz model here is, so its quality metrics are not directly comparable with theirs. Still frozen in v2.0.0: changing it moves published numbers. The library's `16k` checkpoint is **not** a drop-in alternative — its message geometry cannot satisfy the 40-bit payload. `numpy<2` per its requirements. |
 | `timbrewm` | `TimbreWMEngine` | 2.0.0 | checkpoints inside the upstream clone | clone `github.com/TimbreWatermarking/TimbreWatermarking` @ `c41e7d75637f162d462ef2159acc5149b6c8071a`; then apply the upstream adaptations exactly as in the shipped `Dockerfile` (normative): rename `watermarking_model/model` → `watermarking_model/wm_model`, then the five `sed` edits (relative-import fix in `mel_transform.py`, torchaudio-import removal and hifigan config/checkpoint path + CPU-map fixes in `conv2_mel_modules.py`). Serve from a working directory containing the `TimbreWatermarking/` clone. |
 | `wavmark` | `WavMarkEngine` | 2.7.1+cpu | downloaded from Hugging Face at startup | — |
 

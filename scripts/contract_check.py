@@ -44,6 +44,8 @@ from datetime import date
 from pathlib import Path
 
 import numpy as np
+
+from deepmarkpy.core.wire import decode_audio, encode_audio
 import requests
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -171,7 +173,7 @@ def response_stats(body: dict) -> dict:
     audio = body.get("audio") or body.get("watermarked_audio")
     if audio is None:
         return {"audio_len": None, "audio_rms": None}
-    arr = np.asarray(audio, dtype=np.float64)
+    arr = decode_audio(audio)
     return {"audio_len": int(arr.size),
             "audio_rms": float(np.sqrt(np.mean(arr ** 2))) if arr.size else 0.0}
 
@@ -219,12 +221,12 @@ def run_service(service: str, mode: str) -> bool:
             wm = canonical_watermark(cfg["watermark_size"])
             arrays["request_audio"] = audio
             arrays["request_watermark"] = wm
-            embed_payload = {"audio": audio.tolist(),
+            embed_payload = {"audio": encode_audio(audio),
                              "watermark_data": wm.tolist(),
                              "sampling_rate": sr}
             embed = record_endpoint(f"{base}/embed", embed_payload, timeout)
             wm_audio = embed["_body"]["watermarked_audio"]
-            arrays["embed_response_audio"] = np.asarray(wm_audio, dtype=np.float64)
+            arrays["embed_response_audio"] = decode_audio(wm_audio)
             detect_payload = {"audio": wm_audio, "sampling_rate": sr}
             detect = record_endpoint(f"{base}/detect", detect_payload, timeout)
             det_wm = detect["_body"].get("watermark")
@@ -235,11 +237,11 @@ def run_service(service: str, mode: str) -> bool:
         else:
             audio = canonical_audio(ATTACK_SR)
             arrays["request_audio"] = audio
-            payload = {"audio": audio.tolist(), "sampling_rate": ATTACK_SR,
+            payload = {"audio": encode_audio(audio), "sampling_rate": ATTACK_SR,
                        **build_attack_extra_fields(service, cfg)}
             attack = record_endpoint(f"{base}/attack", payload, timeout)
-            arrays["attack_response_audio"] = np.asarray(
-                attack["_body"]["audio"], dtype=np.float64)
+            arrays["attack_response_audio"] = decode_audio(
+                attack["_body"]["audio"])
             endpoints["/attack"] = attack
 
         deterministic = all(e["double_call_identical"]

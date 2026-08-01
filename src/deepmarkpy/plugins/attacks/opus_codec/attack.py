@@ -22,6 +22,7 @@ import librosa
 import numpy as np
 import requests
 
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.core.base_attack import BaseAttack
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ class OpusCodecAttack(BaseAttack):
             response = requests.post(
                 self.endpoint + "/attack",
                 json={
-                    "audio": audio.tolist(),
+                    "audio": encode_audio(audio),
                     "sampling_rate": sampling_rate,
                     "bitrate": bitrate,
                     "framesize": framesize,
@@ -96,7 +97,7 @@ class OpusCodecAttack(BaseAttack):
                 f"({response_data.get('error', 'no error reported')})"
             )
 
-        attacked = np.asarray(response_data["audio"], dtype=np.float32)
+        attacked = decode_audio(response_data["audio"]).astype(np.float32)
         decoded_sr = int(response_data.get("sampling_rate", sampling_rate))
 
         # opusdec emits audio at its native 48 kHz output. Resample back

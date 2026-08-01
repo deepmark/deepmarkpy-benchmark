@@ -1,8 +1,8 @@
 {
   "service": "diffusion",
   "kind": "attack",
-  "recorded": "2026-07-30",
-  "image_id": "98050e45d1a0f21c7d3564db9281bc1ab493ab3717bbd041ef5d20466cc36835",
+  "recorded": "2026-08-01",
+  "image_id": "1feb0b445c13e9de850171d9217ff4e207f96daa6280f1c3ec70ff7dea692576",
   "classification": "stochastic",
   "classification_note": null,
   "endpoints": {
@@ -15,16 +15,16 @@
       "response_keys": [
         "audio"
       ],
-      "response_sha256": "8583f1b53a061ed7fb3a46f0abc6367842653d1d73ca99475b7c3d20ee6b0e14",
+      "response_sha256": "5cf116cba2d2df451a2f3ddd3f4b22fd1902f78ecc76d0cba601bcbc9109826e",
       "double_call_identical": false,
       "double_call_stats": [
         {
           "audio_len": 94738,
-          "audio_rms": 0.22204729394262612
+          "audio_rms": 0.23775855946435026
         },
         {
           "audio_len": 94738,
-          "audio_rms": 0.24257171992784307
+          "audio_rms": 0.30225198134072384
         }
       ]
     }

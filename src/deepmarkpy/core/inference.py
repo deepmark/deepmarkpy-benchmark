@@ -34,6 +34,11 @@ import numpy as np
 # the corpora are seconds long -- while still bounding the cost of one request.
 MAX_AUDIO_SAMPLES = 48_000 * 600
 
+# The same ceiling expressed for the base64 wire form: 8 bytes per sample,
+# then 4 base64 characters per 3 bytes. Requests carry the encoded string, so
+# the cap has to be applied in the units the field actually holds.
+MAX_AUDIO_B64_CHARS = ((MAX_AUDIO_SAMPLES * 8 + 2) // 3) * 4
+
 # Watermark payloads are tens of bits; nothing legitimate approaches this.
 MAX_WATERMARK_BITS = 4096
 
