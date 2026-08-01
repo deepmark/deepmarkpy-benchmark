@@ -10,6 +10,16 @@ class ReplacementAttack(BaseAttack):
         """
         Perform a replacement attack on an audio signal.
 
+        Runtime depends on content, not only on length. The candidate search
+        is quadratic in the number of blocks, but the dominant cost is a
+        least-squares solve that runs only for blocks with a non-empty match
+        set within ``upper_bound`` -- so tonal or self-similar material is
+        markedly slower than broadband noise of the same duration. Narrowing
+        ``upper_bound_replacement`` shrinks the match sets.
+
+        Left as-is deliberately: restructuring the solve would reorder
+        floating point operations and move the recorded output.
+
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the replacement attack:

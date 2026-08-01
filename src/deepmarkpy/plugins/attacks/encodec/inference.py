@@ -71,6 +71,3 @@ class EncodecEngine(BaseAttackEngine):
 
         return result
 
-
-# Stable import alias.
-Engine = EncodecEngine

@@ -1,9 +1,10 @@
 {
   "service": "speech_enhancement1",
   "kind": "attack",
-  "recorded": "2026-07-30",
-  "image_id": "c02bc152e0249aff5e18a7155905e39c69de099b3852302968c3cf224447cebc",
+  "recorded": "2026-08-01",
+  "image_id": "ae85c11c9706cd77534fee6a26a1eccf2904918281ce7a593aaab7019254994c",
   "classification": "deterministic",
+  "classification_note": null,
   "endpoints": {
     "/attack": {
       "request_non_audio": {
@@ -14,7 +15,7 @@
       "response_keys": [
         "audio"
       ],
-      "response_sha256": "3e6a8112c8b85d39bce3e4956ced97d2ffe3630b205e3fc6f90fdc63e94df882",
+      "response_sha256": "a881296068c3165ca492f87485186f9e1b7bcce16429ab52e62231e626e36cd9",
       "double_call_identical": true,
       "double_call_stats": [
         {

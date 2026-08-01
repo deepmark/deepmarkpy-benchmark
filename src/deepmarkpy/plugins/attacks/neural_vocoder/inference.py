@@ -17,6 +17,9 @@ from deepmarkpy.core.inference import BaseAttackEngine
 
 logger = logging.getLogger(__name__)
 
+# Pinned so a rebuild cannot silently pick up a different upstream checkpoint.
+WEIGHTS_REVISION = "95a9d1dcb12906c03edd938d77b9333d6ded7dfb"
+
 
 class NeuralVocoderEngine(BaseAttackEngine):
     """BigVGAN mel-vocoder resynthesis through a 44.1 kHz round-trip.
@@ -31,7 +34,9 @@ class NeuralVocoderEngine(BaseAttackEngine):
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.info(f"Using device: {device}")
         self.device = device
-        self.model = bigvgan.BigVGAN.from_pretrained(config["model_name_neural_vocoder"])
+        self.model = bigvgan.BigVGAN.from_pretrained(
+            config["model_name_neural_vocoder"], revision=WEIGHTS_REVISION
+        )
         self.model.remove_weight_norm()
         self.model.eval().to(self.device)
 
@@ -50,6 +55,3 @@ class NeuralVocoderEngine(BaseAttackEngine):
 
         return resample_audio(output, input_sr=44100, target_sr=sampling_rate)
 
-
-# Stable import alias.
-Engine = NeuralVocoderEngine

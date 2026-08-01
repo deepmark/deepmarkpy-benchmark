@@ -1,8 +1,9 @@
 {
-  "recorded": "2026-07-30",
+  "recorded": "2026-07-31",
   "environment": "canonical: clean venv, pip install -r requirements.txt, CPython 3.11.5",
   "machine": "Darwin arm64",
   "ffmpeg": "ffmpeg version 8.0.1 Copyright (c) 2000-2025 the FFmpeg developers",
+  "rubberband": "4.0.0",
   "numeric_env": {
     "numpy": "2.2.6",
     "scipy": "1.16.0",
@@ -36,12 +37,6 @@
     "corpus-dependent (need AIR_wav_files/ and music/ at CWD)": [
       "ReplayAttack",
       "MixingAttack"
-    ],
-    "absent from the canonical environment (deps outside requirements.txt)": [
-      "WaveletAttack",
-      "TimeStretchAttack",
-      "PitchShiftAttack",
-      "InvertedTimeStretchAttack"
     ],
     "not goldenable: pycodec2 carries C encoder state across in-process instantiations, so output is invocation-history-dependent": [
       "Codec2VocoderAttack"
@@ -132,6 +127,13 @@
         16000
       ]
     },
+    "InvertedTimeStretchAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
     "LPCAttack": {
       "params": {},
       "output_dtype": "float64",
@@ -161,6 +163,13 @@
       ]
     },
     "PinkNoiseAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "PitchShiftAttack": {
       "params": {},
       "output_dtype": "float64",
       "output_shape": [
@@ -214,6 +223,20 @@
       "output_dtype": "float64",
       "output_shape": [
         16384
+      ]
+    },
+    "TimeStretchAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        11429
+      ]
+    },
+    "WaveletAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
       ]
     },
     "ZeroCrossInsertsAttack": {

@@ -5,9 +5,12 @@ from typing import List, Optional
 
 import uvicorn
 from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
-from inference import Engine
+from inference import AwareEngine
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS, MAX_WATERMARK_BITS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.utils.utils import load_config
 
 
@@ -24,7 +27,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
 
 try:
     logger.info("Loading AWARE models...")
-    engine = Engine(config)
+    engine = AwareEngine(config)
     logger.info("AWARE models loaded successfully")
 except Exception as e:
     logger.critical(f"Failed to load AWARE models: {e}. Application cannot start.")
@@ -34,13 +37,13 @@ except Exception as e:
 
 
 class EmbedRequest(BaseModel):
-    audio: List[float]
-    watermark_data: List[int]
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
+    watermark_data: List[int] = Field(..., max_length=MAX_WATERMARK_BITS)
     sampling_rate: int
 
 
 class DetectRequest(BaseModel):
-    audio: List[float]
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
 
 
@@ -49,17 +52,17 @@ async def embed(request: EmbedRequest):
     """Embed a watermark in an audio file using AWARE."""
     try:
         watermarked_audio = engine.embed(
-            request.audio, request.watermark_data, request.sampling_rate
+            decode_audio(request.audio), request.watermark_data, request.sampling_rate
         )
     except Exception as e:
         logger.error(f"Error embedding watermark: {e}")
         import traceback
         traceback.print_exc()
-        return {"error": str(e)}
+        return JSONResponse({"error": str(e)})
 
-    return {
-        "watermarked_audio": watermarked_audio.tolist(),
-    }
+    return JSONResponse({
+        "watermarked_audio": encode_audio(watermarked_audio),
+    })
 
 
 @app.post("/detect")
@@ -67,18 +70,18 @@ async def detect(request: DetectRequest):
     """Detect a watermark from an audio file using AWARE."""
     try:
         detected_watermark, confidence = engine.detect(
-            request.audio, request.sampling_rate
+            decode_audio(request.audio), request.sampling_rate
         )
     except Exception as e:
         logger.error(f"Error detecting watermark: {e}")
         import traceback
         traceback.print_exc()
-        return {"error": str(e)}
+        return JSONResponse({"error": str(e)})
 
-    return {
+    return JSONResponse({
         "watermark": detected_watermark.tolist() if detected_watermark is not None else None,
         "confidence": float(confidence)
-    }
+    })
 
 
 if __name__ == "__main__":

@@ -4,7 +4,9 @@
 
 Open-source benchmarking framework for evaluating audio watermarking robustness. Evaluates watermarking models against 40+ attacks (signal processing, AI-based, transmission). Published in IEEE Access, vol. 14, 2026, pp. 62031-62044 (DOI 10.1109/ACCESS.2026.3685903).
 
-**Behavior freeze:** the v1.0.0 release line preserves benchmark behavior bit-for-bit. Known behavior quirks are catalogued internally and frozen until a dedicated deferred-fix release — do not fix surprising-but-working behavior in passing. Discovery sets are locked by `tests/test_discovery_lock.py`; native-attack goldens and HTTP-contract fixtures (`tests/fixtures/`) gate any change to plugin behavior.
+**Behavior:** v1.x preserved pre-package behavior bit-for-bit. **v2.0.0 is the deferred-fix release** and deliberately changes attack outputs — four attacks were corrected (equalizer, bandstop, PCM/MP3 rounding) and four more became available once `pywt`/`pyrubberband` were declared. Results are not comparable across the v1/v2 boundary.
+
+Within v2.x the same discipline applies: discovery sets are locked by `tests/test_discovery_lock.py`, and native-attack goldens plus HTTP-contract fixtures (`tests/fixtures/`) gate any change to plugin behavior. Do not change a golden without deciding to. A handful of quirks remain deliberately frozen — SilentCipher's sampling-rate and eval-mode issues both move published numbers and are catalogued internally for a later release.
 
 ## Architecture
 
@@ -31,7 +33,7 @@ python -m pytest tests/ -v
 
 Tests are in `tests/` and use `conftest.py` for shared fixtures (sample audio, watermarks, result dicts). Tests import the installed `deepmarkpy` package (`pip install -e .`).
 
-Current: 210 tests, ~5s runtime. No Docker required for tests. Note: `test_attack_groups.py::TestGroupedAttacksMatchPlugins` fails in environments missing `pywt`/`pyrubberband` (a frozen, intentional dependency gap — this includes the canonical clean-install environment) — pre-existing, not a regression. Golden replay tests (`test_native_goldens.py`) enforce only where the numeric environment matches their manifest and skip elsewhere.
+Current: 438 tests as of `bb8b6c7`, ~5s runtime (the count moves whenever tests are added — `pytest tests/ --collect-only -q | tail -1` is authoritative). No Docker required for tests. `pywt` and `pyrubberband` are declared dependencies, so the full attack set loads and `test_attack_groups.py` is expected to pass. Golden replay tests (`test_native_goldens.py`) enforce only where the numeric environment matches their manifest and skip elsewhere, so around 29 of them skip outside the recording environment (numpy 2.2.6 / scipy 1.16.0 / librosa 0.11.0).
 
 ## Running the Benchmark
 
@@ -44,6 +46,12 @@ deepmark-benchmark --wav_files_dir /path/to/wavs --wm_model AudioSealModel --att
 
 ## Development Conventions
 
+- **CPU only** — no service requests a GPU and none is expected to. Install
+  `+cpu` torch wheels; never pin `nvidia-*`, `triton`, or a `+cuXXX` build.
+  The default wheel now bundles CUDA on arm64 too, so an unconstrained
+  `pip install torch` silently adds gigabytes that cannot execute.
+  `tests/test_cpu_only_builds.py` enforces this across every pin file
+
 - **Attack parameter names must be unique across all attacks** — they share a flat CLI namespace. Suffix with attack name (e.g., `snr_db_replay`, `order_bandstop`). The system warns on collisions but doesn't prevent them
 - **Model capabilities declared in config.json** — use `returns_confidence: true/false` and `is_zero_bit: true/false` for general dispatch. For detection reliability, models must implement `is_watermarked(detect_output) -> bool` in `model.py`
 - **Native attacks** need only `attack.py` + `config.json` in their directory
@@ -53,8 +61,8 @@ deepmark-benchmark --wav_files_dir /path/to/wavs --wm_model AudioSealModel --att
 
 ## Common Gotchas
 
-- Plugin loading imports ALL plugins at startup. If a dependency is missing (e.g., `pywt`, `audiocomplib`), that plugin silently fails to load
-- `.env` is tracked in git even though `.gitignore` lists it (the entry never untracked it) — local port edits show up as modifications; `.env.example` mirrors it
+- Plugin loading imports ALL plugins at startup. If a dependency is missing (e.g., `pycodec2`, `audiocomplib`), that plugin does not load; the failure is recorded in `PluginManager.failed`, and asking for that attack by name or via `--attack_groups` raises rather than measuring a smaller set. `run_metadata.json` carries the same list, but only `run_single_model` writes it — `--no_attacks` and `--detection_reliability` produce no metadata file
+- `.env` is tracked in git even though `.gitignore` lists it (the entry never untracked it) — local port edits show up as modifications; `.env.example` mirrors it. `run.py` loads it into the environment before plugins are constructed, so a port set there reaches the host clients as well as Compose; real environment variables still win
 - Accuracy values are percentages (0-100), NOT decimals (0-1). All thresholds and comparisons must use percentage scale
 - `CrossModelAttack.apply()` returns a tuple `(audio, watermark)`, not just audio — handled specially in benchmark.py
 - Perth is a zero-bit model (detect returns a scalar, not a bit array)

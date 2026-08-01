@@ -63,6 +63,7 @@ ATTACK_GROUPS = {
             "PinkNoiseAttack",
             "SignInversionAttack",
             "LPCAttack",
+            "AdditiveNoiseAttack",
         ],
         "quality_metrics": ["pesq", "psnr", "si_sdr", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],
@@ -77,6 +78,7 @@ ATTACK_GROUPS = {
             "ZeroCrossInsertsAttack",
             "FlipSamplesAttack",
             "ReplacementAttack",
+            "Replacement2Attack",
         ],
         "quality_metrics": ["mcd", "visqol"],
         "intelligibility_metrics": [],
@@ -90,6 +92,7 @@ ATTACK_GROUPS = {
             "SpeechTokenizationAttack",
             "NeuralVocoderAttack",
             "DiffusionAttack",
+            "VAEAttack",
         ],
         "quality_metrics": ["pesq", "mcd", "visqol"],
         "intelligibility_metrics": ["stoi", "sii", "ncm"],
@@ -106,6 +109,49 @@ ATTACK_GROUPS = {
         "nisqa_metrics": _NISQA_METRICS,
     },
 }
+
+
+# Metrics that compare the reference and degraded signals sample-by-sample.
+# They report timing offset as if it were quality loss: on a speech-like
+# signal a 20-sample (1.25 ms) shift already moves STOI from ~1.0 to 0.66 and
+# a 1600-sample shift takes NCM from 0.999 to 0.188, while MCD grows without
+# bound. PESQ, ViSQOL and SII align internally and are not listed. NISQA is
+# reference-free and therefore immune.
+_ALIGNMENT_SENSITIVE_METRICS = ("psnr", "si_sdr", "stoi", "mcd", "ncm")
+
+# Each caveat completes the sentence "This metric ..." in a report footnote.
+_DESYNC_CAVEAT = (
+    "compares samples by index, so it reports the attack's timing shift "
+    "rather than a quality change"
+)
+
+# Per-attack overrides for metrics that are uninformative for a specific
+# attack rather than for a whole family.
+_ATTACK_METRIC_CAVEATS = {
+    # SI-SDR is scale-invariant and a sign flip is a scale of -1, so the
+    # residual collapses and the score is pinned at the epsilon ceiling.
+    "SignInversionAttack": {
+        "si_sdr": "is scale-invariant, so it cannot see polarity inversion",
+    },
+}
+
+
+def get_metric_caveat(attack_name, metric):
+    """Return why ``metric`` is unreliable for ``attack_name``, or None.
+
+    The value is reported as usual; this states what a reader should not
+    conclude from it. Desynchronization attacks move the time axis, which
+    the sample-aligned metrics register as damage.
+    """
+    attack_caveats = _ATTACK_METRIC_CAVEATS.get(attack_name, {})
+    if metric in attack_caveats:
+        return attack_caveats[metric]
+    if (
+        get_group_for_attack(attack_name) == "desynchronization"
+        and metric in _ALIGNMENT_SENSITIVE_METRICS
+    ):
+        return _DESYNC_CAVEAT
+    return None
 
 
 def get_metrics_for_attack(attack_name):

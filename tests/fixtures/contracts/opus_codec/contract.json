@@ -1,9 +1,10 @@
 {
   "service": "opus_codec",
   "kind": "attack",
-  "recorded": "2026-07-30",
-  "image_id": "8af62a06dceb2ee04ce87addcf584970ec66dd431ae99069ad77445ac4a33651",
+  "recorded": "2026-08-01",
+  "image_id": "8d5595c051d46bdde10dcb0e08d3cc6c23721f0ffcec92c8587e776e4e137e39",
   "classification": "deterministic",
+  "classification_note": null,
   "endpoints": {
     "/attack": {
       "request_non_audio": {
@@ -16,7 +17,7 @@
         "audio",
         "sampling_rate"
       ],
-      "response_sha256": "5e417e0cf33c682ef1cb10a88ccab910e1cf2c18795800425a7552145f81376e",
+      "response_sha256": "a24b6c0653d323d5272e0eb2ad2b8fd0f5fc96a022462938ddf8b1546e78e1ae",
       "double_call_identical": true,
       "double_call_stats": [
         {

@@ -40,21 +40,21 @@ narwhals==2.24.0
 networkx==3.6.1
 numba==0.66.0
 numpy==1.26.4
-nvidia-cublas==13.1.1.3
-nvidia-cuda-cupti==13.0.85
-nvidia-cuda-nvrtc==13.0.88
-nvidia-cuda-runtime==13.0.96
-nvidia-cudnn-cu13==9.20.0.48
-nvidia-cufft==12.0.0.61
-nvidia-cufile==1.15.1.6
-nvidia-curand==10.4.0.35
-nvidia-cusolver==12.0.4.66
-nvidia-cusparse==12.6.3.3
-nvidia-cusparselt-cu13==0.8.1
-nvidia-nccl-cu13==2.29.7
-nvidia-nvjitlink==13.3.33
-nvidia-nvshmem-cu13==3.4.5
-nvidia-nvtx==13.0.85
+# nvidia-cublas==13.1.1.3  (CUDA build not installed; see Dockerfile)
+# nvidia-cuda-cupti==13.0.85  (CUDA build not installed; see Dockerfile)
+# nvidia-cuda-nvrtc==13.0.88  (CUDA build not installed; see Dockerfile)
+# nvidia-cuda-runtime==13.0.96  (CUDA build not installed; see Dockerfile)
+# nvidia-cudnn-cu13==9.20.0.48  (CUDA build not installed; see Dockerfile)
+# nvidia-cufft==12.0.0.61  (CUDA build not installed; see Dockerfile)
+# nvidia-cufile==1.15.1.6  (CUDA build not installed; see Dockerfile)
+# nvidia-curand==10.4.0.35  (CUDA build not installed; see Dockerfile)
+# nvidia-cusolver==12.0.4.66  (CUDA build not installed; see Dockerfile)
+# nvidia-cusparse==12.6.3.3  (CUDA build not installed; see Dockerfile)
+# nvidia-cusparselt-cu13==0.8.1  (CUDA build not installed; see Dockerfile)
+# nvidia-nccl-cu13==2.29.7  (CUDA build not installed; see Dockerfile)
+# nvidia-nvjitlink==13.3.33  (CUDA build not installed; see Dockerfile)
+# nvidia-nvshmem-cu13==3.4.5  (CUDA build not installed; see Dockerfile)
+# nvidia-nvtx==13.0.85  (CUDA build not installed; see Dockerfile)
 opencv-python==4.10.0.84
 packaging==26.2
 pillow==12.3.0
@@ -84,13 +84,13 @@ starlette==1.3.1
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.22.2
-torch==2.13.0
+torch==2.13.0+cpu
 torchaudio==2.11.0
 torchinfo==1.8.0
 torchvision==0.28.0
 tqdm==4.70.0
 transformers==5.14.1
-triton==3.7.1
+# triton==3.7.1  (CUDA build not installed; see Dockerfile)
 typer==0.27.0
 typing-inspection==0.4.2
 typing_extensions==4.16.0

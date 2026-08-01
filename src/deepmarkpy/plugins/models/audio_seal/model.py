@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.core.base_model import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ class AudioSealModel(BaseModel):
         # Sanitize audio: replace NaN with 0 and clip Inf to valid float range
         audio = np.nan_to_num(audio, nan=0.0, posinf=1.0, neginf=-1.0)
         payload = {
-            "audio": audio.tolist(),
+            "audio": encode_audio(audio),
             "watermark_data": watermark_data.tolist(),
             "sampling_rate": sampling_rate,
         }
@@ -39,7 +40,7 @@ class AudioSealModel(BaseModel):
             logger.error("'/embed' response did not contain 'watermarked_audio' key.")
             raise KeyError("Missing 'watermarked_audio' in response from /embed")
         
-        return np.array(response_data["watermarked_audio"])
+        return decode_audio(response_data["watermarked_audio"])
 
     def is_watermarked(self, detect_output) -> bool:
         """AudioSeal returns (watermark, confidence). Compare confidence to threshold."""
@@ -47,11 +48,15 @@ class AudioSealModel(BaseModel):
         threshold = self._config.get("detection_threshold", 0.5)
         return float(confidence) >= threshold
 
-    def detect(self, audio: np.ndarray, sampling_rate: int) -> np.ndarray:
-        """Detects a watermark in the audio using the AudioSeal service."""
+    def detect(self, audio: np.ndarray, sampling_rate: int) -> "tuple[np.ndarray, float]":
+        """Detects a watermark in the audio using the AudioSeal service.
+
+        Returns the watermark bits and the model's confidence. Callers dispatch
+        on the ``returns_confidence`` config flag rather than on this type.
+        """
         # Sanitize audio: replace NaN with 0 and clip Inf to valid float range
         audio = np.nan_to_num(audio, nan=0.0, posinf=1.0, neginf=-1.0)
-        payload = {"audio": audio.tolist(), "sampling_rate": sampling_rate}
+        payload = {"audio": encode_audio(audio), "sampling_rate": sampling_rate}
         
         response_data = self._make_request(endpoint="/detect", json_data=payload, method="POST")
 

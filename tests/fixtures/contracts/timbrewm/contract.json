@@ -1,9 +1,10 @@
 {
   "service": "timbrewm",
   "kind": "model",
-  "recorded": "2026-07-30",
-  "image_id": "6dc11d87fe5c1fd041291ab11922c8d35edc4f547c52d55b7a957a024d311cbc",
+  "recorded": "2026-08-01",
+  "image_id": "aeecd0163dcd84b0c8fc77171cf12751e620307881e6e69c79660b15ecc2e555",
   "classification": "deterministic",
+  "classification_note": null,
   "endpoints": {
     "/embed": {
       "request_non_audio": {
@@ -13,7 +14,7 @@
       "response_keys": [
         "watermarked_audio"
       ],
-      "response_sha256": "8aa093b4347aaf886b930bab26fef6b34510691cb2a03bc100b20230776251f2",
+      "response_sha256": "c59cd6893e54db71c5e19fe3f08823f879e2bb75185c63785d7b262e06752c51",
       "double_call_identical": true,
       "double_call_stats": [
         {

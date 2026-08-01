@@ -1,7 +1,7 @@
 # pip constraints captured from compose service 'aware' image
 # by scripts/capture_image_constraints.py. Pins the image to its
 # resolved dependency set.
-# Excluded non-constraint entries (pinned elsewhere): -e git+https://github.com/deepmarkpy/aware.git@fea9c49e3dfc57a421705ae411adedd80bcc6d09#egg=aware
+# Excluded non-constraint entries (pinned elsewhere): -e git+https://github.com/deepmarkpy/aware.git@9f0fe884a4f5b9bbb13d881c77bbbc9e121110c3#egg=aware
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.14.2
@@ -67,8 +67,8 @@ starlette==1.3.1
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.22.2
-torch==2.7.0
-torchaudio==2.7.0
+torch==2.7.1
+torchaudio==2.7.1
 tqdm==4.66.1
 transformers==5.14.1
 typer==0.27.0

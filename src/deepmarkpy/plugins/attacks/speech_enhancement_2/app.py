@@ -3,8 +3,11 @@ import sys
 from typing import List
 import uvicorn
 from fastapi import FastAPI
-from pydantic import BaseModel
-from inference import Engine
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from inference import SpeechEnhancement2Engine
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -16,11 +19,11 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-engine = Engine(config)
+engine = SpeechEnhancement2Engine(config)
 
 
 class AttackRequest(BaseModel):
-    audio: List[float]
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
     model_name: str
 
@@ -29,10 +32,10 @@ class AttackRequest(BaseModel):
 async def attack(request: AttackRequest):
     try:
         audio_cv = engine.apply(
-            request.audio, request.sampling_rate, model_name=request.model_name
+            decode_audio(request.audio), request.sampling_rate, model_name=request.model_name
         )
-        return {"audio": audio_cv.tolist()}
+        return JSONResponse({"audio": encode_audio(audio_cv)})
 
     except Exception as e:
         logger.error(f"Error processing audio: {str(e)}", exc_info=True)
-        return {"error": str(e), "audio": None}
+        return JSONResponse({"error": str(e), "audio": None})

@@ -5,7 +5,7 @@ plugin's engine class in its own serving layer and images. It never imports this
 repo's `app.py` and never depends on the HTTP layer.
 
 ```bash
-pip install "deepmarkpy @ git+https://github.com/deepmark/deepmarkpy-benchmark@v1.0.0"
+pip install "deepmarkpy @ git+https://github.com/deepmark/deepmarkpy-benchmark@v2.0.0"
 ```
 
 ```python
@@ -25,12 +25,11 @@ from deepmarkpy.core.inference import BaseAttackEngine
 def serve(engine: BaseAttackEngine): ...
 ```
 
-## Stable API (from v1.0.0)
+## Stable API (since v1.0.0)
 
 - Module paths `deepmarkpy.plugins.{attacks,models}.<name>.inference`, the
   per-plugin engine class names (`VAEEngine`, `AudioSealEngine`, ... —
-  mirroring the client class names), the `Engine` alias each module keeps
-  for the v1.0.0 import path, the base classes
+  mirroring the client class names), the base classes
   `deepmarkpy.core.inference.{BaseAttackEngine,BaseModelEngine}`, and the
   signatures (`__init__(config, device=None)`; attacks `apply`, models
   `embed`/`detect`) are semver-stable. Anything else in plugin directories
@@ -57,26 +56,31 @@ each image resolved is authoritative in its constraints file.
 
 | Plugin | Engine class | torch | Weights | Notes |
 |---|---|---|---|---|
-| `audio_seal` | `AudioSealEngine` | 2.7.1 | downloaded at startup (`audioseal_wm_16bits`, `audioseal_detector_16bits`) | — |
-| `aware` | `AwareEngine` | 2.7.0 | loaded by the `aware` package | clone `github.com/deepmarkpy/aware` @ `fea9c49e3dfc57a421705ae411adedd80bcc6d09`, `pip install -e .` **constrained by `constraints.stage1.txt`**, then `requirements.txt` with `constraints.txt` — the two-step order matters (the editable install resolves aware's own exact pins, e.g. `pydantic==2.5.0`, which the second step upgrades). Needs `git` at build. |
-| `perth` | `PerthEngine` | 2.7.1 | bundled in the `resemble-perth` wheel | fully pinned `requirements.txt` |
-| `silent_cipher` | `SilentCipherEngine` | 2.0.0 | 44.1k checkpoint downloaded at startup | config declares 16 kHz while the 44.1k model loads (intentional, preserved behavior). `numpy<2` per its requirements. |
+| `audio_seal` | `AudioSealEngine` | 2.7.1+cpu | downloaded at startup (`audioseal_wm_16bits`, `audioseal_detector_16bits`) | — |
+| `aware` | `AwareEngine` | 2.7.1+cpu | loaded by the `aware` package | clone `github.com/deepmarkpy/aware` @ `9f0fe884a4f5b9bbb13d881c77bbbc9e121110c3`, `pip install -e .` **constrained by `constraints.stage1.txt`**, then `requirements.txt` with `constraints.txt` — the two-step order matters (the editable install resolves aware's own exact pins, e.g. `pydantic==2.5.0`, which the second step upgrades). Needs `git` at build. |
+| `perth` | `PerthEngine` | 2.7.1+cpu | bundled in the `resemble-perth` wheel | fully pinned `requirements.txt` |
+| `silent_cipher` | `SilentCipherEngine` | 2.0.0 | 44.1k checkpoint downloaded at startup | config declares 16 kHz while the 44.1k model loads. The library resamples to its own 44.1 kHz internally, so the rate is not misread, but the checkpoint carries its message in the lowest 1024 STFT bins (0–11.025 kHz) and a 16 kHz working rate band-limits the signal near 7.6 kHz — roughly a third of the message band is unusable, and SilentCipher's output is lowpassed relative to its own input in a way no other 16 kHz model here is, so its quality metrics are not directly comparable with theirs. Still frozen in v2.0.0: changing it moves published numbers. The library's `16k` checkpoint is **not** a drop-in alternative — its message geometry cannot satisfy the 40-bit payload. `numpy<2` per its requirements. |
 | `timbrewm` | `TimbreWMEngine` | 2.0.0 | checkpoints inside the upstream clone | clone `github.com/TimbreWatermarking/TimbreWatermarking` @ `c41e7d75637f162d462ef2159acc5149b6c8071a`; then apply the upstream adaptations exactly as in the shipped `Dockerfile` (normative): rename `watermarking_model/model` → `watermarking_model/wm_model`, then the five `sed` edits (relative-import fix in `mel_transform.py`, torchaudio-import removal and hifigan config/checkpoint path + CPU-map fixes in `conv2_mel_modules.py`). Serve from a working directory containing the `TimbreWatermarking/` clone. |
-| `wavmark` | `WavMarkEngine` | 2.7.1 | downloaded from Hugging Face at startup | — |
+| `wavmark` | `WavMarkEngine` | 2.7.1+cpu | downloaded from Hugging Face at startup | — |
 
 ### Attacks
 
 | Plugin | Engine class | torch | Weights | Notes |
 |---|---|---|---|---|
-| `vae` | `VAEEngine` | 2.7.1 | `Intelligent-Instruments-Lab/rave-models` from HF at startup (model per `model_name_vae`) | stochastic (RAVE samples latents) |
-| `diffusion` | `DiffusionEngine` | 2.7.1 | `teticio/audio-diffusion-256` from HF at startup | stochastic (fresh OS-entropy seed per call); keep torchaudio matched to torch (an unmatched torchaudio wheel can dlopen CUDA on CPU-only hosts) |
-| `neural_vocoder` | `NeuralVocoderEngine` | 2.7.1 | BigVGAN checkpoint from HF at startup (per `model_name_neural_vocoder`) | clone `github.com/NVIDIA/BigVGAN` @ `7d2b454564a6c7d014227f635b7423881f14bdac`; install `big_vgan_requirements.txt` (shipped) constrained by `constraints.builder.txt`; run with the clone directory as the working directory (`bigvgan`/`meldataset` import from cwd) |
-| `speech_enhancement_1` | `SpeechEnhancement1Engine` | 2.7.1 | SpeechBrain models downloaded at startup (`mtl-mimic-voicebank` or `metricgan-plus-voicebank` per `type_se1`) | CPU wheels via the extra index URL in its `requirements.txt` |
-| `speech_enhancement_2` | `SpeechEnhancement2Engine` | 2.13.0 | ClearVoice weights downloaded on first request | ClearVoice is constructed **per request** (frozen behavior); its env resolved torch 2.13.0 — do not force-match the 2.7.1 baseline |
-| `speech_tokenization` | `SpeechTokenizationEngine` | 2.4.1 | `HKUST-Audio/xcodec2` — bake at build (as the shipped Dockerfile does) or accept a slow first start | install order matters: `requirements.txt` (with constraints), then `xcodec2==0.1.3 --no-deps`, then `xcodec_requirements.txt` (with constraints) |
+| `vae` | `VAEEngine` | 2.7.1+cpu | `Intelligent-Instruments-Lab/rave-models` @ `c25a03d6` from HF at startup (model per `model_name_vae`) | stochastic (RAVE samples latents) |
+| `diffusion` | `DiffusionEngine` | 2.7.1+cpu | `teticio/audio-diffusion-256` @ `a098cdac` from HF at startup | stochastic (fresh OS-entropy seed per call); keep torchaudio matched to torch (an unmatched torchaudio wheel can dlopen CUDA on CPU-only hosts) |
+| `neural_vocoder` | `NeuralVocoderEngine` | 2.7.1+cpu | BigVGAN checkpoint @ `95a9d1dc` from HF at startup (per `model_name_neural_vocoder`) | clone `github.com/NVIDIA/BigVGAN` @ `7d2b454564a6c7d014227f635b7423881f14bdac`; install `big_vgan_requirements.txt` (shipped) constrained by `constraints.builder.txt`; run with the clone directory as the working directory (`bigvgan`/`meldataset` import from cwd) |
+| `speech_enhancement_1` | `SpeechEnhancement1Engine` | 2.7.1+cpu | SpeechBrain models at startup: `mtl-mimic-voicebank` @ `51429337` or `metricgan-plus-voicebank` @ `a196ce26` per `type_se1` | CPU wheels via the extra index URL in its `requirements.txt` |
+| `speech_enhancement_2` | `SpeechEnhancement2Engine` | 2.13.0+cpu | ClearVoice weights downloaded on first request | ClearVoice is constructed **per request** (frozen behavior); it asks only for `torch>=2.0.1`, and its env resolved 2.13.0 — do not force-match the 2.7.1 baseline. Install the **`+cpu`** wheel explicitly from `download.pytorch.org/whl/cpu` before ClearVoice: the default wheel bundles the CUDA runtime (~3.5 GB) even on arm64, and nothing here can use it |
+| `speech_tokenization` | `SpeechTokenizationEngine` | 2.4.1 | `HKUST-Audio/xcodec2` @ `e412427e` — bake at build (as the shipped Dockerfile does) or accept a slow first start | install order matters: `requirements.txt` (with constraints), then `xcodec2==0.1.3 --no-deps`, then `xcodec_requirements.txt` (with constraints) |
 | `opus_codec` | `OpusCodecEngine` | none | none | apt: `opus-tools`, `libopus0`, `libsndfile1`; pure subprocess round-trip, works on `python:3.10-slim` |
-| `encodec` | `EncodecEngine` | 2.7.1 | `encodec_24khz` downloaded at startup | `encodec==0.1.1` |
-| `descript_audio_codec` | `DescriptAudioCodecEngine` | 2.7.1 | DAC `44khz` model downloaded at startup | `descript-audio-codec==1.0.0`; pulls `matplotlib` and friends transitively |
+| `encodec` | `EncodecEngine` | 2.7.1+cpu | `encodec_24khz` downloaded at startup | `encodec==0.1.1` |
+| `descript_audio_codec` | `DescriptAudioCodecEngine` | 2.7.1+cpu | DAC `44khz` model downloaded at startup | `descript-audio-codec==1.0.0`; pulls `matplotlib` and friends transitively |
+
+All weight downloads are pinned to a specific upstream revision (recorded
+2026-07-31), so a rebuild cannot silently pick up a different checkpoint.
+The `network_transmission` image builds its Python binding from
+`deepmark/python-webrtc-audio-processing`, also commit-pinned.
 
 Licensing: each upstream model/repo carries its own license (Meta AudioSeal,
 NVIDIA BigVGAN, TimbreWatermarking, Resemble Perth, SpeechBrain, ClearVoice,

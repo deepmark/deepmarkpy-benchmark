@@ -81,6 +81,3 @@ class AwareEngine(BaseModelEngine):
 
         return detected_watermark, confidence
 
-
-# Stable import alias.
-Engine = AwareEngine

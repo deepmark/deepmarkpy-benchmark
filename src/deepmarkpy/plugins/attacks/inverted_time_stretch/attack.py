@@ -40,15 +40,17 @@ class InvertedTimeStretchAttack(BaseAttack):
         try:
             logger.debug(f"Applying first time stretch with rate {stretch_rate}")
             stretched_audio = self.time_stretch.apply(
-                audio, sampling_rate=sampling_rate, stretch_rate=stretch_rate
+                audio, sampling_rate=sampling_rate, stretch_rate_time_stretch=stretch_rate
             )
             
             logger.debug(f"Applying second time stretch with inverted rate {1/stretch_rate}")
             return self.time_stretch.apply(
-                stretched_audio, sampling_rate=sampling_rate, stretch_rate=1 / stretch_rate
+                stretched_audio, sampling_rate=sampling_rate,
+                stretch_rate_time_stretch=1 / stretch_rate
             )
         except Exception as e:
+            # Returning the input unchanged would be scored as a successful
+            # attack, reporting whatever the detector scores on unattacked
+            # audio -- its ceiling, and typically the best number in the table.
             logger.error(f"Error in inverted time stretch: {str(e)}")
-            # If an error occurs, return the original audio as a fallback
-            logger.warning("Returning original audio due to error in inverted time stretch")
-            return audio
+            raise

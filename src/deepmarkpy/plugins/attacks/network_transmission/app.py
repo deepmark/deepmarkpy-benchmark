@@ -28,7 +28,11 @@ import numpy as np
 import soundfile as sf
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from webrtc_audio_processing import AudioProcessingModule as AP
 
 logging.basicConfig(level=logging.INFO)
@@ -91,7 +95,7 @@ def _webrtc_apm_process(
     # APM works on int16 PCM. Clip first so out-of-range samples don't
     # wrap on cast.
     apm_audio = np.clip(audio, -1.0, 1.0)
-    audio_int16 = (apm_audio * 32767).astype(np.int16)
+    audio_int16 = np.round(apm_audio * 32767).astype(np.int16)
 
     frame_size = fs // 100  # 10ms => 160 samples at 16 kHz
     processed_frames = []
@@ -295,7 +299,7 @@ def _opus_encode_frames(
             encoder.encoder_state, _ctl.set_packet_loss_perc, int(expected_loss)
         )
 
-    audio_int16 = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+    audio_int16 = np.round(np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
     frames = []
     for i in range(0, len(audio_int16) - frame_size + 1, frame_size):
         frame_data = audio_int16[i:i + frame_size].tobytes()
@@ -410,7 +414,8 @@ def voip_pipeline(
     total_frames = len(opus_frames)
     if total_frames == 0:
         logger.warning("No frames encoded -- audio too short")
-        return np.zeros(original_len, dtype=np.float32)
+        # Returns before netem is ever set up, so nothing was impaired.
+        return np.zeros(original_len, dtype=np.float32), False
 
     # --- Build RTP packets ---
     ssrc = random.randint(1, 0xFFFFFFFF)
@@ -431,7 +436,13 @@ def voip_pipeline(
     receiver_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     received_packets = []
     try:
-        network.setup(delay_ms, jitter_ms, packet_loss, duplication, reorder, corruption)
+        # Whether the kernel impairment actually engaged. tc needs NET_ADMIN
+        # and a netem-capable kernel; without both the RTP round-trip still
+        # runs and returns audio that was never impaired, which the benchmark
+        # would otherwise score as a successful attack.
+        netem_active = network.setup(
+            delay_ms, jitter_ms, packet_loss, duplication, reorder, corruption
+        )
 
         receiver_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         receiver_sock.bind(("127.0.0.1", port))
@@ -490,7 +501,7 @@ def voip_pipeline(
     elif len(decoded) < original_len:
         decoded = np.pad(decoded, (0, original_len - len(decoded)))
 
-    return decoded.astype(np.float32)
+    return decoded.astype(np.float32), netem_active
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +509,7 @@ def voip_pipeline(
 # ---------------------------------------------------------------------------
 
 class AttackRequest(BaseModel):
-    audio: List[float]
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
     bitrate_bps_netem: int = 24000
     frame_duration_ms_netem: int = 20
@@ -520,8 +531,8 @@ class AttackRequest(BaseModel):
 @app.post("/attack")
 async def attack(request: AttackRequest):
     try:
-        audio = np.array(request.audio, dtype=np.float32)
-        result = voip_pipeline(
+        audio = decode_audio(request.audio).astype(np.float32)
+        result, netem_active = voip_pipeline(
             audio=audio,
             fs=request.sampling_rate,
             bitrate_bps=request.bitrate_bps_netem,
@@ -540,7 +551,13 @@ async def attack(request: AttackRequest):
             agc_target_lufs=request.agc_target_lufs_netem,
             playout_delay_ms=request.playout_delay_ms_netem,
         )
-        return {"audio": result.tolist()}
+        if not netem_active:
+            logger.warning(
+                "netem did not engage; the audio made the codec and "
+                "jitter-buffer round trip but carries no kernel-level "
+                "delay, loss or reordering"
+            )
+        return JSONResponse({"audio": encode_audio(result), "netem_active": netem_active})
     except Exception as e:
         logger.error(f"Attack failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -548,7 +565,7 @@ async def attack(request: AttackRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "network_transmission"}
+    return JSONResponse({"status": "healthy", "service": "network_transmission"})
 
 
 if __name__ == "__main__":

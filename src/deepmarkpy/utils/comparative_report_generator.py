@@ -34,6 +34,9 @@ class ComparativeReportGenerator:
 
     def __init__(self, report_dir="report/comparison"):
         self.report_dir = report_dir
+        # {model: {is_zero_bit, watermark_size, sampling_rate, n_files}};
+        # empty when a caller does not supply it.
+        self.model_meta = {}
         os.makedirs(self.report_dir, exist_ok=True)
         self._has_deepmark_cls = os.path.exists(
             os.path.join(self.report_dir, "deepmark.cls")
@@ -114,11 +117,26 @@ class ComparativeReportGenerator:
     # ----------------------------------------------------------------
     # Accuracy comparison table
     # ----------------------------------------------------------------
+    def _is_zero_bit(self, model_name):
+        """True when the model reports a detection rate rather than bit accuracy."""
+        return bool(self.model_meta.get(model_name, {}).get("is_zero_bit", False))
+
     def generate_accuracy_table(self, all_stats):
-        """Generate accuracy comparison table (attack x model) with rank colors."""
+        """Generate the accuracy comparison table (attack x model).
+
+        Zero-bit and multi-bit models do not report the same quantity: a
+        zero-bit score is a per-file detection rate whose failure floor is 0,
+        a multi-bit score is bit agreement whose failure floor is chance
+        (~50). Ranking them against each other would be meaningless, so
+        zero-bit columns are marked and left out of the rank coloring.
+        """
         model_names, attacks = self.aggregate_stats(all_stats)
         n_models = len(model_names)
-        short_names = [self._short_model_name(m) for m in model_names]
+        zero_bit = [self._is_zero_bit(m) for m in model_names]
+        short_names = [
+            self._short_model_name(m) + ("\\textsuperscript{0}" if zb else "")
+            for m, zb in zip(model_names, zero_bit)
+        ]
 
         header = "Attack Type & " + " & ".join(short_names)
         col_spec = "l" + "c" * n_models
@@ -127,20 +145,58 @@ class ComparativeReportGenerator:
         for attack in attacks:
             display = self._display_name(attack)
             values = [all_stats[m].get(attack) for m in model_names]
-            cells = [
-                self._colored_val(v, values, higher_is_better=True)
-                for v in values
-            ]
+            # Rank only among comparable (multi-bit) columns.
+            rankable = [v for v, zb in zip(values, zero_bit) if not zb]
+            cells = []
+            for value, zb in zip(values, zero_bit):
+                if zb:
+                    cells.append("N/A" if value is None else f"{value:.2f}")
+                else:
+                    cells.append(
+                        self._colored_val(value, rankable, higher_is_better=True)
+                    )
             rows.append(f"    {display} & " + " & ".join(cells) + " \\\\")
 
         return build_longtable(
             col_spec,
             header,
             rows,
-            caption="Watermark detection accuracy (\\%) by attack type "
-                    "for all tested models.",
+            caption="Watermark detection accuracy (\\%) by attack type. "
+                    "Columns are not a like-for-like ranking across model "
+                    "families -- see the notes below the table.",
             label="tab:comparison_accuracy",
+        ) + self._comparability_note(model_names, zero_bit)
+
+    def _comparability_note(self, model_names, zero_bit):
+        """Spell out what makes the columns non-comparable, per model."""
+        if not self.model_meta:
+            return ""
+        parts = []
+        for name in model_names:
+            meta = self.model_meta.get(name, {})
+            bits = meta.get("watermark_size")
+            rate = meta.get("sampling_rate")
+            n = meta.get("n_files")
+            desc = [self._short_model_name(name) + ":"]
+            desc.append("detection rate" if meta.get("is_zero_bit") else "bit accuracy")
+            if bits:
+                desc.append(f"{bits}-bit payload")
+            if rate:
+                desc.append(f"{rate} Hz")
+            if n:
+                desc.append(f"n={n}")
+            parts.append(" ".join(desc))
+        note = (
+            "\n\n{\\noindent\\footnotesize \\textsuperscript{0}Zero-bit model: the "
+            "score is the share of files in which a watermark was detected, so "
+            "its failure floor is 0\\%. Multi-bit scores are bit agreement, whose "
+            "failure floor is chance ($\\sim$50\\%). Zero-bit columns are therefore "
+            "excluded from the rank coloring, and scores are not comparable "
+            "across the two families. Each model is evaluated at its own "
+            "sampling rate, with an independently drawn watermark per file. "
+            + "; ".join(parts) + ".}\n"
         )
+        return note
 
     # ----------------------------------------------------------------
     # Charts
@@ -336,7 +392,8 @@ class ComparativeReportGenerator:
 
     def generate_full_report(self, all_results, all_stats,
                               calculate_quality_metrics=False,
-                              crop_before_attack=None):
+                              crop_before_attack=None,
+                              model_meta=None):
         """Generate complete comparative report.
 
         Args:
@@ -348,8 +405,13 @@ class ComparativeReportGenerator:
                 ignored — per-model quality details live in each
                 model's detailed report, not the comparative one.
             crop_before_attack: If set, percentage cropped before attacks
+            model_meta: Optional {model: {"is_zero_bit", "watermark_size",
+                "sampling_rate", "n_files"}}. Zero-bit models report a
+                detection rate rather than bit accuracy, so they are
+                excluded from the rank coloring and flagged in the table.
         """
         del all_results, calculate_quality_metrics  # unused, see docstring
+        self.model_meta = model_meta or {}
 
         # Radar chart
         radar_path = os.path.join(self.report_dir, "radar_chart.png")

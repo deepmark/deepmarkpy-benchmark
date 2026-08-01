@@ -39,7 +39,7 @@ class AudioSealEngine(BaseModelEngine):
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data)
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         generator = self.model["generator"]
         wav = torch.tensor(audio_arr, dtype=torch.float32)
@@ -66,7 +66,7 @@ class AudioSealEngine(BaseModelEngine):
         """
         audio_arr = np.array(audio)
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         # AudioSeal requires minimum audio length for the neural network
         # Kernel size is 7, but due to architecture we need more samples
@@ -88,6 +88,3 @@ class AudioSealEngine(BaseModelEngine):
         message = message.squeeze().cpu().numpy()
         return message, confidence
 
-
-# Stable import alias.
-Engine = AudioSealEngine

@@ -11,8 +11,14 @@ class LPCAttack(BaseAttack):
         This function applies Burg's method to estimate coefficients of a linear
         filter on ``audio`` of order ``order``.  Burg's method is an extension to the
         Yule-Walker approach, which are both sometimes referred to as LPC parameter
-        estimation by autocorrelation. Then, it synthesizes the audio signal using these
-        coefficients.
+        estimation by autocorrelation. It then returns the one-step-ahead
+        prediction those coefficients produce -- each sample estimated from its
+        predecessors alone -- which is the input minus its LPC residual.
+
+        This is a predictor, not analysis-synthesis. Re-synthesizing from an
+        unmodified residual would reconstruct the input exactly and make the
+        attack a no-op; degrading the excitation instead would be a different
+        attack.
 
         It follows the description and implementation approach described in the
         introduction by Marple, and this implementation is taken from the librosa library.
@@ -64,7 +70,8 @@ class LPCAttack(BaseAttack):
         a = np.swapaxes(
             self._lpc(audio, order, ar_coeffs, ar_coeffs_prev, reflect_coeff, den, epsilon), 0, axis
         )
-        #synthesize the audio signal using the LPC coefficients
+        # b[0] = 0, so each output sample depends only on past input:
+        # the one-step-ahead prediction, not a resynthesis.
         b = np.hstack([[0], -1 * a[1:]])
         y_hat = signal.lfilter(b, [1], audio)
         return y_hat

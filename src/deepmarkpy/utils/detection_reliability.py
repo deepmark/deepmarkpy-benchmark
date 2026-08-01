@@ -25,6 +25,11 @@ from typing import Dict, Iterable, List, Optional
 import numpy as np
 import soundfile as sf
 
+from deepmarkpy.benchmark import (
+    apply_attack,
+    expand_attacks,
+    require_attacks_available,
+)
 from deepmarkpy.utils.metrics import ALL_METRICS, compute_metrics
 from deepmarkpy.utils.attack_groups import get_metrics_for_attack
 from deepmarkpy.utils.utils import load_audio
@@ -147,6 +152,15 @@ def run_detection_reliability(
         )
 
     attack_types = list(attack_types or [])
+    # expand_attacks passes unknown names straight through, and the per-file
+    # loop below indexes benchmark.attacks with them, so an unavailable attack
+    # would surface as a KeyError partway through the run.
+    require_attacks_available(
+        attack_types, benchmark.attacks,
+        getattr(getattr(benchmark, "plugin_manager", None), "failed", None),
+    )
+    # Same expansion (and therefore the same row labels) as benchmark.run.
+    expanded_attacks = expand_attacks(attack_types, benchmark.attacks)
     n_files = len(filepaths)
 
     if save_audio and output_dir:
@@ -179,7 +193,7 @@ def run_detection_reliability(
             "fn_count": 0,
             "fn_attempts": 0,
         }
-        for a in attack_types
+        for _, a, _ in expanded_attacks
     }
 
     for filepath in filepaths:
@@ -218,11 +232,12 @@ def run_detection_reliability(
                     no_attack_metrics[m].append(v)
 
         # --- Steps 3 + 4: per-attack FP and FN ---
-        for attack_name in attack_types:
-            attack_instance = benchmark.attacks[attack_name]["class"]()
+        for attack_class_name, attack_name, attack_overrides in expanded_attacks:
+            attack_instance = benchmark.attacks[attack_class_name]["class"]()
 
             kw_for_attack = {
                 **attack_kwargs,
+                **attack_overrides,
                 "model": model_instance,
                 "watermark_data": watermark,
                 "sampling_rate": sr,
@@ -232,8 +247,10 @@ def run_detection_reliability(
 
             # Step 3: attack the clean audio, then detect.
             try:
-                attacked_clean = _apply_attack(
-                    attack_instance, attack_name, audio, kw_for_attack,
+                attacked_clean, _ = apply_attack(
+                    attack_instance, attack_class_name,
+                    target_audio=audio, clean_audio=audio,
+                    attack_kwargs=kw_for_attack,
                 )
             except Exception as e:  # pragma: no cover -- log and skip file
                 logger.warning(
@@ -249,14 +266,12 @@ def run_detection_reliability(
                     attacked_clean, sr,
                 )
 
-            attack_state[attack_name]["fp_attempts"] += 1
-            if _detect(model_instance, attacked_clean, sr):
-                attack_state[attack_name]["fp_count"] += 1
-
             # Step 4: attack the watermarked audio, then detect.
             try:
-                attacked_wm = _apply_attack(
-                    attack_instance, attack_name, watermarked_audio, kw_for_attack,
+                attacked_wm, _ = apply_attack(
+                    attack_instance, attack_class_name,
+                    target_audio=watermarked_audio, clean_audio=audio,
+                    attack_kwargs=kw_for_attack,
                 )
             except Exception as e:
                 logger.warning(
@@ -271,6 +286,12 @@ def run_detection_reliability(
                     os.path.join(output_dir, f"{base}_{attack_name}.wav"),
                     attacked_wm, sr,
                 )
+
+            # Both attacks succeeded for this file, so both rates are counted
+            # over the same file set.
+            attack_state[attack_name]["fp_attempts"] += 1
+            if _detect(model_instance, attacked_clean, sr):
+                attack_state[attack_name]["fp_count"] += 1
 
             attack_state[attack_name]["fn_attempts"] += 1
             wm_detected = _detect(model_instance, attacked_wm, sr)
@@ -334,27 +355,3 @@ def run_detection_reliability(
     )
 
 
-# ---------------------------------------------------------------------------
-# Attack dispatch (mirrors the special cases in benchmark.run)
-# ---------------------------------------------------------------------------
-
-def _apply_attack(attack_instance, attack_name, audio, attack_kwargs):
-    """Apply ``attack_instance`` to ``audio`` honoring the model's quirks.
-
-    Mirrors the dispatch in ``benchmark.run`` for the attacks that
-    return tuples (``CrossModelAttack``) or need extra kwargs
-    (``ZeroBitCollusionAttack``). Anything else takes the default path.
-    """
-    if attack_name == "CrossModelAttack":
-        attacked_audio, _diff_watermark = attack_instance.apply(
-            audio, **attack_kwargs,
-        )
-    elif attack_name == "ZeroBitCollusionAttack":
-        kwargs = {**attack_kwargs, "original_audio_collusion": audio}
-        attacked_audio = attack_instance.apply(audio, **kwargs)
-    else:
-        attacked_audio = attack_instance.apply(audio, **attack_kwargs)
-
-    if isinstance(attacked_audio, np.ndarray):
-        attacked_audio = np.squeeze(attacked_audio)
-    return attacked_audio

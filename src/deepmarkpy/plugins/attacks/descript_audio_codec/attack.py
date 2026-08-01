@@ -4,6 +4,7 @@ import os
 import numpy as np
 import requests
 
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.core.base_attack import BaseAttack
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ class DescriptAudioCodecAttack(BaseAttack):
         sampling_rate = kwargs.get("sampling_rate", 16000)
         n_codebooks = kwargs.get("n_codebooks_dac", self.config.get("n_codebooks_dac"))
 
-        payload = {"audio": audio.tolist(), "sampling_rate": sampling_rate}
+        payload = {"audio": encode_audio(audio), "sampling_rate": sampling_rate}
         if n_codebooks is not None:
             payload["n_codebooks_dac"] = n_codebooks
 
@@ -51,8 +52,10 @@ class DescriptAudioCodecAttack(BaseAttack):
             logger.error(f"DescriptAudioCodecAttack request failed: {e}")
             raise
 
-        if "audio" not in response_data:
-            logger.error("'/attack' response does not contain 'audio' key.")
-            raise KeyError("Missing 'audio' in response from /attack")
+        if response_data.get("audio") is None:
+            raise RuntimeError(
+                f"DescriptAudioCodecAttack: service returned no audio "
+                f"({response_data.get('error', 'no error reported')})"
+            )
 
-        return np.array(response_data["audio"])
+        return decode_audio(response_data["audio"])

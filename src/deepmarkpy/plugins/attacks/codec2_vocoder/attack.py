@@ -20,6 +20,15 @@ class Codec2VocoderAttack(BaseAttack):
     (similar to MELP/MELPe military vocoders).
 
     Codec2 requires 8kHz mono input, so the attack resamples internally.
+
+    Reproducible per run, not across differently shaped runs. libcodec2's
+    decoder draws from a process-global PRNG that a new ``pycodec2.Codec2``
+    does not reset, so a given call's output depends on how many codec2 calls
+    preceded it in the same process. Repeating an identical command over an
+    identical file list reproduces bit-exactly; adding, dropping or reordering
+    files, or selecting a different subset of bitrates, shifts every codec2
+    result. Compare codec2 numbers only between runs of the same shape. This is
+    also why the attack has no golden fixture.
     """
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
@@ -42,7 +51,7 @@ class Codec2VocoderAttack(BaseAttack):
             audio_8k = audio
 
         audio_8k = np.clip(audio_8k, -1.0, 1.0)
-        audio_int16 = (audio_8k * 32767).astype(np.int16)
+        audio_int16 = np.round(audio_8k * 32767).astype(np.int16)
 
         codec = pycodec2.Codec2(bitrate)
         samples_per_frame = codec.samples_per_frame()

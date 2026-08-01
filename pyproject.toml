@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deepmarkpy"
-version = "1.1.0"
+version = "2.0.0"
 description = "DeepMark Benchmark: audio watermarking robustness evaluation against 40+ signal-processing, AI-based, and transmission attacks"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -30,13 +30,14 @@ dependencies = [
     "pesq",
     "pystoi",
     "matplotlib",
+    "pyrubberband",
+    "PyWavelets",
 ]
 
 [project.optional-dependencies]
 # ViSQOL is imported lazily and skipped when absent; NISQA has no PyPI
 # distribution and stays a documented manual install.
 metrics = ["visqol-python"]
-# Intentionally without pywt/pyrubberband.
 native-attacks = ["pycodec2>=4.0.0", "audiocomplib"]
 all = ["deepmarkpy[metrics,native-attacks]"]
 

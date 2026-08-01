@@ -84,7 +84,7 @@ class ReplayAttack(BaseAttack):
             air_folder = os.path.join(project_root, air_folder)
 
         # get list of AIR files
-        air_files = [f for f in os.listdir(air_folder) if f.endswith('.wav')]
+        air_files = sorted(f for f in os.listdir(air_folder) if f.endswith('.wav'))
         if not air_files:
             raise ValueError(f"No .wav files found in {air_folder}")
 

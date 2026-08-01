@@ -17,6 +17,7 @@ import os
 import numpy as np
 import requests
 
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.core.base_attack import BaseAttack
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ class NetworkTransmissionAttack(BaseAttack):
             response = requests.post(
                 self.endpoint + "/attack",
                 json={
-                    "audio": audio.tolist(),
+                    "audio": encode_audio(audio),
                     "sampling_rate": sampling_rate,
                     **params,
                 },
@@ -110,13 +111,26 @@ class NetworkTransmissionAttack(BaseAttack):
             raise RuntimeError(f"Network transmission service unavailable: {e}")
 
         response_data = response.json()
-        if "audio" not in response_data:
-            logger.error("Response does not contain 'audio' key.")
-            raise KeyError("Missing 'audio' in response from network_transmission service")
+        if response_data.get("audio") is None:
+            raise RuntimeError(
+                f"NetworkTransmissionAttack: service returned no audio "
+                f"({response_data.get('error', 'no error reported')})"
+            )
 
         logger.info(
             f"NetworkTransmission attack: bitrate={params['bitrate_bps_netem']}bps, "
             f"delay={params['delay_ms_netem']}ms, jitter={params['jitter_ms_netem']}ms, "
             f"loss={params['packet_loss_netem']}%, fec={params['fec_enabled_netem']}"
         )
-        return np.array(response_data["audio"], dtype=np.float32)
+        if response_data.get("netem_active") is False:
+            # The container needs NET_ADMIN and a netem-capable kernel. Docker
+            # Desktop's VM provides neither, so the delay/loss/reorder settings
+            # above were requested and not applied: the result is a codec and
+            # jitter-buffer round trip only, and is not comparable with a run
+            # where the impairment engaged.
+            logger.warning(
+                "NetworkTransmissionAttack: kernel netem did not engage, so no "
+                "delay, loss or reordering was applied. Results are not "
+                "comparable with runs where it did."
+            )
+        return decode_audio(response_data["audio"]).astype(np.float32)

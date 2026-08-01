@@ -8,10 +8,13 @@ import numpy as np
 import torch
 import uvicorn
 from fastapi import FastAPI
-from pydantic import BaseModel
-from inference import Engine
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from inference import SpeechTokenizationEngine
 
-from deepmarkpy.utils.utils import load_config, resample_audio
+from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
+from deepmarkpy.core.wire import decode_audio, encode_audio
+from deepmarkpy.utils.utils import load_config
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -27,11 +30,11 @@ except (FileNotFoundError, ValueError, IOError) as e:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info(f"Using device: {device}")
 
-engine = Engine(config, device)
+engine = SpeechTokenizationEngine(config, device)
 
 
 class AttackRequest(BaseModel):
-    audio: List[float]
+    audio: str = Field(..., max_length=MAX_AUDIO_B64_CHARS)
     sampling_rate: int
 
 
@@ -39,25 +42,18 @@ class AttackRequest(BaseModel):
 async def attack(request: AttackRequest):
     try:
         sampling_rate = request.sampling_rate
-        logger.info(f"Received request: sampling_rate={sampling_rate}, audio_length={len(request.audio)}")
-        audio = np.array(request.audio)
+        audio_arr = decode_audio(request.audio)
+        logger.info(f"Received request: sampling_rate={sampling_rate}, audio_length={len(audio_arr)}")
+        audio = audio_arr
 
-        target_sr = 16000
-        if sampling_rate != target_sr:
-            logger.info(f"Resampling from {sampling_rate} to {target_sr}")
-            audio = resample_audio(audio, sampling_rate, target_sr)
-            logger.info(f"Resampled audio length: {len(audio)}")
-
+        # The engine resamples to the model's 16 kHz and back, so the request
+        # rate goes straight through. Resampling here as well left the engine
+        # converting 16 kHz to 16 kHz, which resample_audio short-circuits.
         logger.info("Starting model inference...")
-        audio = engine.apply(audio, target_sr)
+        audio = engine.apply(audio, sampling_rate)
         logger.info(f"Inference complete. Output length: {len(audio)}")
 
-        if sampling_rate != target_sr:
-            logger.info(f"Resampling output from {target_sr} to {sampling_rate}")
-            audio = resample_audio(audio, target_sr, sampling_rate)
-            logger.info(f"Final output length: {len(audio)}")
-
-        return {"audio": audio.tolist()}
+        return JSONResponse({"audio": encode_audio(audio)})
     except Exception as e:
         logger.error(f"Error in /attack: {e}")
         logger.error(traceback.format_exc())

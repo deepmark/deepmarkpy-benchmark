@@ -2,7 +2,8 @@
 
 The denoising start step is derived as ``1000 - diffusion_steps``. Each
 request draws a fresh OS-entropy seed via ``generator.seed()``, so output
-is stochastic across calls.
+is stochastic across calls; within a request the seed advances per slice so
+slices are denoised from independent noise.
 """
 
 import logging
@@ -16,6 +17,9 @@ from deepmarkpy.utils.utils import renormalize_audio, resample_audio
 from deepmarkpy.core.inference import BaseAttackEngine
 
 logger = logging.getLogger(__name__)
+
+# Pinned so a rebuild cannot silently pick up a different upstream checkpoint.
+WEIGHTS_REVISION = "a098cdacf70bcbc28c6f2927824e18792f756f8f"
 
 
 class DiffusionEngine(BaseAttackEngine):
@@ -33,7 +37,9 @@ class DiffusionEngine(BaseAttackEngine):
         logger.info(f"Using device: {device}")
         self.device = device
         self.model = DiffusionPipeline.from_pretrained(
-            config["model_name_diffusion"], cache_dir="diffusers"
+            config["model_name_diffusion"],
+            cache_dir="diffusers",
+            revision=WEIGHTS_REVISION,
         )
         self.model.to(self.device)
 
@@ -62,7 +68,10 @@ class DiffusionEngine(BaseAttackEngine):
         new_audio_slice = np.array([])
         not_first = 0
         for sample in range(len(audio) // stride):
-            generator.manual_seed(seed)
+            # Advance per slice: reusing one seed denoised every slice from
+            # the identical noise realization, correlating the regeneration
+            # across slice boundaries.
+            generator.manual_seed(seed + sample)
             audio_slice = np.array(
                 audio[sample * stride : sample * stride + slice_size]
             )
@@ -88,6 +97,3 @@ class DiffusionEngine(BaseAttackEngine):
         output = resample_audio(output, mel_sample_rate, sampling_rate)
         return renormalize_audio(audio, output)
 
-
-# Stable import alias.
-Engine = DiffusionEngine

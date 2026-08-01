@@ -32,8 +32,8 @@ only.
 | speech_enhancement1 | attack | deterministic | byte-identical double call **with `noise_strength=0.0` in the request** (the request-controlled noise default 0.01 is stochastic) |
 | vae | attack | **stochastic** | double call differs (same length 14336, RMS 0.320 vs 0.460) — the RAVE export samples latents internally. The double-call check, not assumption, settled this. |
 | speech_enhancement2 | attack | stochastic | double call differs — unseeded server-side noise (`noise_strength_se2=0.01` from config, not request-overridable) |
-| network_transmission | attack | stochastic | same-container double call was byte-identical, but a fresh-container call differs (timing/instance-dependent RTP path) — classification forced stochastic with the evidence recorded in `contract.json`. `tc netem` itself does not engage under Docker Desktop's VM (`tc qdisc show` stays `noqueue`). |
-| diffusion | attack | stochastic | double call differs (RMS 0.222 vs 0.243, same length) — `ddpm.py:27-28` draws a fresh OS-entropy seed per request. `speech_enhancement2`'s environment intentionally keeps its own torchaudio pin (its env froze at torch 2.13.0). |
+| network_transmission | attack | stochastic | same-container double call was byte-identical, but a fresh-container call differs (timing/instance-dependent RTP path) — classification forced stochastic with the evidence recorded in `contract.json`. `tc netem` does engage here: the qdisc is installed per request and torn down in a `finally`, so it exists only for the ~1.5 s a request takes — polling `tc qdisc show dev lo` at idle shows `noqueue` and says nothing about whether impairment ran. The response now carries `netem_active` so a run does not have to infer it. |
+| diffusion | attack | stochastic | double call differs (RMS 0.222 vs 0.243, same length) — `inference.py` draws a fresh OS-entropy seed per request. `speech_enhancement2`'s environment intentionally keeps its own torchaudio pin (its env froze at torch 2.13.0). |
 
 ## Re-recording / verifying
 

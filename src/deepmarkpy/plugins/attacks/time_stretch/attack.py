@@ -48,6 +48,7 @@ class TimeStretchAttack(BaseAttack):
             return pyrb.time_stretch(audio, sampling_rate, stretch_rate)
         except Exception as e:
             logger.warning(f"Pyrubberband failed: {str(e)}. Falling back to librosa time_stretch.")
-            # Use librosa as a fallback
-            # Note: librosa uses rate=1/stretch_rate, so we need to invert it
-            return librosa.effects.time_stretch(audio, rate=1/stretch_rate)
+            # Both libraries treat rate > 1 as "play faster", so the rate is
+            # passed through unchanged; inverting it here would make the
+            # fallback stretch in the opposite direction from the primary path.
+            return librosa.effects.time_stretch(audio, rate=stretch_rate)

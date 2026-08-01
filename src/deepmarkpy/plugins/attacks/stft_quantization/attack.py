@@ -12,7 +12,12 @@ class STFTQuantizationAttack(BaseAttack):
             1. Computes the Short-Time Fourier Transform (STFT) of the input signal.
             2. Quantizes the magnitude of the STFT coefficients to a specified number of levels,
             while preserving the phase information.
-            3. Reconstructs the time-domain audio signal using the inverse STFT (ISTFT). 
+            3. Reconstructs the time-domain audio signal using the inverse STFT (ISTFT).
+
+            The levels span each file's own STFT magnitude range rather than a
+            fixed scale, so the effective step -- and the distortion it causes --
+            depends on that file's spectral dynamics rather than on the level
+            count alone.
 
             Args:
                 audio (np.ndarray): Input audio signal.

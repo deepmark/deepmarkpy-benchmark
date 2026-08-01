@@ -23,16 +23,13 @@ the suite and was verified (by re-running discovery before and after the
 install) not to change the registered sets. ``pycodec2>=4.0.0`` is a floating
 lower bound in ``requirements.txt``; it resolved to 4.1.1 at record time.
 
-In the canonical environment four attack classes are absent because their
-import-time dependencies are not in ``requirements.txt`` (a frozen,
-intentional gap — the register notes ``wavelet``, ``pitch_shift``,
-``time_stretch``; empirically ``inverted_time_stretch`` also vanishes because
-it imports ``plugins.attacks.time_stretch.attack``). These four appear in
-``OPTIONAL_DEP_ATTACKS`` below and may legitimately register in developer
-environments that happen to have ``pywt``/``pyrubberband`` installed; the
-exact-set assertion therefore binds only when neither optional dependency is
-importable, while the subset, no-unknown-names, and provenance assertions
-bind everywhere.
+Every attack registers in the canonical environment: all import-time
+dependencies are declared, so the full set of 47 attacks is expected from a
+clean install and the exact-set assertion binds unconditionally. (``wavelet``,
+``time_stretch``, ``pitch_shift`` and ``inverted_time_stretch`` were formerly
+absent because ``PyWavelets``/``pyrubberband`` were undeclared.) Note
+``pyrubberband`` additionally needs the ``rubberband`` CLI on PATH to take its
+primary code path; without it those attacks fall back to librosa.
 
 The asserted sets below are load-bearing: no removals ever, and additions
 only as a deliberate, reviewed decision.
@@ -104,19 +101,19 @@ CANONICAL_ATTACK_DIRS = {
     "VAEAttack": "vae",
     "ZeroBitCollusionAttack": "zero_bit_collusion",
     "ZeroCrossInsertsAttack": "zero_cross_inserts",
+    "PitchShiftAttack": "pitch_shift",
+    "TimeStretchAttack": "time_stretch",
+    "InvertedTimeStretchAttack": "inverted_time_stretch",
+    "WaveletAttack": "wavelet",
 }
 CANONICAL_ATTACKS = frozenset(CANONICAL_ATTACK_DIRS)
 
-# Attack classes absent from the canonical environment because their
-# import-time dependency is not in requirements.txt (D14, frozen). Maps
-# class name -> (defining plugin directory, module whose absence removes
-# the class from discovery).
-OPTIONAL_DEP_ATTACKS = {
-    "WaveletAttack": ("wavelet", "pywt"),
-    "TimeStretchAttack": ("time_stretch", "pyrubberband"),
-    "PitchShiftAttack": ("pitch_shift", "pyrubberband"),
-    "InvertedTimeStretchAttack": ("inverted_time_stretch", "pyrubberband"),
-}
+# Previously this held the four attacks whose import-time dependencies were
+# undeclared, so they vanished from a clean install. pyrubberband and
+# PyWavelets are now declared dependencies and all 47 attacks register in
+# the canonical environment; the mapping stays (empty) so a future optional
+# dependency has an obvious home.
+OPTIONAL_DEP_ATTACKS = {}
 
 # Attack sample for the config.json-content assertions. Each entry maps a
 # class name to a key that exists only in that plugin's config.json (attack

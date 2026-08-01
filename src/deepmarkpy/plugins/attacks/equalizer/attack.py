@@ -7,12 +7,15 @@ class EqualizerAttack(BaseAttack):
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
         """
         This attacks performs an equalizer attack on an audio signal, that's been implemented here: https://github.com/chenwj1989/pafx/tree/main.
-        This is a 10-band equalizer with frequencies from 31Hz to 16kHz with the distance of 1 octave. 
+        Octave-spaced shelving/peaking equalizer over 31.5 Hz - 16 kHz. Bands
+        at or above Nyquist cannot be realized, so the number applied follows
+        the sampling rate: 8 bands at 16 kHz, 9 at 22.05 kHz.
         Args:
             audio (np.ndarray): The input audio signal.
             **kwargs: Additional parameters for the equalizer attack:
                 - sampling_rate (int): The sampling rate of the audio signal in Hz (required).
-                - gains_equalizer (np.ndarray): Specifies how much to boost or cut each of the 10 bands.
+                - gains_equalizer (np.ndarray): dB boost/cut per band, lowest
+                  first; entries beyond the realizable band count are unused.
         Returns:
             np.ndarray: The processed audio signal.
 
@@ -30,27 +33,44 @@ class EqualizerAttack(BaseAttack):
         band_widths = [22, 44, 88, 177, 355, 710, 
                1420, 2840, 5680, 11360]
         
+        # A biquad is only definable below Nyquist, so the usable band count
+        # follows the sampling rate: 8 bands (31.5 Hz - 4 kHz) at 16 kHz,
+        # 9 (adding 8 kHz) at 22.05 kHz and above.
+        n_bands = sum(1 for fc in center_freqs if fc < sampling_rate / 2)
+        n_bands = min(n_bands, len(gains))
+        if n_bands < 2:
+            raise ValueError(
+                f"sampling_rate {sampling_rate} Hz is too low for the equalizer: "
+                f"fewer than two bands fall below Nyquist."
+            )
+
         self.filters = []
         self.filters.append(self.Biquad(sampling_rate, 'LowShelf', center_freqs[0],
-                                    band_widths[0], gains[0]))  
-        for i in range(1, 8 - 1):
+                                    band_widths[0], gains[0]))
+        for i in range(1, n_bands - 1):
             self.filters.append(self.Biquad(sampling_rate, 'Peaking', center_freqs[i],
-                                       band_widths[i], gains[i]))   
+                                       band_widths[i], gains[i]))
 
         self.filters.append(self.Biquad(sampling_rate, 'HighShelf',
-                                    center_freqs[8 - 1],
-                                    band_widths[8- 1],
-                                    gains[8 - 1])
-                            )  
+                                    center_freqs[n_bands - 1],
+                                    band_widths[n_bands - 1],
+                                    gains[n_bands - 1])
+                            )
 
-        filtered=np.zeros_like(audio)
+        # Serial cascade: each stage filters the previous stage's output.
+        filtered = np.zeros_like(audio)
         for i in range(len(audio)):
             out = audio[i]
             for filter in self.filters:
-                out += filter.process(out)
-            filtered[i]=out
+                out = filter.process(out)
+            filtered[i] = out
 
-        filtered = filtered / max(np.abs(filtered))
+        # Only attenuate when the cascade's boost would clip; unconditional
+        # peak normalization would make the applied gain a property of the
+        # input file's level rather than of the configured curve.
+        peak = np.max(np.abs(filtered))
+        if peak > 1.0:
+            filtered = filtered / peak * 0.95
         return filtered
 
         
@@ -105,7 +125,7 @@ class EqualizerAttack(BaseAttack):
             w0 = 2.0 * np.pi * self._fc / self.sample_rate
             cos_w0 = np.cos(w0) 
             sin_w0 = np.sin(w0)
-            alpha = 0.5 * sin_w0 * fc / bandwidth
+            alpha = 0.5 * sin_w0 * bandwidth / fc
 
             if filter_type == "LowPass":
                 self.b[0] = (1.0 - cos_w0) * 0.5

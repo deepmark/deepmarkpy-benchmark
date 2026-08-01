@@ -1,8 +1,4 @@
-"""WavMark embed/detect inference, HTTP-free.
-
-``embed`` intentionally feeds ``resample_audio`` the raw request list
-while ``detect`` feeds it the ndarray — a preserved inconsistency.
-"""
+"""WavMark embed/detect inference, HTTP-free."""
 
 import logging
 
@@ -36,12 +32,11 @@ class WavMarkEngine(BaseModelEngine):
         """Embed ``watermark_data`` into ``audio``; returns the watermarked signal.
 
         ``audio``/``watermark_data`` are the parsed request lists. When
-        resampling engages, ``resample_audio`` receives the raw list (D11).
         """
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data)
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         watermarked_audio, _ = wavmark.encode_watermark(self.model, audio_arr, watermark_arr, show_progress=False)
 
@@ -50,16 +45,10 @@ class WavMarkEngine(BaseModelEngine):
         return watermarked_audio
 
     def detect(self, audio: list, sampling_rate: int) -> "np.ndarray | None":
-        """Decode the watermark from ``audio``; ``None`` when decoding fails.
-
-        When resampling engages, ``resample_audio`` receives the ndarray (D11).
-        """
+        """Decode the watermark from ``audio``; ``None`` when decoding fails."""
         audio_arr = np.array(audio)
         if sampling_rate != self.config["sampling_rate"]:
             audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
         message, _ = wavmark.decode_watermark(self.model, audio_arr, show_progress=False)
         return message
 
-
-# Stable import alias.
-Engine = WavMarkEngine

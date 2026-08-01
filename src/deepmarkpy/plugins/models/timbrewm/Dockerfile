@@ -38,6 +38,13 @@ COPY /src/deepmarkpy/plugins/models/timbrewm/requirements.txt .
 COPY /src/deepmarkpy/plugins/models/timbrewm/constraints.txt .
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
+# The TimbreWatermarking clone pins torch 2.0.0, but nothing re-requests
+# torchaudio, so the base image's 2.7.1 survives the downgrade. Its C++
+# extension is ABI-linked to libtorch 2.7, and `import torchaudio` then dies
+# on an undefined symbol -- which is why the upstream import is stripped
+# above. Keep the pair consistent so the workaround is not load-bearing.
+RUN pip install --no-cache-dir torchaudio==2.0.1 -c constraints.txt
+
 COPY src/deepmarkpy/plugins/models/timbrewm/app.py .
 COPY src/deepmarkpy/plugins/models/timbrewm/inference.py .
 COPY src/deepmarkpy/plugins/models/timbrewm/config.json .
@@ -46,4 +53,4 @@ COPY src/deepmarkpy/plugins/models/timbrewm/config.json .
 EXPOSE ${APP_PORT}
 
 # Run the FastAPI server using Uvicorn
-CMD uvicorn app:app --host=$HOST --port=$APP_PORT
+CMD ["sh", "-c", "exec uvicorn app:app --host=$HOST --port=$APP_PORT"]

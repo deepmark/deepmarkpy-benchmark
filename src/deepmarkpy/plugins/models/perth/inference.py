@@ -2,15 +2,14 @@
 
 The request watermark bits are packed into bytes and then discarded —
 ``apply_watermark`` receives ``watermark=None`` and uses Perth's internal
-watermark; the packing is intentionally kept. Both endpoints
-intentionally feed ``resample_audio`` the raw request list. ``detect`` returns a
-JSON-able scalar or list.
+watermark. The packing is kept: it also rejects a watermark whose length
+is not a multiple of 8, which nothing else validates. ``detect`` returns
+a JSON-able scalar or list.
 """
 
 import logging
 
 import numpy as np
-import torch
 from perth.perth_net.perth_net_implicit.perth_watermarker import PerthImplicitWatermarker
 
 from deepmarkpy.utils.utils import resample_audio
@@ -23,17 +22,13 @@ logger = logging.getLogger(__name__)
 class PerthEngine(BaseModelEngine):
     """Perth zero-bit embed/detect at the config sampling rate.
 
-    The watermarker loads once at construction. The computed ``device`` is
-    logged and otherwise unused.
+    The watermarker loads once at construction and places itself; ``device``
+    is accepted for interface uniformity and unused.
     """
 
     def __init__(self, config: dict, device: str | None = None):
         """Load the Perth implicit watermarker."""
         self.config = config
-        if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info(f"Using device: {device}")
-
         self.model = PerthImplicitWatermarker()
 
     def embed(self, audio: list, watermark_data: list, sampling_rate: int) -> np.ndarray:
@@ -41,7 +36,7 @@ class PerthEngine(BaseModelEngine):
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data)
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         # The packed value is intentionally unused: apply_watermark receives
         # watermark=None.
@@ -62,7 +57,7 @@ class PerthEngine(BaseModelEngine):
         audio_arr = np.array(audio)
 
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         message = self.model.get_watermark(audio_arr, self.config["sampling_rate"], round=True)
         if isinstance(message, np.ndarray) and message.ndim == 0:
@@ -79,6 +74,3 @@ class PerthEngine(BaseModelEngine):
 
         return message
 
-
-# Stable import alias.
-Engine = PerthEngine

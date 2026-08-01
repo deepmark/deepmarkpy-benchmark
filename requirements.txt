@@ -58,3 +58,7 @@ pesq==0.0.4
 visqol-python==3.4.0
 audiocomplib==0.2.0
 pycodec2>=4.0.0
+# Required by time_stretch / pitch_shift / inverted_time_stretch (pyrubberband,
+# which also needs the rubberband CLI on PATH) and wavelet (PyWavelets).
+pyrubberband==0.4.0
+PyWavelets==1.9.0

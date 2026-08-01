@@ -1,13 +1,21 @@
 import argparse
+import datetime
 import json
+import platform
+import subprocess
+import sys
 import os
+import random
 import shutil
 
 import logging
 
+from deepmarkpy import __version__
 from deepmarkpy.benchmark import Benchmark
 from deepmarkpy.utils.report_generator import generate_benchmark_report
 from deepmarkpy.utils.attack_groups import ATTACK_GROUPS, get_attacks_for_groups
+from deepmarkpy.utils.metrics import nisqa_status
+from deepmarkpy.utils.utils import load_env_file
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
@@ -52,6 +60,10 @@ def from_json_safe(obj):
     return obj
 
 def main():
+    # Must precede Benchmark(): plugin clients read their service port in
+    # __init__, so a port set in .env has to be in the environment by then.
+    load_env_file()
+
     # --plugins_dir must be known before Benchmark() runs, because the
     # argument list below is built from the discovered plugins' configs.
     pre_parser = argparse.ArgumentParser(add_help=False)
@@ -64,6 +76,16 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run DeepMark Benchmark CLI")
 
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed the host-side RNGs so a run can be reproduced. Omitted by "
+             "default, which keeps drawing a fresh watermark per file and "
+             "fresh attack noise per run. Seeds host-side randomness only: "
+             "the diffusion, vae, speech_enhancement_2 and "
+             "network_transmission services stay stochastic server-side.",
+    )
     parser.add_argument(
         "--report_dir",
         type=str,
@@ -143,9 +165,10 @@ def main():
         action="store_true",
         default=False,
         help=(
-            "Calculate audio quality metrics (PESQ, PSNR, SI-SDR, MCD, ViSQOL) "
-            "and speech intelligibility metrics (STOI, SII, NCM); "
-            "generates a detailed report."
+            "Add PSNR, SI-SDR, MCD, SII, NCM and NISQA to the metrics already "
+            "computed, and emit the detailed report. PESQ, ViSQOL and STOI are "
+            "always computed and appear in the basic report without this flag. "
+            "Each attack group receives only the metrics meaningful for it."
         ),
     )
 
@@ -207,12 +230,28 @@ def main():
 
     args = parser.parse_args()
 
+    if args.seed is not None:
+        # Every stochastic attack and generate_watermark() draws from these
+        # process-global streams, so seeding them here covers all of them.
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        logger.info(f"Host-side RNGs seeded with {args.seed}")
+
+    # `--attack_types` with no values parses to [], which has always meant
+    # "run them all". Normalizing to None keeps that, and lets an empty set
+    # arriving any other way stay an error.
+    if args.attack_types == [] and not args.attack_groups:
+        args.attack_types = None
+
     # Resolve attack groups into individual attack types
     if args.attack_groups:
+        # Unavailable attacks are deliberately NOT filtered out here. Dropping
+        # them silently shrank the measured set: a group whose plugins failed
+        # to import reported fewer attacks than the group defines, and a group
+        # where every plugin failed resolved to an empty list, which the run
+        # loop then treats as "no selection" and expands to every attack.
+        # Benchmark.run() raises on whatever is missing instead.
         attacks_from_groups = get_attacks_for_groups(args.attack_groups)
-        # Filter to only attacks that are actually available
-        available = set(attacks)
-        attacks_from_groups = [a for a in attacks_from_groups if a in available]
         if args.attack_types:
             # Combine with explicitly listed attacks
             combined = list(dict.fromkeys(args.attack_types + attacks_from_groups))
@@ -280,7 +319,9 @@ def main():
         # --- Single-model mode (--wm_model or --wm_models with one entry) ---
         model_name = args.wm_models[0] if args.wm_models else args.wm_model
         _clean_report_dir(args.report_dir)
-        run_single_model(benchmark, filepaths, model_name, args)
+        run_single_model(
+            benchmark, filepaths, model_name, args, output_dir=args.report_dir,
+        )
 
 
 _DEEPMARK_ASSETS = {"deepmark.cls", "deepmark-logo.png", "deepmark-logo.pdf", "deepmark-logo.jpg"}
@@ -290,6 +331,13 @@ def _clean_report_dir(report_dir):
     """Remove generated files from report dir, preserving deepmark assets."""
     if not os.path.exists(report_dir):
         return
+    doomed = [i for i in sorted(os.listdir(report_dir)) if i not in _DEEPMARK_ASSETS]
+    if doomed:
+        logger.info(
+            f"Clearing {len(doomed)} item(s) from {report_dir}/ before this run: "
+            + ", ".join(doomed[:10])
+            + (" ..." if len(doomed) > 10 else "")
+        )
     for item in os.listdir(report_dir):
         if item in _DEEPMARK_ASSETS:
             continue
@@ -442,6 +490,56 @@ def run_detection_reliability_mode(benchmark, filepaths, model_name, args):
         logger.error(f"Failed to generate detection reliability report: {e}")
 
 
+def write_run_metadata(report_dir, args, benchmark, model_names, extra=None):
+    """Write run_metadata.json beside the results so a run can be situated later.
+
+    Deliberately a sibling file rather than a wrapper around the existing
+    artifacts: the report generators read benchmark_stats.json's top-level
+    keys as attack names, and embedding a timestamp inside a result file
+    would make byte-comparing two runs impossible.
+    """
+    metadata = {
+        "deepmarkpy_version": __version__,
+        "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "git_revision": _git_revision(),
+        "command": sys.argv,
+        "seed": getattr(args, "seed", None),
+        "models": list(model_names),
+        "python": platform.python_version(),
+        "platform": f"{platform.system()} {platform.machine()}",
+        "plugins": {
+            "attacks_discovered": sorted(benchmark.attacks),
+            "models_discovered": sorted(benchmark.models),
+            "failed_imports": benchmark.plugin_manager.failed,
+        },
+        # A metric that could not run leaves N/A cells that look identical to
+        # a metric that ran and had nothing to say.
+        "metrics": {"nisqa": nisqa_status()},
+    }
+    if extra:
+        metadata.update(extra)
+
+    path = os.path.join(report_dir, "run_metadata.json")
+    os.makedirs(report_dir, exist_ok=True)
+    with open(path, "w") as fp:
+        json.dump(to_json_safe(metadata), fp, indent=4)
+    logger.info(f"Run metadata saved to {path}")
+    return path
+
+
+def _git_revision():
+    """Short git revision when running from a checkout, else None."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None if out.returncode == 0 else None
+
+
 def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
     """Run benchmark for a single model, save results and generate reports.
 
@@ -453,7 +551,9 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
         output_dir: Optional directory for outputs (default: report/)
 
     Returns:
-        Tuple of (results, flattened_stats) for use in comparative reports
+        Tuple of (results, flattened_stats, stats): raw per-file results,
+        the attack->accuracy_mean mapping the comparative report ranks, and
+        the full per-attack stats (means, n, std, failure counts).
     """
     args_dict = vars(args).copy()
     args_dict["wm_model"] = model_name
@@ -466,9 +566,26 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
     if args.save_audio:
         args_dict["output_dir"] = os.path.join(report_dir, "audio")
 
-    results = benchmark.run(filepaths=filepaths, **args_dict)
-
     results_path = os.path.join(report_dir, "benchmark_results.json")
+
+    # Rewrite the results file after every file rather than once at the end.
+    # A long run used to keep everything in memory until the last file
+    # finished, so interrupting it discarded all the work done so far.
+    completed = {}
+
+    def _persist(filepath, file_results):
+        completed[filepath] = file_results
+        with open(results_path, "w") as fp:
+            json.dump(to_json_safe(completed), fp, indent=4)
+        logger.info(
+            f"Saved results for {len(completed)}/{len(filepaths)} files "
+            f"to {results_path}"
+        )
+
+    results = benchmark.run(
+        filepaths=filepaths, on_file_complete=_persist, **args_dict
+    )
+
     with open(results_path, "w") as fp:
         json.dump(to_json_safe(results), fp, indent=4)
     logger.info(f"Results saved to {results_path}")
@@ -483,6 +600,22 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
     with open(stats_path, "w") as fp:
         json.dump(to_json_safe(stats), fp, indent=4)
     logger.info(f"Statistics saved to {stats_path}")
+
+    write_run_metadata(
+        report_dir, args, benchmark, [model_name],
+        extra={
+            # The rate actually used, resolved from the model's config —
+            # previously this was only logged to stderr and then lost.
+            "sampling_rate": (benchmark.models.get(model_name, {}).get("config") or {}).get(
+                "sampling_rate"
+            ),
+            "watermark_size": (benchmark.models.get(model_name, {}).get("config") or {}).get(
+                "watermark_size"
+            ),
+            "attacks_run": sorted(stats),
+            "n_files": len(filepaths),
+        },
+    )
 
     try:
         latex_path, chart_path = generate_benchmark_report(
@@ -509,17 +642,17 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
         except Exception as e:
             logger.error(f"Failed to generate detailed report: {e}")
 
-    return results, flattened_stats
+    return results, flattened_stats, stats
 
 
 def run_multiple_models(benchmark, filepaths, model_names, args):
     """Run benchmark for multiple models and generate comparative report."""
-    report_base = "report"
+    report_base = args.report_dir
     _clean_report_dir(report_base)
-    logger.info(f"Cleaned previous results from {report_base}/")
 
     all_results = {}
     all_stats = {}
+    all_meta = {}
 
     failed_models = []
     for model_name in model_names:
@@ -530,7 +663,7 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
         model_dir = os.path.join(report_base, model_name)
         _copy_deepmark_assets(report_base, model_dir)
         try:
-            results, flattened_stats = run_single_model(
+            results, flattened_stats, model_stats = run_single_model(
                 benchmark, filepaths, model_name, args, output_dir=model_dir,
             )
         except (MemoryError, ConnectionError, OSError) as e:
@@ -549,6 +682,18 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
 
         all_results[model_name] = results
         all_stats[model_name] = flattened_stats
+        # Metadata the comparative report needs to keep the columns honest:
+        # a zero-bit model's score is a detection rate (floor 0), a multi-bit
+        # model's is bit agreement (floor ~50), and payload width differs.
+        model_config = benchmark.models[model_name].get("config") or {}
+        all_meta[model_name] = {
+            "is_zero_bit": bool(model_config.get("is_zero_bit", False)),
+            "watermark_size": model_config.get("watermark_size"),
+            "sampling_rate": model_config.get("sampling_rate"),
+            "n_files": max(
+                (m.get("accuracy_n", 0) for m in model_stats.values()), default=0
+            ),
+        }
 
     if failed_models:
         logger.warning(
@@ -578,6 +723,7 @@ def run_multiple_models(benchmark, filepaths, model_names, args):
             all_results, all_stats,
             calculate_quality_metrics=args.calculate_quality_metrics,
             crop_before_attack=args.crop_before_attack,
+            model_meta=all_meta,
         )
         logger.info(f"Comparative report saved to: {comp_dir}")
     except Exception as e:

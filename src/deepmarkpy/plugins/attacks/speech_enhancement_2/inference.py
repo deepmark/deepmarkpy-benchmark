@@ -22,6 +22,15 @@ from deepmarkpy.core.inference import BaseAttackEngine
 logger = logging.getLogger(__name__)
 
 
+# The ClearVoice speech_enhancement networks, from its own dispatch table.
+# Anything else either does not exist or belongs to a different task.
+SPEECH_ENHANCEMENT_MODELS = frozenset({
+    "MossFormerGAN_SE_16K",
+    "MossFormer2_SE_48K",
+    "FRCRN_SE_16K",
+})
+
+
 class SpeechEnhancement2Engine(BaseAttackEngine):
     """ClearVoice speech-enhancement attack.
 
@@ -39,6 +48,15 @@ class SpeechEnhancement2Engine(BaseAttackEngine):
         Raises on processing failure; app.py builds the error-in-200 response.
         """
         model_name = params["model_name"]
+        if model_name not in SPEECH_ENHANCEMENT_MODELS:
+            # ClearVoice interpolates this straight into a config path and only
+            # checks the name after opening the file, so an unchecked value
+            # reads arbitrary YAML off the container and returns what it finds
+            # through the error response.
+            raise ValueError(
+                f"Unknown speech-enhancement model {model_name!r}; "
+                f"expected one of {sorted(SPEECH_ENHANCEMENT_MODELS)}"
+            )
         audio_arr = np.array(audio)
 
         # Create a temporary file with .wav extension (not .mp3)
@@ -84,6 +102,3 @@ class SpeechEnhancement2Engine(BaseAttackEngine):
             except Exception as e:
                 logger.warning(f"Failed to delete temporary file {tmp_path}: {str(e)}")
 
-
-# Stable import alias.
-Engine = SpeechEnhancement2Engine

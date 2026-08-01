@@ -11,8 +11,16 @@ from speechbrain.inference.enhancement import (
     SpectralMaskEnhancement,
     WaveformEnhancement,
 )
+from speechbrain.utils.fetching import FetchConfig
 
 from deepmarkpy.utils.utils import resample_audio
+
+# Pinned so a rebuild cannot silently pick up a different upstream checkpoint.
+# SpeechBrain takes the revision through FetchConfig rather than a from_hparams
+# keyword; a bare revision= lands in **kwargs and reaches Pretrained.__init__,
+# which rejects it.
+WAVEFORM_REVISION = "5142933779578738d62d0d1f79290e824c8cd2fb"
+SPECTRAL_MASK_REVISION = "a196ce26b3bdace6fa1d819017584bdbcce462a8"
 
 from deepmarkpy.core.inference import BaseAttackEngine
 
@@ -32,9 +40,15 @@ class SpeechEnhancement1Engine(BaseAttackEngine):
         assert type=="waveform" or type=="spectral_mask", "type must be either 'waveform' or 'spectral_mask'."
 
         if type=="waveform":
-            self.model = WaveformEnhancement.from_hparams(source="speechbrain/mtl-mimic-voicebank")
+            self.model = WaveformEnhancement.from_hparams(
+                source="speechbrain/mtl-mimic-voicebank",
+                fetch_config=FetchConfig(revision=WAVEFORM_REVISION),
+            )
         else:
-            self.model = SpectralMaskEnhancement.from_hparams(source="speechbrain/metricgan-plus-voicebank")
+            self.model = SpectralMaskEnhancement.from_hparams(
+                source="speechbrain/metricgan-plus-voicebank",
+                fetch_config=FetchConfig(revision=SPECTRAL_MASK_REVISION),
+            )
 
         self.model.eval()
 
@@ -55,6 +69,3 @@ class SpeechEnhancement1Engine(BaseAttackEngine):
         enhanced = resample_audio(enhanced, input_sr=16000, target_sr=sampling_rate)
         return enhanced
 
-
-# Stable import alias.
-Engine = SpeechEnhancement1Engine

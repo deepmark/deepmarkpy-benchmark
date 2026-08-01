@@ -7,6 +7,7 @@ import numpy as np
 
 from deepmarkpy.utils.attack_groups import group_attacks, ATTACK_GROUPS
 from deepmarkpy.utils.latex_helpers import (
+    MetricCaveats,
     build_longtable,
     compile_latex,
     display_attack_name,
@@ -411,14 +412,21 @@ class DetailedReportGenerator:
             )
             rows.append("    \\midrule")
 
+        caveats = MetricCaveats()
         for a in available:
             data = aggregated["attacks"][a][data_key]
             display = self._display_name(a)
-            cols = " & ".join(
-                self._format_val(data.get(m, {"mean": None}))
-                for m in metrics
-            )
-            rows.append(f"    {display} & {cols} \\\\")
+            cells = []
+            for m in metrics:
+                cell = self._format_val(data.get(m, {"mean": None}))
+                if cell != "N/A":
+                    # Reported, but this attack may make the metric unreliable.
+                    cell += caveats.mark(a, m)
+                cells.append(cell)
+            rows.append(f"    {display} & " + " & ".join(cells) + " \\\\")
+
+        if caveats.any_flagged:
+            caption += " " + caveats.footnote().strip()
 
         return build_longtable(
             col_spec, f"Condition & {header_str}", rows, caption, label,

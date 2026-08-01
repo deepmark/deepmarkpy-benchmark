@@ -1,9 +1,10 @@
 {
   "service": "wavmark",
   "kind": "model",
-  "recorded": "2026-07-30",
-  "image_id": "6c6f083a0e29958c7389673b06067280417f60573a0a6319cbc102efc42cc408",
+  "recorded": "2026-08-01",
+  "image_id": "2ff358ed1354d29cc332c73a8b912fdfa654352c36e73356beb366e15b03328c",
   "classification": "deterministic",
+  "classification_note": null,
   "endpoints": {
     "/embed": {
       "request_non_audio": {
@@ -13,7 +14,7 @@
       "response_keys": [
         "watermarked_audio"
       ],
-      "response_sha256": "7adf963a00fdf88e99b4a76b80ff45c080e64016e430b08902d9ac4b5c2b50c8",
+      "response_sha256": "eb2ce42c771b3f1cf6fa9cf2b60fb291af46480f7bdbca0a3182e738c9b28d26",
       "double_call_identical": true,
       "double_call_stats": [
         {

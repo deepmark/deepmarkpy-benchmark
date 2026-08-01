@@ -39,9 +39,6 @@ Excluded (with rationale, also recorded in the manifest):
   collusion_2 additionally draws from a fresh ``np.random.default_rng()`` at
   attack.py:129, beyond ``np.random.seed``'s reach);
 - corpus-dependent attacks (replay, mixing — need on-disk corpora);
-- attacks absent from the canonical environment (wavelet, time_stretch, pitch_shift,
-  inverted_time_stretch — import-time deps outside requirements.txt, absent
-  from the canonical environment).
 """
 
 import datetime
@@ -92,11 +89,13 @@ GOLDEN_ATTACKS = {
     "FlipSamplesAttack": {},
     "GaussianNoiseAttack": {},
     "HighpassFilterAttack": {},
+    "InvertedTimeStretchAttack": {},
     "LPCAttack": {},
     "LowpassFilterAttack": {},
     "Mp3CompressionAttack": {},
     "PCMQuantizationAttack": {},
     "PinkNoiseAttack": {},
+    "PitchShiftAttack": {},
     "QuantizationAttack": {},
     "ReplacementAttack": {},
     "Replacement2Attack": {},
@@ -104,6 +103,8 @@ GOLDEN_ATTACKS = {
     "SignInversionAttack": {},
     "SmoothingAttack": {},
     "STFTQuantizationAttack": {},
+    "TimeStretchAttack": {},
+    "WaveletAttack": {},
     "ZeroCrossInsertsAttack": {},
 }
 
@@ -123,10 +124,6 @@ EXCLUSIONS = {
     ],
     "corpus-dependent (need AIR_wav_files/ and music/ at CWD)": [
         "ReplayAttack", "MixingAttack",
-    ],
-    "absent from the canonical environment (deps outside requirements.txt)": [
-        "WaveletAttack", "TimeStretchAttack", "PitchShiftAttack",
-        "InvertedTimeStretchAttack",
     ],
     "not goldenable: pycodec2 carries C encoder state"
     " across in-process instantiations, so output is"
@@ -158,6 +155,16 @@ def ffmpeg_version() -> str:
     return out.stdout.splitlines()[0] if out.returncode == 0 else "unavailable"
 
 
+def rubberband_version() -> str:
+    """The rubberband CLI backing pyrubberband's time-stretch/pitch-shift."""
+    try:
+        out = subprocess.run(["rubberband", "-V"], capture_output=True, text=True)
+    except FileNotFoundError:
+        return "unavailable"
+    text = (out.stderr or out.stdout).splitlines()
+    return text[0] if text else "unknown"
+
+
 def main() -> None:
     os.makedirs(GOLDENS_DIR, exist_ok=True)
     pm = PluginManager()
@@ -170,6 +177,7 @@ def main() -> None:
                        + platform.python_version(),
         "machine": f"{platform.system()} {platform.machine()}",
         "ffmpeg": ffmpeg_version(),
+        "rubberband": rubberband_version(),
         "numeric_env": {
             pkg: importlib.metadata.version(pkg) for pkg in NUMERIC_ENV_PACKAGES
         },

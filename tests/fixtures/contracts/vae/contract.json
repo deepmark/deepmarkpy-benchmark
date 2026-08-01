@@ -1,9 +1,10 @@
 {
   "service": "vae",
   "kind": "attack",
-  "recorded": "2026-07-30",
-  "image_id": "2691d3a0d07d8b25385807c1b0f23350bfd386624d50264fc23730cac90965f2",
+  "recorded": "2026-08-01",
+  "image_id": "d1caf2f9e5e279bff628687192a3cd89e7dffd08c9dc294a649822d3700489f8",
   "classification": "stochastic",
+  "classification_note": null,
   "endpoints": {
     "/attack": {
       "request_non_audio": {
@@ -13,16 +14,16 @@
       "response_keys": [
         "audio"
       ],
-      "response_sha256": "1aa109fd1a26a7794b533007ef00fc623cd2fb542724e26d7b9f336943a1a945",
+      "response_sha256": "d7b03213161daf3bb221e713190ed004a011601ff999f4eeb875c4962cb38a1d",
       "double_call_identical": false,
       "double_call_stats": [
         {
           "audio_len": 14336,
-          "audio_rms": 0.3203916121358381
+          "audio_rms": 0.39280904956009344
         },
         {
           "audio_len": 14336,
-          "audio_rms": 0.4601244200539295
+          "audio_rms": 0.4086123785988522
         }
       ]
     }

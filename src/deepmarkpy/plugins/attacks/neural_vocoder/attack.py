@@ -4,6 +4,7 @@ import os
 import numpy as np
 import requests
 
+from deepmarkpy.core.wire import decode_audio, encode_audio
 from deepmarkpy.core.base_attack import BaseAttack
 
 logger = logging.getLogger(__name__)
@@ -27,13 +28,21 @@ class NeuralVocoderAttack(BaseAttack):
         if sampling_rate is None:
             raise ValueError("'sampling_rate' must be provided in kwargs.")
 
-        response = requests.post(
-            self.endpoint + "/attack",
-            json={"audio": audio.tolist(), "sampling_rate": sampling_rate},
-        )
-        response_data = response.json()
+        try:
+            response = requests.post(
+                self.endpoint + "/attack",
+                json={"audio": encode_audio(audio), "sampling_rate": sampling_rate},
+                timeout=600,
+            )
+            response.raise_for_status()
+            response_data = response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"NeuralVocoderAttack request failed: {e}")
+            raise
         
-        if "audio" not in response_data:
-             logger.error("'/apply' response does not contain 'audio' key.")
-             raise KeyError("Missing 'audio' in response from /apply")
-        return np.array(response_data["audio"])
+        if response_data.get("audio") is None:
+            raise RuntimeError(
+                f"NeuralVocoderAttack: service returned no audio "
+                f"({response_data.get('error', 'no error reported')})"
+            )
+        return decode_audio(response_data["audio"])

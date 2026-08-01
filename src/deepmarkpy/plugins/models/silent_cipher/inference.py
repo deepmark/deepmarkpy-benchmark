@@ -1,8 +1,7 @@
 """SilentCipher embed/detect inference, HTTP-free.
 
 The 44.1k checkpoint is loaded while the service config declares 16 kHz —
-intentional, preserved behavior. Both endpoints intentionally feed
-``resample_audio`` the raw request list. ``detect`` returns a JSON-able
+intentional, preserved behavior. ``detect`` returns a JSON-able
 bit list, or ``None`` when decoding fails — the bare except intentionally
 swallows the failure.
 """
@@ -42,7 +41,7 @@ class SilentCipherEngine(BaseModelEngine):
         audio_arr = np.array(audio)
         watermark_arr = np.array(watermark_data)
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         watermark_arr = np.split(watermark_arr, len(watermark_arr) // 8)
         watermark_arr = [int("".join(map(str, arr)), 2) for arr in watermark_arr]
@@ -58,7 +57,7 @@ class SilentCipherEngine(BaseModelEngine):
         audio_arr = np.array(audio)
 
         if sampling_rate != self.config["sampling_rate"]:
-            audio_arr = resample_audio(audio, sampling_rate, self.config["sampling_rate"])
+            audio_arr = resample_audio(audio_arr, sampling_rate, self.config["sampling_rate"])
 
         message = self.model.decode_wav(audio_arr, self.config["sampling_rate"], phase_shift_decoding=self.config["phase_shift_decoding"])
         try:
@@ -71,6 +70,3 @@ class SilentCipherEngine(BaseModelEngine):
 
         return message
 
-
-# Stable import alias.
-Engine = SilentCipherEngine

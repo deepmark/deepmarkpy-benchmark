@@ -16,8 +16,7 @@ shapes, which vary by plugin and are part of each service's frozen
 contract: most attacks return an ``np.ndarray`` but ``opus_codec`` returns
 ``(audio, output_sr)``; model ``detect`` returns an ndarray, a
 ``(watermark, confidence)`` tuple, a scalar, a bit list, or ``None``
-depending on the model. Each module also exposes the stable alias
-``Engine`` for its engine class.
+depending on the model.
 
 This module stays import-light (stdlib + numpy only) so consumers can
 type against it without pulling any ML runtime.
@@ -26,6 +25,22 @@ type against it without pulling any ML runtime.
 import abc
 
 import numpy as np
+
+
+# Upper bound on the audio arrays a service will accept. Every request model
+# declared a bare List[float], and FastAPI buffers and parses the whole body
+# before validation, so a single large POST could exhaust a container that has
+# no memory limit. Ten minutes at 48 kHz is far beyond any benchmark clip --
+# the corpora are seconds long -- while still bounding the cost of one request.
+MAX_AUDIO_SAMPLES = 48_000 * 600
+
+# The same ceiling expressed for the base64 wire form: 8 bytes per sample,
+# then 4 base64 characters per 3 bytes. Requests carry the encoded string, so
+# the cap has to be applied in the units the field actually holds.
+MAX_AUDIO_B64_CHARS = ((MAX_AUDIO_SAMPLES * 8 + 2) // 3) * 4
+
+# Watermark payloads are tens of bits; nothing legitimate approaches this.
+MAX_WATERMARK_BITS = 4096
 
 
 class BaseAttackEngine(abc.ABC):

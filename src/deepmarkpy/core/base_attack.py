@@ -48,6 +48,11 @@ class BaseAttack(abc.ABC):
         Returns:
             np.ndarray: The attacked (modified) audio signal.
 
+        An attack may instead return ``(audio, extra)`` only if its class name
+        is listed in ``benchmark._TUPLE_RETURNING_ATTACKS``; the run loop
+        unpacks those and nothing else. ``CrossModelAttack`` is the only one
+        today, returning the watermark it embedded alongside the audio.
+
         This method must be implemented by all subclasses.
         """
         pass

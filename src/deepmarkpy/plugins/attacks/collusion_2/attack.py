@@ -126,7 +126,9 @@ class Collusion2Attack(BaseAttack):
         audio_a = audio[:min_len].copy()
         audio_b = second_audio[:min_len]
 
-        rng = np.random.default_rng()
+        # Seeded from the global stream so a seeded run is reproducible;
+        # an unseeded run still draws fresh entropy, as before.
+        rng = np.random.default_rng(np.random.randint(0, 2**32))
         candidates = self._segments_between_pauses(audio_a, sr, params)
         regions = self._select_regions(candidates, min_len, params, rng)
 

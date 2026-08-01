@@ -10,6 +10,41 @@ from scipy.signal import resample_poly
 logger = logging.getLogger(__name__)
 
 
+def load_env_file(path: str = ".env") -> Dict[str, str]:
+    """Read ``path`` into the process environment and return what it set.
+
+    Docker Compose reads ``.env`` on its own, so the containers already follow
+    it; nothing was reading it on the host, which left a port edit moving the
+    service while the client kept dialling its compiled-in default. Values
+    already present in the environment win, so an explicit export still
+    overrides the file.
+
+    Accepts ``KEY=value``, surrounding whitespace, and single- or double-quoted
+    values. Blank lines and ``#`` comments are skipped. A missing file is not
+    an error.
+    """
+    applied: Dict[str, str] = {}
+    if not os.path.isfile(path):
+        return applied
+
+    with open(path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if not key or key in os.environ:
+                continue
+            os.environ[key] = value
+            applied[key] = value
+
+    if applied:
+        logger.info("Loaded %d setting(s) from %s", len(applied), path)
+    return applied
+
+
 def load_config(config_path: str = "config.json") -> Dict:
     """
     Loads a JSON configuration file.

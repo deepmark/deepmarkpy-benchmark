@@ -26,6 +26,7 @@ from deepmarkpy.utils.attack_groups import (
     get_group_for_attack,
 )
 from deepmarkpy.utils.latex_helpers import (
+    MetricCaveats,
     build_longtable,
     compile_latex,
     display_attack_name,
@@ -168,17 +169,24 @@ def _always_on_table(attacks: Dict[str, Any], attack_names: List[str],
                      caption: str, label: str) -> str:
     """PESQ, ViSQOL, STOI table for a list of attacks."""
     rows = []
+    caveats = MetricCaveats()
     for name in attack_names:
         if name not in attacks:
             continue
         data = attacks[name]
         display = display_attack_name(name)
         q = data.get("metrics") or {}
-        cols = " & ".join(_format_metric(q.get(m)) for m in ALWAYS_ON_METRICS)
+        cols = " & ".join(
+            _format_metric(q.get(m)) + caveats.mark(name, m)
+            for m in ALWAYS_ON_METRICS
+        )
         rows.append(f"    {display} & {cols} \\\\")
 
     if not rows:
         return ""
+
+    if caveats.any_flagged:
+        caption += " " + caveats.footnote().strip()
 
     headers = " & ".join(_metric_label(m) for m in ALWAYS_ON_METRICS)
     return build_longtable(
@@ -197,17 +205,23 @@ def _metrics_table(attacks: Dict[str, Any], attack_names: List[str],
         return ""
 
     rows = []
+    caveats = MetricCaveats()
     for name in attack_names:
         if name not in attacks:
             continue
         data = attacks[name]
         display = display_attack_name(name)
         q = data.get("metrics") or {}
-        cols = " & ".join(_format_metric(q.get(m)) for m in metric_keys)
+        cols = " & ".join(
+            _format_metric(q.get(m)) + caveats.mark(name, m) for m in metric_keys
+        )
         rows.append(f"    {display} & {cols} \\\\")
 
     if not rows:
         return ""
+
+    if caveats.any_flagged:
+        caption += " " + caveats.footnote().strip()
 
     headers = " & ".join(_metric_label(m) for m in metric_keys)
     return build_longtable(

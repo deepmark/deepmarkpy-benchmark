@@ -415,17 +415,50 @@ def mcd(reference: np.ndarray, degraded: np.ndarray,
 # we cache the model instance and the per-call result so that all five
 # NISQA dimensions returned by a single inference (mos/noi/dis/col/loud)
 # can be served from one prediction.
-_NISQA_WEIGHTS_PATH = os.environ.get(
-    "NISQA_WEIGHTS_PATH",
-    os.path.join(os.path.dirname(__file__), "..", "..", "weights", "nisqa.tar"),
-)
+def _default_nisqa_weights_path():
+    """Locate weights/nisqa.tar the way the README describes.
+
+    Three `..` reach the repository root from src/deepmarkpy/utils/; before the
+    src-layout move this file sat at src/utils/ and two sufficed, so the default
+    had been resolving to src/weights/ and the README's instructions silently
+    produced nothing. Installed from a wheel there is no repository above the
+    package, so the working directory is tried as well -- and NISQA_WEIGHTS_PATH
+    overrides both.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo_root = os.path.join(here, "..", "..", "..", "weights", "nisqa.tar")
+    if os.path.exists(repo_root):
+        return os.path.abspath(repo_root)
+    cwd = os.path.join(os.getcwd(), "weights", "nisqa.tar")
+    if os.path.exists(cwd):
+        return cwd
+    return os.path.abspath(repo_root)
+
+
+_NISQA_WEIGHTS_PATH = os.environ.get("NISQA_WEIGHTS_PATH", _default_nisqa_weights_path())
 _nisqa_model = None
 _nisqa_unavailable = False
+_nisqa_reason = None
+
+
+def nisqa_status():
+    """Whether NISQA can score, and why not when it cannot.
+
+    The unavailability latch is set once per process and every later call
+    short-circuits, so the single log line explaining it can scroll away long
+    before a report full of N/A cells appears. This is what the run records.
+    """
+    _get_nisqa_model()
+    return {
+        "available": not _nisqa_unavailable,
+        "reason": _nisqa_reason,
+        "weights_path": os.path.abspath(_NISQA_WEIGHTS_PATH),
+    }
 
 
 def _get_nisqa_model():
     """Return a cached nisqaModel, or None when unavailable."""
-    global _nisqa_model, _nisqa_unavailable
+    global _nisqa_model, _nisqa_unavailable, _nisqa_reason
     if _nisqa_unavailable:
         return None
     if _nisqa_model is not None:
@@ -437,6 +470,7 @@ def _get_nisqa_model():
             f"skipped. Set NISQA_WEIGHTS_PATH or place nisqa.tar there."
         )
         _nisqa_unavailable = True
+        _nisqa_reason = f"weights not found at {weights_abs}"
         return None
     try:
         from nisqa.NISQA_model import nisqaModel
@@ -445,6 +479,7 @@ def _get_nisqa_model():
             "nisqa package not installed; NISQA scores will be skipped."
         )
         _nisqa_unavailable = True
+        _nisqa_reason = "nisqa package not installed"
         return None
     try:
         import contextlib
@@ -465,6 +500,7 @@ def _get_nisqa_model():
     except (RuntimeError, ValueError, FileNotFoundError, ImportError) as e:
         logger.warning(f"NISQA model could not be loaded: {e}")
         _nisqa_unavailable = True
+        _nisqa_reason = f"model failed to load: {e}"
         return None
 
 
