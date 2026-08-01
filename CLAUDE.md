@@ -62,7 +62,7 @@ deepmark-benchmark --wav_files_dir /path/to/wavs --wm_model AudioSealModel --att
 ## Common Gotchas
 
 - Plugin loading imports ALL plugins at startup. If a dependency is missing (e.g., `pycodec2`, `audiocomplib`), that plugin does not load; the failure is recorded in `PluginManager.failed`, and asking for that attack by name or via `--attack_groups` raises rather than measuring a smaller set. `run_metadata.json` carries the same list, but only `run_single_model` writes it — `--no_attacks` and `--detection_reliability` produce no metadata file
-- `.env` is tracked in git even though `.gitignore` lists it (the entry never untracked it) — local port edits show up as modifications; `.env.example` mirrors it. `run.py` loads it into the environment before plugins are constructed, so a port set there reaches the host clients as well as Compose; real environment variables still win
+- `.env` is untracked; `.env.example` is the template and a fresh clone needs `cp .env.example .env`. `run.py` loads it into the environment before plugins are constructed, so a port set there reaches the host clients as well as Compose; real environment variables still win. `HOST` is uvicorn's bind address *inside* each container and must stay `0.0.0.0` — the loopback restriction is the publish side in `docker-compose.yml`
 - Accuracy values are percentages (0-100), NOT decimals (0-1). All thresholds and comparisons must use percentage scale
 - `CrossModelAttack.apply()` returns a tuple `(audio, watermark)`, not just audio — handled specially in benchmark.py
 - Perth is a zero-bit model (detect returns a scalar, not a bit array)

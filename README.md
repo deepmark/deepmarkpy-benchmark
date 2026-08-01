@@ -44,11 +44,18 @@ git clone https://github.com/deepmark/deepmarkpy-benchmark.git
 cd deepmarkpy-benchmark
 ```
 
-### 2. Review Environment File (`.env`)
+### 2. Create the Environment File (`.env`)
 
-This repository includes a `.env` file which defines the default network ports used by the various Docker services (models and attacks); `.env.example` mirrors it as a reference. Docker Compose automatically reads `.env` when starting the services.
+Service ports live in a `.env` file, which Docker Compose reads automatically
+and which the CLI loads so host-side clients use the same ports. It is not
+tracked, so create it from the template:
 
-*   **Action:** Review the ports defined in the `.env` file. You generally don't need to change the defaults unless they conflict with other services already running on your machine. If a conflict exists, modify the corresponding port number in the `.env` file before proceeding.
+```bash
+cp .env.example .env
+```
+
+*   **Action:** Review the ports. The defaults are fine unless one collides with something already running, in which case change it in `.env` before starting the services.
+*   `HOST` is the address uvicorn binds *inside* each container and must stay `0.0.0.0`. The services are kept off the network by `docker-compose.yml`, which publishes every port on `127.0.0.1` only.
 
 ### 3. Install Core Dependencies (Optional - for development/direct script interaction)
 

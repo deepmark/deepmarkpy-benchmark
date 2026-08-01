@@ -87,10 +87,20 @@ CPU-only benchmark; `aware` duplicated a 411 MB torch tree for one patch
 version; `timbrewm` and `silent_cipher` shipped a torchaudio that could not be
 imported. The benchmark is CPU-only by decision, enforced by a test.
 
+### Setup
+
+`.env` is no longer tracked — it duplicated `.env.example` variable for
+variable, and being tracked while gitignored made every local port edit show
+up as a repo modification. **A fresh clone now needs `cp .env.example .env`
+before `docker-compose up`.** `HOST` stays `0.0.0.0`: it is uvicorn's bind
+address inside each container, and what keeps the services off the network is
+docker-compose publishing every port on `127.0.0.1`.
+
 ### Removed
 
 - `docs/MIGRATION.md` (the v1.0.0 packaging migration).
 - CI workflow, to be reintroduced in a later release.
+- `.env` from version control; `.env.example` is the template.
 
 ## v1.1.0 — 2026-07-30
 
