@@ -165,9 +165,10 @@ def main():
         action="store_true",
         default=False,
         help=(
-            "Calculate audio quality metrics (PESQ, PSNR, SI-SDR, MCD, ViSQOL) "
-            "and speech intelligibility metrics (STOI, SII, NCM); "
-            "generates a detailed report."
+            "Add PSNR, SI-SDR, MCD, SII, NCM and NISQA to the metrics already "
+            "computed, and emit the detailed report. PESQ, ViSQOL and STOI are "
+            "always computed and appear in the basic report without this flag. "
+            "Each attack group receives only the metrics meaningful for it."
         ),
     )
 
@@ -565,9 +566,26 @@ def run_single_model(benchmark, filepaths, model_name, args, output_dir=None):
     if args.save_audio:
         args_dict["output_dir"] = os.path.join(report_dir, "audio")
 
-    results = benchmark.run(filepaths=filepaths, **args_dict)
-
     results_path = os.path.join(report_dir, "benchmark_results.json")
+
+    # Rewrite the results file after every file rather than once at the end.
+    # A long run used to keep everything in memory until the last file
+    # finished, so interrupting it discarded all the work done so far.
+    completed = {}
+
+    def _persist(filepath, file_results):
+        completed[filepath] = file_results
+        with open(results_path, "w") as fp:
+            json.dump(to_json_safe(completed), fp, indent=4)
+        logger.info(
+            f"Saved results for {len(completed)}/{len(filepaths)} files "
+            f"to {results_path}"
+        )
+
+    results = benchmark.run(
+        filepaths=filepaths, on_file_complete=_persist, **args_dict
+    )
+
     with open(results_path, "w") as fp:
         json.dump(to_json_safe(results), fp, indent=4)
     logger.info(f"Results saved to {results_path}")

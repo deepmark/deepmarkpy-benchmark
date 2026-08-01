@@ -310,6 +310,7 @@ class Benchmark:
         output_dir="audio_processed",
         calculate_quality_metrics=True,
         crop_before_attack=None,
+        on_file_complete=None,
         **kwargs,
     ):
         """
@@ -549,6 +550,11 @@ class Benchmark:
 
                 if attack_class_name == "CrossModelAttack":
                     results[filepath]["attacks"][attack_name]["accuracy_cross_model"] = different_accuracy
+
+            # A long run used to hold every result in memory until the last
+            # file finished, so an interruption at file N of M kept nothing.
+            if on_file_complete is not None:
+                on_file_complete(filepath, results[filepath])
 
         return results
 

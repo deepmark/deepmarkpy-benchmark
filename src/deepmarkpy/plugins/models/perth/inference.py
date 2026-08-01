@@ -10,7 +10,6 @@ a JSON-able scalar or list.
 import logging
 
 import numpy as np
-import torch
 from perth.perth_net.perth_net_implicit.perth_watermarker import PerthImplicitWatermarker
 
 from deepmarkpy.utils.utils import resample_audio
@@ -23,17 +22,13 @@ logger = logging.getLogger(__name__)
 class PerthEngine(BaseModelEngine):
     """Perth zero-bit embed/detect at the config sampling rate.
 
-    The watermarker loads once at construction. The computed ``device`` is
-    logged and otherwise unused.
+    The watermarker loads once at construction and places itself; ``device``
+    is accepted for interface uniformity and unused.
     """
 
     def __init__(self, config: dict, device: str | None = None):
         """Load the Perth implicit watermarker."""
         self.config = config
-        if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info(f"Using device: {device}")
-
         self.model = PerthImplicitWatermarker()
 
     def embed(self, audio: list, watermark_data: list, sampling_rate: int) -> np.ndarray:
