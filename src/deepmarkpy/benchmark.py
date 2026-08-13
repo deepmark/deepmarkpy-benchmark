@@ -20,6 +20,11 @@ _TUPLE_RETURNING_ATTACKS = {"CrossModelAttack"}
 _NEEDS_CLEAN_ORIGINAL = {"ZeroBitCollusionAttack"}
 _CODEC2_SUPPORTED = {700, 1200, 1300, 1400, 1600, 2400, 3200}
 
+_BENCHMARK_INTERNAL_KEYS = frozenset({
+    "sampling_rate", "model", "models", "watermark_data",
+    "orig_audio", "original_audio_collusion",
+})
+
 
 def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, attack_kwargs):
     """Apply an attack, honoring the conventions some attacks require.
@@ -370,8 +375,18 @@ class Benchmark:
             sampling_rate = self.models[wm_model]["config"]["sampling_rate"]
             logger.info(f"Using default sampling rate {sampling_rate} for model {wm_model}")
 
+        all_attack_config_keys = set()
+        for atk_entry in self.attacks.values():
+            if atk_entry.get("config"):
+                all_attack_config_keys.update(atk_entry["config"].keys())
+
+        filtered_kwargs = {
+            k: v for k, v in kwargs.items()
+            if k in all_attack_config_keys or k in _BENCHMARK_INTERNAL_KEYS
+        }
+
         attack_kwargs = {
-            **kwargs,
+            **filtered_kwargs,
             "model": model_instance,
             "watermark_data": watermark_data,
             "sampling_rate": sampling_rate,

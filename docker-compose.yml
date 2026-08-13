@@ -7,6 +7,9 @@ services:
       - "127.0.0.1:${AUDIOSEAL_PORT}:${AUDIOSEAL_PORT}" # Reads from .env
     environment:
       - APP_PORT=${AUDIOSEAL_PORT} # Injects into container
+    volumes:
+      - audioseal-cache:/root/.cache
+    mem_limit: 8g
 
   silentcipher:
     build:
@@ -16,6 +19,9 @@ services:
       - "127.0.0.1:${SILENTCIPHER_PORT}:${SILENTCIPHER_PORT}"
     environment:
       - APP_PORT=${SILENTCIPHER_PORT}
+    volumes:
+      - silentcipher-cache:/root/.cache
+    mem_limit: 4g
 
   wavmark:
     build:
@@ -25,6 +31,9 @@ services:
       - "127.0.0.1:${WAVMARK_PORT}:${WAVMARK_PORT}"
     environment:
       - APP_PORT=${WAVMARK_PORT}
+    volumes:
+      - wavmark-cache:/root/.cache
+    mem_limit: 4g
 
   aware:
     build:
@@ -34,6 +43,9 @@ services:
       - "127.0.0.1:${AWARE_PORT}:${AWARE_PORT}"
     environment:
       - APP_PORT=${AWARE_PORT}
+    volumes:
+      - aware-cache:/root/.cache
+    mem_limit: 4g
 
   vae:
     build:
@@ -43,6 +55,9 @@ services:
       - "127.0.0.1:${VAE_PORT}:${VAE_PORT}"
     environment:
       - APP_PORT=${VAE_PORT}
+    volumes:
+      - vae-cache:/root/.cache
+    mem_limit: 6g
 
   encodec:
     build:
@@ -52,6 +67,9 @@ services:
       - "127.0.0.1:${ENCODEC_PORT}:${ENCODEC_PORT}"
     environment:
       - APP_PORT=${ENCODEC_PORT}
+    volumes:
+      - encodec-cache:/root/.cache
+    mem_limit: 4g
 
   descript_audio_codec:
     build:
@@ -61,6 +79,9 @@ services:
       - "127.0.0.1:${DESCRIPT_AUDIO_CODEC_PORT}:${DESCRIPT_AUDIO_CODEC_PORT}"
     environment:
       - APP_PORT=${DESCRIPT_AUDIO_CODEC_PORT}
+    volumes:
+      - dac-cache:/root/.cache
+    mem_limit: 10g
 
   diffusion:
     build:
@@ -70,6 +91,9 @@ services:
       - "127.0.0.1:${DIFFUSION_PORT}:${DIFFUSION_PORT}"
     environment:
       - APP_PORT=${DIFFUSION_PORT}
+    volumes:
+      - diffusion-cache:/root/.cache
+    mem_limit: 8g
 
   speech_tokenization:
     build:
@@ -79,6 +103,9 @@ services:
       - "127.0.0.1:${SPEECH_TOKENIZATION_PORT}:${SPEECH_TOKENIZATION_PORT}"
     environment:
       - APP_PORT=${SPEECH_TOKENIZATION_PORT}
+    volumes:
+      - speech-tokenization-cache:/root/.cache
+    mem_limit: 6g
 
   neural_vocoder:
     build:
@@ -88,6 +115,9 @@ services:
       - "127.0.0.1:${NEURAL_VOCODER_PORT}:${NEURAL_VOCODER_PORT}"
     environment:
       - APP_PORT=${NEURAL_VOCODER_PORT}
+    volumes:
+      - neural-vocoder-cache:/root/.cache
+    mem_limit: 8g
 
   speech_enhancement1:
     build:
@@ -97,6 +127,9 @@ services:
       - "127.0.0.1:${SPEECH_ENHANCEMENT_PORT1}:${SPEECH_ENHANCEMENT_PORT1}"
     environment:
       - APP_PORT=${SPEECH_ENHANCEMENT_PORT1}
+    volumes:
+      - speech-enhancement1-cache:/root/.cache
+    mem_limit: 6g
 
   speech_enhancement2:
     build:
@@ -108,7 +141,9 @@ services:
       - APP_PORT=${SPEECH_ENHANCEMENT_PORT2}
     mem_limit: 14g
     memswap_limit: 20g
-  
+    volumes:
+      - speech-enhancement2-cache:/root/.cache
+
   timbrewm:
     build:
       context: .
@@ -117,6 +152,9 @@ services:
       - "127.0.0.1:${TIMBREWM_PORT}:${TIMBREWM_PORT}"
     environment:
       - APP_PORT=${TIMBREWM_PORT}
+    volumes:
+      - timbrewm-cache:/root/.cache
+    mem_limit: 4g
 
   perth:
     build:
@@ -126,6 +164,9 @@ services:
       - "127.0.0.1:${PERTH_PORT}:${PERTH_PORT}"
     environment:
       - APP_PORT=${PERTH_PORT}
+    volumes:
+      - perth-cache:/root/.cache
+    mem_limit: 4g
 
   network_transmission:
     build:
@@ -137,6 +178,7 @@ services:
       - APP_PORT=${NETWORK_TRANSMISSION_PORT}
     cap_add:
       - NET_ADMIN
+    mem_limit: 3g
 
   opus_codec:
     build:
@@ -146,3 +188,30 @@ services:
       - "127.0.0.1:${OPUS_CODEC_PORT}:${OPUS_CODEC_PORT}"
     environment:
       - APP_PORT=${OPUS_CODEC_PORT}
+    mem_limit: 3g
+
+  nisqa:
+    build:
+      context: .
+      dockerfile: src/deepmarkpy/services/nisqa/Dockerfile
+    ports:
+      - "127.0.0.1:${NISQA_PORT}:${NISQA_PORT}"
+    environment:
+      - APP_PORT=${NISQA_PORT}
+    mem_limit: 4g
+
+volumes:
+  audioseal-cache:
+  silentcipher-cache:
+  wavmark-cache:
+  aware-cache:
+  vae-cache:
+  encodec-cache:
+  dac-cache:
+  diffusion-cache:
+  speech-tokenization-cache:
+  neural-vocoder-cache:
+  speech-enhancement1-cache:
+  speech-enhancement2-cache:
+  timbrewm-cache:
+  perth-cache:

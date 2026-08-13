@@ -18,6 +18,7 @@ class WaveletAttack(BaseAttack):
         Returns:
             np.ndarray: The denoised audio signal.
         """
+        audio = np.asarray(audio, dtype=np.float64).copy()
         wavelet = kwargs.get("wavelet", self.config.get("wavelet"))
         mode = kwargs.get("wt_mode_wavelet", self.config.get("wt_mode_wavelet"))
         threshold_factor = kwargs.get("threshold_factor_wavelet", self.config.get("threshold_factor_wavelet"))

@@ -29,6 +29,7 @@ from deepmarkpy.benchmark import (
     apply_attack,
     expand_attacks,
     require_attacks_available,
+    _BENCHMARK_INTERNAL_KEYS,
 )
 from deepmarkpy.utils.metrics import ALL_METRICS, compute_metrics
 from deepmarkpy.utils.attack_groups import get_metrics_for_attack
@@ -150,6 +151,15 @@ def run_detection_reliability(
         logger.info(
             f"Using default sampling rate {sampling_rate} for model {wm_model}"
         )
+
+    all_attack_config_keys = set()
+    for atk_entry in benchmark.attacks.values():
+        if atk_entry.get("config"):
+            all_attack_config_keys.update(atk_entry["config"].keys())
+    attack_kwargs = {
+        k: v for k, v in attack_kwargs.items()
+        if k in all_attack_config_keys or k in _BENCHMARK_INTERNAL_KEYS
+    }
 
     attack_types = list(attack_types or [])
     # expand_attacks passes unknown names straight through, and the per-file
