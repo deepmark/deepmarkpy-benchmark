@@ -1,12 +1,12 @@
 import functools
 import logging
 import os
-import tempfile
 import warnings
 from typing import Dict, Iterable, Optional
 
 import librosa
 import numpy as np
+import requests
 import soundfile as sf
 from pystoi import stoi
 from pesq import pesq
@@ -411,193 +411,83 @@ def mcd(reference: np.ndarray, degraded: np.ndarray,
 
 
 # --- NISQA (non-intrusive MOS prediction) ---------------------------
-# NISQA is a deep model. Loading it is expensive (~1s + weights I/O), so
-# we cache the model instance and the per-call result so that all five
-# NISQA dimensions returned by a single inference (mos/noi/dis/col/loud)
-# can be served from one prediction.
-def _default_nisqa_weights_path():
-    """Locate weights/nisqa.tar the way the README describes.
-
-    Three `..` reach the repository root from src/deepmarkpy/utils/; before the
-    src-layout move this file sat at src/utils/ and two sufficed, so the default
-    had been resolving to src/weights/ and the README's instructions silently
-    produced nothing. Installed from a wheel there is no repository above the
-    package, so the working directory is tried as well -- and NISQA_WEIGHTS_PATH
-    overrides both.
-    """
-    here = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.join(here, "..", "..", "..", "weights", "nisqa.tar")
-    if os.path.exists(repo_root):
-        return os.path.abspath(repo_root)
-    cwd = os.path.join(os.getcwd(), "weights", "nisqa.tar")
-    if os.path.exists(cwd):
-        return cwd
-    return os.path.abspath(repo_root)
-
-
-_NISQA_WEIGHTS_PATH = os.environ.get("NISQA_WEIGHTS_PATH", _default_nisqa_weights_path())
-_nisqa_model = None
+# NISQA runs as a Docker service (see src/deepmarkpy/services/nisqa/).
+# The host client sends audio over HTTP and receives MOS scores back.
+_NISQA_ENDPOINT = None
 _nisqa_unavailable = False
 _nisqa_reason = None
 
 
-def nisqa_status():
-    """Whether NISQA can score, and why not when it cannot.
+def _get_nisqa_endpoint():
+    """Return the NISQA service URL, or None if unavailable."""
+    global _NISQA_ENDPOINT, _nisqa_unavailable, _nisqa_reason
+    if _nisqa_unavailable:
+        return None
+    if _NISQA_ENDPOINT is not None:
+        return _NISQA_ENDPOINT
 
-    The unavailability latch is set once per process and every later call
-    short-circuits, so the single log line explaining it can scroll away long
-    before a report full of N/A cells appears. This is what the run records.
-    """
-    _get_nisqa_model()
+    port = os.environ.get("NISQA_PORT", "10030")
+    url = f"http://localhost:{port}"
+    try:
+        resp = requests.get(f"{url}/health", timeout=5)
+        if resp.status_code == 200:
+            _NISQA_ENDPOINT = url
+            return _NISQA_ENDPOINT
+    except (requests.ConnectionError, requests.Timeout):
+        pass
+
+    logger.info(
+        f"NISQA service not reachable at {url}; NISQA scores will be skipped. "
+        f"Start it with: docker compose up -d nisqa"
+    )
+    _nisqa_unavailable = True
+    _nisqa_reason = f"service not reachable at {url}"
+    return None
+
+
+def nisqa_status():
+    """Whether NISQA can score, and why not when it cannot."""
+    _get_nisqa_endpoint()
     return {
         "available": not _nisqa_unavailable,
         "reason": _nisqa_reason,
-        "weights_path": os.path.abspath(_NISQA_WEIGHTS_PATH),
     }
 
 
-def _get_nisqa_model():
-    """Return a cached nisqaModel, or None when unavailable."""
-    global _nisqa_model, _nisqa_unavailable, _nisqa_reason
-    if _nisqa_unavailable:
-        return None
-    if _nisqa_model is not None:
-        return _nisqa_model
-    weights_abs = os.path.abspath(_NISQA_WEIGHTS_PATH)
-    if not os.path.exists(weights_abs):
-        logger.info(
-            f"NISQA weights not found at {weights_abs}; NISQA scores will be "
-            f"skipped. Set NISQA_WEIGHTS_PATH or place nisqa.tar there."
-        )
-        _nisqa_unavailable = True
-        _nisqa_reason = f"weights not found at {weights_abs}"
-        return None
-    try:
-        from nisqa.NISQA_model import nisqaModel
-    except ImportError:
-        logger.info(
-            "nisqa package not installed; NISQA scores will be skipped."
-        )
-        _nisqa_unavailable = True
-        _nisqa_reason = "nisqa package not installed"
-        return None
-    try:
-        import contextlib
-        import io
-        # The package always prints a yaml dump + 'Loaded pretrained model'
-        # banner on init. Silence both so logs stay clean.
-        with contextlib.redirect_stdout(io.StringIO()):
-            _nisqa_model = nisqaModel({
-                "mode": "predict_file",
-                "pretrained_model": weights_abs,
-                "deg": __file__,  # placeholder, overwritten before each predict
-                "tr_bs_val": 1,
-                "tr_num_workers": 0,
-                "output_dir": None,
-                "ms_channel": None,
-            })
-        return _nisqa_model
-    except (RuntimeError, ValueError, FileNotFoundError, ImportError) as e:
-        logger.warning(f"NISQA model could not be loaded: {e}")
-        _nisqa_unavailable = True
-        _nisqa_reason = f"model failed to load: {e}"
-        return None
-
-
-_NISQA_MAX_SEC = 12.0
-_NISQA_CHUNK_SEC = 10.0
-_NISQA_MIN_CHUNK_SEC = 3.0
-
-
-def _nisqa_predict_once(model, degraded: np.ndarray, sr: int
-                        ) -> Dict[str, Optional[float]]:
-    """Run NISQA on a single segment that fits in one forward pass."""
-    none_result = {k: None for k in NISQA_METRICS}
-    try:
-        import contextlib
-        import io
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp_path = tmp.name
-        try:
-            sf.write(tmp_path, degraded, sr)
-            model.args["deg"] = tmp_path
-            # NISQA builds its mel-spectrogram via librosa, whose default mel
-            # basis leaves some upper channels empty at low sample rates and
-            # warns once per call. Those empty channels contribute ~zero to
-            # the features, so the MOS scores are unaffected -- silence only
-            # this cosmetic warning without touching the computation.
-            with contextlib.redirect_stdout(io.StringIO()), \
-                    warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message="Empty filters detected in mel frequency basis",
-                    category=UserWarning,
-                )
-                model._loadDatasets()
-                df = model.predict()
-            row = df.iloc[0]
-            return {
-                "nisqa_mos": float(row["mos_pred"]),
-                "nisqa_noi": float(row["noi_pred"]),
-                "nisqa_dis": float(row["dis_pred"]),
-                "nisqa_col": float(row["col_pred"]),
-                "nisqa_loud": float(row["loud_pred"]),
-            }
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-    except (RuntimeError, ValueError, KeyError) as e:
-        logger.warning(f"NISQA prediction failed: {e}")
-        return none_result
-
-
 def compute_nisqa(degraded: np.ndarray, sr: int) -> Dict[str, Optional[float]]:
-    """Run NISQA inference and return all five MOS dimensions.
+    """Run NISQA inference via the Docker service and return all five MOS dimensions.
 
     NISQA is non-intrusive: it scores ``degraded`` alone, no reference
-    needed. The five dimensions (mos / noisiness / discontinuity /
-    coloration / loudness) are produced together in one forward pass, so
-    callers should request them as a group rather than five times.
-
-    NISQA's mel-spec window buffer caps inference at ~13 s; longer signals
-    are split into ~10 s chunks here and averaged so callers don't have to
-    care about duration.
+    needed. Chunking for long signals is handled by the service.
     """
     none_result = {k: None for k in NISQA_METRICS}
-    model = _get_nisqa_model()
-    if model is None:
+    endpoint = _get_nisqa_endpoint()
+    if endpoint is None:
         return none_result
 
-    duration = len(degraded) / sr
-    if duration <= _NISQA_MAX_SEC:
-        return _nisqa_predict_once(model, degraded, sr)
-
-    chunk_len = int(_NISQA_CHUNK_SEC * sr)
-    min_len = int(_NISQA_MIN_CHUNK_SEC * sr)
-    accum: Dict[str, list] = {k: [] for k in NISQA_METRICS}
-    failed = 0
-    for start in range(0, len(degraded), chunk_len):
-        chunk = degraded[start:start + chunk_len]
-        if len(chunk) < min_len:
-            continue
-        res = _nisqa_predict_once(model, chunk, sr)
-        if res["nisqa_mos"] is None:
-            failed += 1
-            continue
-        for k in NISQA_METRICS:
-            accum[k].append(res[k])
-
-    if not accum["nisqa_mos"]:
-        logger.warning(
-            f"NISQA: no successful chunks across {duration:.1f}s signal."
-        )
+    try:
+        from deepmarkpy.core.wire import encode_audio
+        payload = {"audio": encode_audio(degraded), "sampling_rate": sr}
+        resp = requests.post(f"{endpoint}/predict", json=payload, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("error") or data.get("scores") is None:
+            logger.warning(f"NISQA service returned error: {data.get('error')}")
+            return none_result
+        scores = data["scores"]
+        return {
+            "nisqa_mos": float(scores["mos"]),
+            "nisqa_noi": float(scores["noi"]),
+            "nisqa_dis": float(scores["dis"]),
+            "nisqa_col": float(scores["col"]),
+            "nisqa_loud": float(scores["loud"]),
+        }
+    except (requests.ConnectionError, requests.Timeout) as e:
+        logger.warning(f"NISQA service unreachable: {e}")
         return none_result
-    if failed:
-        logger.info(
-            f"NISQA: {failed} chunk(s) failed out of "
-            f"{failed + len(accum['nisqa_mos'])} for {duration:.1f}s signal."
-        )
-    return {k: float(np.mean(accum[k])) for k in NISQA_METRICS}
+    except (KeyError, ValueError) as e:
+        logger.warning(f"NISQA prediction failed: {e}")
+        return none_result
 
 
 @_safe_metric("NCM")

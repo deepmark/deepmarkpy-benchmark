@@ -9,10 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY constraints.base.txt /constraints.base.txt
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --timeout 600 \
     -c /constraints.base.txt \
-    torch==2.7.1 \
-    torchaudio \
+    torch==2.7.1+cpu \
+    torchaudio==2.7.1+cpu \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
     numpy \
     scipy \
     fastapi \

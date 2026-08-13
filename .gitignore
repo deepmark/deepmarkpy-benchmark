@@ -24,6 +24,8 @@ benchmark*.json
 
 # Data
 data/
+AIR_wav_files/
+music/
 Test_samples/
 Test_sample1/
 MOS_audio_testing/

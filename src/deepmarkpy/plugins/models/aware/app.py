@@ -4,7 +4,7 @@ import sys
 from typing import List, Optional
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -56,9 +56,7 @@ async def embed(request: EmbedRequest):
         )
     except Exception as e:
         logger.error(f"Error embedding watermark: {e}")
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({"error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
     return JSONResponse({
         "watermarked_audio": encode_audio(watermarked_audio),
@@ -74,9 +72,7 @@ async def detect(request: DetectRequest):
         )
     except Exception as e:
         logger.error(f"Error detecting watermark: {e}")
-        import traceback
-        traceback.print_exc()
-        return JSONResponse({"error": str(e)})
+        raise HTTPException(status_code=500, detail=str(e))
 
     return JSONResponse({
         "watermark": detected_watermark.tolist() if detected_watermark is not None else None,

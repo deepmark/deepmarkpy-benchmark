@@ -1,0 +1,3 @@
+nisqa==2.0.post2
+pandas==2.2.1
+seaborn==0.13.2

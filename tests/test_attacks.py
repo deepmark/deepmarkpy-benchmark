@@ -232,17 +232,17 @@ pywt = pytest.importorskip("pywt", reason="pywt not installed")
 
 class TestWaveletAttack:
     def test_output_shape(self, attacks, sample_audio):
-        if "WaveletDenoiseAttack" not in attacks:
-            pytest.skip("WaveletDenoiseAttack not loaded (pywt missing)")
-        atk = _make_attack(attacks, "WaveletDenoiseAttack")
+        if "WaveletAttack" not in attacks:
+            pytest.skip("WaveletAttack not loaded (pywt missing)")
+        atk = _make_attack(attacks, "WaveletAttack")
         audio, sr = sample_audio
         result = atk.apply(audio, sampling_rate=sr)
         assert result.shape == audio.shape
 
     def test_modifies_signal(self, attacks, sample_audio):
-        if "WaveletDenoiseAttack" not in attacks:
-            pytest.skip("WaveletDenoiseAttack not loaded (pywt missing)")
-        atk = _make_attack(attacks, "WaveletDenoiseAttack")
+        if "WaveletAttack" not in attacks:
+            pytest.skip("WaveletAttack not loaded (pywt missing)")
+        atk = _make_attack(attacks, "WaveletAttack")
         audio, sr = sample_audio
         result = atk.apply(audio, sampling_rate=sr)
         assert not np.array_equal(result, audio)
