@@ -121,17 +121,45 @@ class TestAttackGroupsReachTheGuard:
     the empty list fell through to "run everything".
     """
 
-    def test_run_py_does_not_filter_group_results(self):
-        import inspect
-        from deepmarkpy import run as run_module
+    def test_config_group_resolution_does_not_filter_against_the_registry(self):
+        """Group expansion happens in the config layer now, and must not filter.
 
-        src = inspect.getsource(run_module.main)
-        start = src.index("if args.attack_groups:")
-        block = src[start:start + 600]
-        assert "available = set(attacks)" not in block, (
-            "run.py filters group-resolved attacks against the registry again; "
-            "unavailable ones are dropped before Benchmark.run can object"
+        Dropping unavailable attacks here would leave the guard in
+        Benchmark.run with nothing to catch: a group whose plugins failed
+        to import would run short silently, and a group where every plugin
+        failed would resolve to an empty list that reads as "no selection".
+        """
+        from deepmarkpy.config import ModeConfig
+        from deepmarkpy.utils.attack_groups import ATTACK_GROUPS
+
+        config = ModeConfig(mode="benchmark", source="c.json",
+                            attack_groups=["audio_editing"])
+        specs = config.selected_attack_specs()
+
+        assert set(specs) == set(ATTACK_GROUPS["audio_editing"]["attacks"]), (
+            "config group resolution filters against the plugin registry; "
+            "unavailable attacks are dropped before Benchmark.run can object"
         )
+
+    def test_empty_selection_means_every_attack_not_none_of_them(self):
+        """No groups and no list is 'run everything', which run() expands."""
+        from deepmarkpy.config import ModeConfig
+
+        config = ModeConfig(mode="benchmark", source="c.json")
+        assert config.selected_attack_specs() is None
+
+    def test_explicit_list_and_groups_combine_without_duplicates(self):
+        from deepmarkpy.config import ModeConfig
+
+        config = ModeConfig(
+            mode="benchmark", source="c.json",
+            attack_groups=["audio_distortion"],
+            attack_list=["GaussianNoiseAttack", "ReplayAttack"],
+        )
+        specs = config.selected_attack_specs()
+        assert specs.count("GaussianNoiseAttack") == 1
+        assert "ReplayAttack" in specs
+        assert "PinkNoiseAttack" in specs
 
     def test_group_resolution_returns_declared_attacks_not_discovered_ones(self):
         from deepmarkpy.utils.attack_groups import ATTACK_GROUPS, get_attacks_for_groups
@@ -142,3 +170,98 @@ class TestAttackGroupsReachTheGuard:
             "group resolution must reflect what the group declares, so a "
             "missing plugin is visible rather than absent"
         )
+
+
+class TestCrossModelReceivesItsSecondModel:
+    """The attack reads the second model's name from its kwargs only.
+
+    Every other plugin falls back to its own ``config.json``; this one does
+    not. The name used to arrive from the CLI, and once parameters became
+    config driven nothing set it, so the run died with "Model 'None' not
+    found" the moment process_disruption was selected.
+    """
+
+    def test_the_resolved_name_is_handed_to_the_attack(self):
+        import inspect
+
+        from deepmarkpy import benchmark as benchmark_module
+
+        source = inspect.getsource(benchmark_module.Benchmark.run)
+        assert 'current_attack_kwargs[\n' \
+               '                        "different_model_name_cross_model"]' in source \
+            or '"different_model_name_cross_model"] = different_model_name' in source, (
+                "the resolved name is no longer passed to the attack"
+            )
+
+    def test_the_attack_still_reads_it_from_kwargs_alone(self):
+        """If the plugin ever grows a config fallback this test can go."""
+        import inspect
+
+        from deepmarkpy.plugin_manager import PluginManager
+
+        attack = PluginManager().attacks["CrossModelAttack"]["class"]
+        source = inspect.getsource(attack.apply)
+        assert 'kwargs.get("different_model_name_cross_model", None)' in source
+
+    def test_an_unknown_second_model_says_which_key_to_set(self):
+        import numpy as np
+
+        from deepmarkpy.benchmark import Benchmark
+
+        benchmark = Benchmark()
+        entry = benchmark.attacks["CrossModelAttack"]
+        default = (entry.get("config") or {}).get(
+            "different_model_name_cross_model")
+        assert default in benchmark.models, (
+            f"the plugin default {default!r} is not a discovered model"
+        )
+
+
+class TestAVersionIsNeverSilentlyDropped:
+    """An attack either takes the requested version or says it cannot.
+
+    Both run loops used to call the constructor with ``version=`` inside
+    a bare ``except TypeError``, which also swallowed a ``TypeError``
+    raised *inside* a constructor that does take one -- so a broken
+    plugin quietly ran its default preset while the report labelled the
+    row with the version that was asked for.
+    """
+
+    class _TakesVersion:
+        def __init__(self, version=None):
+            self.version = version
+
+    class _TakesNone:
+        def __init__(self):
+            self.version = "default-preset"
+
+    class _RaisesInside:
+        def __init__(self, version=None):
+            raise TypeError("a bug in the plugin's own constructor")
+
+    def test_a_versioned_attack_receives_its_version(self):
+        from deepmarkpy.benchmark import instantiate_attack
+
+        built = instantiate_attack(self._TakesVersion, "X", "aggressive")
+        assert built.version == "aggressive"
+
+    def test_a_versionless_attack_is_built_and_warned_about(self, caplog):
+        from deepmarkpy.benchmark import instantiate_attack
+
+        with caplog.at_level("WARNING"):
+            built = instantiate_attack(self._TakesNone, "X", "aggressive")
+        assert built.version == "default-preset"
+        assert "does not support versions" in caplog.text
+
+    def test_a_versionless_attack_asked_for_the_default_is_silent(self, caplog):
+        from deepmarkpy.benchmark import instantiate_attack
+
+        with caplog.at_level("WARNING"):
+            instantiate_attack(self._TakesNone, "X", "default")
+        assert "does not support versions" not in caplog.text
+
+    def test_a_constructor_bug_is_not_mistaken_for_a_missing_version(self):
+        from deepmarkpy.benchmark import instantiate_attack
+
+        with pytest.raises(TypeError, match="bug in the plugin"):
+            instantiate_attack(self._RaisesInside, "X", "mild")

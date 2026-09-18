@@ -54,6 +54,9 @@ include = ["deepmarkpy*"]
 
 [tool.setuptools.package-data]
 deepmarkpy = [
+    # --init reads these, so they must ship inside the wheel rather than
+    # only existing in the source checkout's configs/ directory.
+    "config_templates/*.json",
     "plugins/**/config.json",
     "plugins/**/requirements.txt",
     "plugins/**/*_requirements.txt",

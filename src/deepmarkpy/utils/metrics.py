@@ -567,6 +567,27 @@ METRIC_LABELS = {
     "nisqa_dis": "Discontinuity (1--5)",
     "nisqa_col": "Coloration (1--5)",
     "nisqa_loud": "Loudness (1--5)",
+    "embed_latency": "Embed time (s)",
+    "detect_latency": "Detect time (s)",
+    "attack_latency": "Attack time (s)",
+    "container_footprint": "Container memory (MiB)",
+}
+
+# The range each metric is defined on, for charts that need a fixed axis.
+# These are the ranges the labels above already state, kept beside them so
+# the two cannot drift. A metric absent here is unbounded (a dB figure),
+# and a chart of it has to scale to the data instead.
+METRIC_RANGES = {
+    "pesq": (1.0, 4.66),
+    "visqol": (1.0, 5.0),
+    "stoi": (0.0, 1.0),
+    "sii": (0.0, 1.0),
+    "ncm": (0.0, 1.0),
+    "nisqa_mos": (1.0, 5.0),
+    "nisqa_noi": (1.0, 5.0),
+    "nisqa_dis": (1.0, 5.0),
+    "nisqa_col": (1.0, 5.0),
+    "nisqa_loud": (1.0, 5.0),
 }
 
 # Metrics that require 8 kHz or 16 kHz and are resampled accordingly.

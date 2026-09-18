@@ -16,25 +16,40 @@ class BaseAttack(abc.ABC):
     Each attack should have its own `config.json` stored in its respective folder.
     """
 
-    def __init__(self):
+    def __init__(self, version=None):
         """
         Initializes the attack by loading its configuration file.
-        
-        - Determines the file path of the subclass implementing this base class.
-        - Constructs the path to `config.json` in the attack's directory.
-        - Loads the configuration if the file exists, otherwise sets `_config` to None.
+
+        Args:
+            version: Optional version name to load from a multi-version
+                config.json. When None, loads 'default'. For single-version
+                configs (no 'default' key), the entire config is used.
         """
         model_file = inspect.getfile(self.__class__)
         model_dir = os.path.dirname(os.path.abspath(model_file))
 
         self.config_path = os.path.join(model_dir, "config.json")
+        self._version = version or "default"
 
         if not os.path.exists(self.config_path):
             logger.warning(f"config.json not found in {self.config_path}")
             self._config = None
         else:
             with open(self.config_path, "r") as json_file:
-                self._config = json.load(json_file)
+                raw = json.load(json_file)
+
+            if "default" in raw and isinstance(raw["default"], dict):
+                # Multi-version config
+                if self._version not in raw:
+                    available = [k for k in raw if not k.startswith("_")]
+                    raise ValueError(
+                        f"{self.__class__.__name__} has no version '{self._version}'. "
+                        f"Available versions: {available}"
+                    )
+                self._config = raw[self._version]
+            else:
+                # Single-version config (backward compatible)
+                self._config = raw
 
     @abc.abstractmethod
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:

@@ -119,7 +119,27 @@ class TestReportDirIsHonoured:
         assert 'report_base = "report"' not in source, (
             "multi-model mode still hardcodes the report directory"
         )
-        assert "report_base = args.report_dir" in source
+        assert "report_base = settings.report_dir" in source
+
+    def test_report_dir_resolves_cli_over_config_over_default(self, tmp_path):
+        """The three-level precedence the config split promises."""
+        import argparse
+
+        from deepmarkpy.config import ModeConfig
+
+        def resolve(cli, config_value):
+            args = argparse.Namespace(
+                wav_files_dir=None, report_dir=cli, seed=None,
+                verbose=None, save_audio=None,
+            )
+            general = {} if config_value is None else {"report_dir": config_value}
+            config = ModeConfig(mode="benchmark", source="c.json",
+                                general=general)
+            return run_module._resolve_settings(args, config).report_dir
+
+        assert resolve("/from/cli", "/from/config") == "/from/cli"
+        assert resolve(None, "/from/config") == "/from/config"
+        assert resolve(None, None) == run_module.DEFAULT_REPORT_DIR
 
     def test_deletion_is_announced_before_it_happens(self, tmp_path, caplog):
         (tmp_path / "old_results.json").write_text("{}")

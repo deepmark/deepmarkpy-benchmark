@@ -10,7 +10,10 @@ __pycache__/
 # C extensions
 *.so
 
-benchmark*.json
+# Stray working files at the repo root only. Unanchored, this also hid
+# src/deepmarkpy/config_templates/benchmark.json -- the file --init
+# prints -- and configs/benchmark.json, which a test loads.
+/benchmark*.json
 
 *.DS_Store
 

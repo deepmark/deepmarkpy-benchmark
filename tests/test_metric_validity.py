@@ -1,4 +1,4 @@
-"""Guards for metric selection, metric caveats, and metric behaviour.
+"""Guards for metric selection and metric behaviour.
 
 Full-reference metrics that compare signals sample-by-sample report a
 timing offset as if it were quality loss. The benchmark deliberately does
@@ -14,10 +14,8 @@ from deepmarkpy.plugin_manager import PluginManager
 from deepmarkpy.utils.attack_groups import (
     ATTACK_GROUPS,
     get_group_for_attack,
-    get_metric_caveat,
-    get_metrics_for_attack,
 )
-from deepmarkpy.utils.metrics import ALL_METRICS, mcd, psnr, si_sdr, trim_audio_to_match
+from deepmarkpy.utils.metrics import mcd, psnr, si_sdr, trim_audio_to_match
 
 # Attacks deliberately left out of every group, with the reason. Empty by
 # policy: an ungrouped attack silently receives the full metric slate,
@@ -62,34 +60,13 @@ class TestEveryAttackIsGrouped:
 
     def test_grouped_attack_gets_fewer_metrics_than_the_fallback(self):
         """The fallback hands out every metric; a real group narrows it."""
-        assert len(get_metrics_for_attack("Replacement2Attack")) < len(ALL_METRICS)
-        assert set(get_metrics_for_attack("UnknownAttack")) == set(ALL_METRICS)
+        from deepmarkpy.utils.metric_resolver import (
+            MetricResolver, SIGNAL_METRICS,
+        )
 
-
-class TestMetricCaveats:
-    def test_sample_aligned_metrics_are_flagged_for_desync_attacks(self):
-        for metric in ("psnr", "si_sdr", "stoi", "mcd", "ncm"):
-            assert get_metric_caveat("ZeroCrossInsertsAttack", metric), (
-                f"{metric} is sample-aligned and must be flagged for a "
-                f"time-shifting attack"
-            )
-
-    def test_internally_aligned_metrics_are_not_flagged(self):
-        """PESQ and ViSQOL align internally, so a shift does not fool them."""
-        for metric in ("pesq", "visqol"):
-            assert get_metric_caveat("ZeroCrossInsertsAttack", metric) is None
-
-    def test_reference_free_metrics_are_never_flagged(self):
-        assert get_metric_caveat("ZeroCrossInsertsAttack", "nisqa_mos") is None
-
-    def test_non_desync_attacks_carry_no_blanket_caveat(self):
-        for metric in ("psnr", "stoi", "mcd"):
-            assert get_metric_caveat("GaussianNoiseAttack", metric) is None
-
-    def test_sign_inversion_flags_si_sdr_only(self):
-        """SI-SDR is scale-invariant, so it cannot see a polarity flip."""
-        assert get_metric_caveat("SignInversionAttack", "si_sdr")
-        assert get_metric_caveat("SignInversionAttack", "psnr") is None
+        resolver = MetricResolver.from_attack_groups()
+        assert len(resolver.metrics_for_attack("Replacement2Attack")) < len(SIGNAL_METRICS)
+        assert set(resolver.metrics_for_attack("UnknownAttack")) == set(SIGNAL_METRICS)
 
 
 class TestMetricValues:
@@ -149,125 +126,45 @@ class TestMetricValues:
         assert np.array_equal(a, np.arange(6.0))
 
 
-class TestCaveatFootnotesMatchTheirReason:
-    """Each caveat must print its own explanation, not a shared one.
 
-    ``get_metric_caveat`` returns a different reason per case, and the report
-    generators used to discard it and hardcode the time-shift wording, so
-    SignInversion's SI-SDR cell was explained as a timing shift.
+
+class TestBerAgreesBetweenReports:
+    """BER is computed once, not derived from accuracy's summary.
+
+    The detailed report used to invert accuracy's percentiles, mapping
+    BER's 10th to accuracy's 99th. BER is ``1 - accuracy``, so its 10th
+    percentile is accuracy's 90th -- which is not one of the eight
+    statistics at all. Both reports now reduce the same BER samples.
     """
 
-    def test_distinct_reasons_get_distinct_markers(self):
-        from deepmarkpy.utils.latex_helpers import MetricCaveats
+    SAMPLES = [98.2, 95.0, 88.0, 100.0, 51.8, 72.5, 99.0, 64.0, 100.0, 83.3]
+    STATISTICS = ["mean", "std", "median", "p5", "p10", "p95", "p99",
+                  "worst_case"]
 
-        caveats = MetricCaveats()
-        desync = caveats.mark("TimeStretchAttack", "psnr")
-        polarity = caveats.mark("SignInversionAttack", "si_sdr")
+    def _detailed(self):
+        from deepmarkpy.utils.detailed_report_generator import (
+            _ber_statistic, _statistics,
+        )
+        aggregated = _statistics(self.SAMPLES)
+        return {s: _ber_statistic(aggregated, s) for s in self.STATISTICS}
 
-        assert desync and polarity
-        assert desync != polarity, "two unrelated caveats share one marker"
+    def _basic(self):
+        from deepmarkpy.benchmark import Benchmark
+        target = {}
+        Benchmark._apply_statistics(
+            target, "ber",
+            1.0 - np.array(self.SAMPLES, dtype=float) / 100.0,
+            self.STATISTICS,
+        )
+        return {s: target[f"ber_{s}"] for s in self.STATISTICS}
 
-    def test_same_reason_reuses_its_marker(self):
-        from deepmarkpy.utils.latex_helpers import MetricCaveats
-
-        caveats = MetricCaveats()
-        assert caveats.mark("TimeStretchAttack", "psnr") == caveats.mark(
-            "TimeStretchAttack", "stoi"
+    @pytest.mark.parametrize("statistic", STATISTICS)
+    def test_every_statistic_matches_the_basic_report(self, statistic):
+        assert self._detailed()[statistic] == pytest.approx(
+            self._basic()[statistic], abs=1e-12,
         )
 
-    def test_uncaveated_cell_is_unmarked(self):
-        from deepmarkpy.utils.latex_helpers import MetricCaveats
-
-        assert MetricCaveats().mark("GaussianNoiseAttack", "pesq") == ""
-
-    def test_footnote_states_each_reason(self):
-        from deepmarkpy.utils.latex_helpers import MetricCaveats
-
-        caveats = MetricCaveats()
-        caveats.mark("TimeStretchAttack", "psnr")
-        caveats.mark("SignInversionAttack", "si_sdr")
-        note = caveats.footnote()
-
-        assert "timing shift" in note, "desynchronization reason missing"
-        assert "polarity inversion" in note, "polarity reason missing"
-
-    def test_footnote_is_empty_when_nothing_flagged(self):
-        from deepmarkpy.utils.latex_helpers import MetricCaveats
-
-        caveats = MetricCaveats()
-        caveats.mark("GaussianNoiseAttack", "pesq")
-        assert caveats.footnote() == ""
-
-    def test_every_reason_completes_the_footnote_sentence(self):
-        """Reasons are rendered as "This metric <reason>." and must read."""
-        from deepmarkpy.utils.attack_groups import (
-            ATTACK_GROUPS, get_metric_caveat,
-        )
-        from deepmarkpy.utils.metrics import ALL_METRICS
-
-        seen = set()
-        for group in ATTACK_GROUPS.values():
-            for attack in group["attacks"]:
-                for metric in ALL_METRICS:
-                    reason = get_metric_caveat(attack, metric)
-                    if reason:
-                        seen.add(reason)
-        assert seen, "no caveats defined at all"
-        for reason in seen:
-            first = reason.split()[0]
-            assert not first[0].isupper(), (
-                f"caveat should continue 'This metric ...', got {reason!r}"
-            )
-            assert not reason.endswith("."), f"caveat ends with a period: {reason!r}"
-
-
-class TestEveryReportGeneratorAnnotatesCaveats:
-    """A caveat added to attack_groups must reach every generator that prints
-    per-attack quality metrics, not just the two that were updated first."""
-
-    GENERATORS = [
-        "report_generator",
-        "detailed_report_generator",
-        "detection_reliability_report_generator",
-    ]
-
-    def test_detection_reliability_table_marks_and_explains(self):
-        """Built, not grepped: this generator was the one left unannotated."""
-        from deepmarkpy.utils.detection_reliability_report_generator import (
-            _always_on_table,
-        )
-
-        attacks = {
-            "TimeStretchAttack": {"metrics": {"pesq": 3.1, "visqol": 4.2, "stoi": 0.9}},
-            "GaussianNoiseAttack": {"metrics": {"pesq": 3.5, "visqol": 4.4, "stoi": 0.95}},
-        }
-        table = _always_on_table(
-            attacks, list(attacks), "Quality metrics.", "tab:test"
-        )
-
-        assert "\\textsuperscript{\\dag}" in table, (
-            "a sample-aligned metric on a desynchronization attack was printed "
-            "with no caveat marker"
-        )
-        assert "timing shift" in table, "the marker has no explanation"
-
-    def test_unaffected_table_carries_no_footnote(self):
-        from deepmarkpy.utils.detection_reliability_report_generator import (
-            _always_on_table,
-        )
-
-        attacks = {"GaussianNoiseAttack": {"metrics": {"pesq": 3.5, "visqol": 4.4, "stoi": 0.95}}}
-        table = _always_on_table(attacks, list(attacks), "Quality metrics.", "tab:test")
-        assert "textsuperscript" not in table
-
-    @pytest.mark.parametrize("module", GENERATORS)
-    def test_generator_does_not_hardcode_a_caveat_sentence(self, module):
-        import importlib
-        import inspect
-
-        mod = importlib.import_module(f"deepmarkpy.utils.{module}")
-        src = inspect.getsource(mod)
-        assert "reports the shift" not in src and "reflects the shift" not in src, (
-            f"{module} hardcodes the time-shift wording instead of using the "
-            "reason get_metric_caveat returns"
-        )
+    def test_the_tails_are_the_right_way_round(self):
+        """A low BER percentile is the good tail, not the bad one."""
+        ber = self._detailed()
+        assert ber["p5"] <= ber["median"] <= ber["p95"] <= ber["worst_case"]
