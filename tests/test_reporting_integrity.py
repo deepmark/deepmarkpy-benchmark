@@ -69,27 +69,27 @@ class TestExpandAttacks:
     def test_bitrate_list_expands_to_one_entry_per_value(self):
         registry = {"Codec2VocoderAttack": {"config": {"bitrate_codec2": [700, 2400]}}}
         expanded = expand_attacks(["Codec2VocoderAttack"], registry)
-        assert [d for _, d, _ in expanded] == [
+        assert [d for _, d, _, _ in expanded] == [
             "Codec2VocoderAttack_700", "Codec2VocoderAttack_2400",
         ]
-        assert [o for _, _, o in expanded] == [
+        assert [o for _, _, o, _ in expanded] == [
             {"bitrate_codec2": 700}, {"bitrate_codec2": 2400},
         ]
 
     def test_unsupported_bitrate_is_skipped(self):
         registry = {"Codec2VocoderAttack": {"config": {"bitrate_codec2": [700, 999]}}}
         expanded = expand_attacks(["Codec2VocoderAttack"], registry)
-        assert [d for _, d, _ in expanded] == ["Codec2VocoderAttack_700"]
+        assert [d for _, d, _, _ in expanded] == ["Codec2VocoderAttack_700"]
 
     def test_plain_attack_passes_through(self):
         registry = {"GaussianNoiseAttack": {"config": {"snr_db_gaussian_noise": 35}}}
         assert expand_attacks(["GaussianNoiseAttack"], registry) == [
-            ("GaussianNoiseAttack", "GaussianNoiseAttack", {})
+            ("GaussianNoiseAttack", "GaussianNoiseAttack", {}, None)
         ]
 
     def test_unknown_attack_passes_through_unchanged(self):
         assert expand_attacks(["NoSuchAttack"], {}) == [
-            ("NoSuchAttack", "NoSuchAttack", {})
+            ("NoSuchAttack", "NoSuchAttack", {}, None)
         ]
 
 
@@ -164,25 +164,60 @@ class TestAggregationTransparency:
 
 
 class TestBasicReportSurfacesCoverage:
-    def test_table_shows_n_dispersion_and_failure_marker(self):
-        gen = BenchmarkReportGenerator.__new__(BenchmarkReportGenerator)
+    @staticmethod
+    def _generator(tmp_path, statistics=("mean",)):
+        """A generator whose columns are exactly ``statistics``."""
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+
+        resolver = MetricResolver(
+            defaults={
+                "accuracy": {"enabled": True, "statistics": list(statistics)},
+                "pesq": {"enabled": True, "statistics": list(statistics)},
+            },
+            calculate_quality_metrics=True,
+        )
+        return BenchmarkReportGenerator(str(tmp_path), resolver=resolver)
+
+    def test_table_shows_n_dispersion_and_failure_marker(self, tmp_path):
+        gen = self._generator(tmp_path, ("mean", "std"))
         table = gen.generate_latex_table({
             "GaussianNoiseAttack": {
                 "accuracy_mean": 75.0, "accuracy_n": 4, "accuracy_std": 5.0,
                 "detection_failures": 2, "pesq_mean": 3.1, "pesq_n": 2,
             }
-        })
-        assert "75.00" in table and "$\\pm$ 5.00" in table
+        }, group_key="audio_distortion")
+        assert "75.00" in table
+        assert "5.00" in table, "configured dispersion column missing"
         assert "(2)" in table, "decode-failure count not marked"
         assert "$n$=2" in table, "reduced metric coverage not marked"
         assert "random-guess floor" in table, "failure footnote missing"
 
+    def test_columns_are_exactly_what_the_config_asks_for(self, tmp_path):
+        """No hardcoded column may survive the config, in either direction."""
+        gen = self._generator(tmp_path, ("median", "worst_case"))
+        table = gen.generate_latex_table({
+            "GaussianNoiseAttack": {
+                "accuracy_mean": 75.0, "accuracy_n": 4,
+                "accuracy_median": 80.0, "accuracy_worst_case": 60.0,
+            }
+        }, group_key="audio_distortion")
+        header = next(l for l in table.splitlines() if "Attack Type" in l)
+        assert "Median" in header and "Worst Case" in header
+        assert "Mean" not in header, "an unconfigured column was added anyway"
+
 
 class TestComparativeTableComparability:
     @staticmethod
-    def _gen(meta):
+    def _gen(meta, statistics=("mean",)):
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+
         gen = ComparativeReportGenerator.__new__(ComparativeReportGenerator)
         gen.model_meta = meta
+        gen.resolver = MetricResolver(
+            defaults={"accuracy": {"enabled": True,
+                                   "statistics": list(statistics)}},
+        )
+        gen.primary_statistic = statistics[0]
         return gen
 
     @staticmethod
@@ -291,7 +326,8 @@ class TestMultiModelPath:
         }
         benchmark = type("_B", (), {"models": models})()
 
-        def fake_run_single_model(_benchmark, _filepaths, model_name, _args, output_dir=None):
+        def fake_run_single_model(_benchmark, _filepaths, model_name, _config,
+                                  _settings, output_dir=None):
             results = {"f.wav": {}}
             flattened = {"GaussianNoiseAttack": 90.0}
             stats = {"GaussianNoiseAttack": {"accuracy_mean": 90.0, "accuracy_n": 5}}
@@ -300,10 +336,11 @@ class TestMultiModelPath:
         captured = {}
 
         class _FakeGenerator:
-            def __init__(self, report_dir=None):
+            def __init__(self, report_dir=None, resolver=None,
+                         primary_statistic="mean"):
                 pass
 
-            def generate_full_report(self, all_results, all_stats, **kwargs):
+            def generate_full_report(self, all_stats, **kwargs):
                 captured["stats"] = all_stats
                 captured["meta"] = kwargs.get("model_meta")
 
@@ -317,14 +354,17 @@ class TestMultiModelPath:
             type("_M", (), {"ComparativeReportGenerator": _FakeGenerator}),
         )
 
-        args = argparse.Namespace(
-            calculate_quality_metrics=False,
-            crop_before_attack=None,
-            report_dir=str(tmp_path / "report"),
-            seed=None,
+        from deepmarkpy.config import ModeConfig
+
+        config = ModeConfig(mode="benchmark", source="test.json",
+                            models=["ZeroBitModel", "MultiBitModel"])
+        settings = run_module.RunSettings(
+            wav_files_dir=str(tmp_path), report_dir=str(tmp_path / "report"),
+            seed=None, verbose=False, save_audio=False,
         )
         run_module.run_multiple_models(
-            benchmark, ["f.wav"], ["ZeroBitModel", "MultiBitModel"], args,
+            benchmark, ["f.wav"], ["ZeroBitModel", "MultiBitModel"],
+            config, settings,
         )
 
         assert set(captured["stats"]) == {"ZeroBitModel", "MultiBitModel"}
@@ -334,3 +374,133 @@ class TestMultiModelPath:
         assert meta["MultiBitModel"]["watermark_size"] == 40
         assert meta["MultiBitModel"]["sampling_rate"] == 22050
         assert meta["ZeroBitModel"]["n_files"] == 5
+
+
+class TestExpansionIsDeduplicated:
+    """A row must not be expanded twice.
+
+    Naming a version in attacks.list while its attack also arrives from a
+    group produced that version twice: attacked twice per file, then
+    collapsed by the results dict, which keys on the display name. Pure
+    wasted work, and invisible in the output.
+    """
+
+    @staticmethod
+    def _registry():
+        return {"GaussianNoiseAttack": {
+            "config": {"snr_db_gaussian_noise": 35},
+            "_raw_config": {
+                "default": {"snr_db_gaussian_noise": 35},
+                "mild": {"snr_db_gaussian_noise": 45},
+            },
+        }}
+
+    def test_explicit_version_and_bare_name_yield_one_row_each(self):
+        names = [
+            display for _, display, _, _ in expand_attacks(
+                ["GaussianNoiseAttack:mild", "GaussianNoiseAttack"],
+                self._registry(),
+            )
+        ]
+        assert names == [
+            "GaussianNoiseAttack (mild)", "GaussianNoiseAttack (default)",
+        ], names
+
+    def test_the_explicit_spec_wins(self):
+        """It comes first, so its parameters are the ones kept."""
+        rows = expand_attacks(
+            ["GaussianNoiseAttack:mild", "GaussianNoiseAttack"],
+            self._registry(),
+            parameters=lambda name, version: (
+                {"snr_db_gaussian_noise": 99} if version == "mild" else {}
+            ),
+        )
+        mild = next(kw for _, d, kw, _ in rows if d.endswith("(mild)"))
+        assert mild == {"snr_db_gaussian_noise": 99}
+
+    def test_the_same_spec_twice_is_one_row(self):
+        names = [
+            display for _, display, _, _ in expand_attacks(
+                ["GaussianNoiseAttack:mild", "GaussianNoiseAttack:mild"],
+                self._registry(),
+            )
+        ]
+        assert names == ["GaussianNoiseAttack (mild)"]
+
+
+class TestTheCropCaveatSurvivesDurationGrouping:
+    """A cropped run says so whichever shape the report takes.
+
+    Both reports stated it in their abstract, and the duration-grouped
+    documents have no abstract -- so grouping a cropped run silently
+    dropped the one sentence that says the numbers do not describe the
+    whole signal.
+    """
+
+    CROP = 12.5
+
+    @pytest.fixture(autouse=True)
+    def _no_pdflatex(self, monkeypatch):
+        monkeypatch.setattr(
+            "deepmarkpy.utils.latex_helpers.compile_latex",
+            lambda *a, **k: None,
+        )
+
+    def _grouped_stats(self):
+        return {
+            "< 5.0s": {"n_files": 3, "stats": {
+                "GaussianNoiseAttack": {"accuracy_mean": 91.0, "accuracy_n": 3},
+            }},
+            "> 5.0s": {"n_files": 3, "stats": {
+                "GaussianNoiseAttack": {"accuracy_mean": 95.0, "accuracy_n": 3},
+            }},
+        }
+
+    def _basic_tex(self, tmp_path, crop):
+        import json
+        from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
+
+        stats_file = tmp_path / "stats.json"
+        stats_file.write_text(json.dumps(self._grouped_stats()))
+        generator = BenchmarkReportGenerator(str(tmp_path))
+        generator.generate_full_report(
+            str(stats_file), "TestModel", crop_before_attack=crop,
+        )
+        return (tmp_path / "benchmark_report.tex").read_text()
+
+    def test_the_basic_grouped_report_carries_the_note(self, tmp_path):
+        assert "A crop of 12.5\\%" in self._basic_tex(tmp_path, self.CROP)
+
+    def test_an_uncropped_grouped_report_says_nothing(self, tmp_path):
+        assert "A crop of" not in self._basic_tex(tmp_path, None)
+
+    def test_the_note_appears_once_not_per_duration_part(self, tmp_path):
+        tex = self._basic_tex(tmp_path, self.CROP)
+        assert tex.count("A crop of") == 1
+
+    def test_the_detailed_grouped_report_carries_the_note(self, tmp_path):
+        from deepmarkpy.utils.detailed_report_generator import (
+            DetailedReportGenerator,
+        )
+
+        results = {
+            f"f{i}.wav": {
+                "watermarked_audio_quality": {"pesq": 3.5},
+                "attacks": {"GaussianNoiseAttack": {
+                    "accuracy": 90.0,
+                    "attacked_audio_quality_wm": {"pesq": 3.0},
+                }},
+            }
+            for i in range(4)
+        }
+        generator = DetailedReportGenerator(str(tmp_path))
+        generator.generate_full_report(
+            results, model_name="TestModel",
+            crop_before_attack=self.CROP,
+            duration_partitions=[
+                ("< 5.0s", ["f0.wav", "f1.wav"]),
+                ("> 5.0s", ["f2.wav", "f3.wav"]),
+            ],
+        )
+        tex = (tmp_path / "detailed_report.tex").read_text()
+        assert "A crop of 12.5\\%" in tex

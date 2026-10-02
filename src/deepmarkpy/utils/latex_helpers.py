@@ -77,30 +77,211 @@ def make_preamble(
 def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str:
     """Render an attack class name as human-readable text.
 
-    Drops the trailing ``Attack`` suffix. When ``split_camel_case`` is
-    ``True`` each interior uppercase boundary is expanded to a space,
-    matching the style used by the basic benchmark report.
+    Drops the trailing ``Attack`` suffix from the base class name.
+    A version suffix like ``(aggressive)`` is preserved when present —
+    ``expand_attacks`` only includes one when the attack's config is
+    multi-version, so the display layer trusts the key as-is.
+
+    When ``split_camel_case`` is ``True`` each interior uppercase
+    boundary in the base name is expanded to a space.
 
     Known acronyms (e.g. ``LPC``) are kept as a single token rather than
-    split letter-by-letter, so the report shows ``LPC`` instead of
-    ``L P C``.
+    split letter-by-letter.
     """
-    stripped = attack_name.replace("Attack", "").strip()
-    stripped = stripped.replace("_", "\\_")
-    if not split_camel_case:
-        return stripped
+    # Separate version suffix: "GaussianNoiseAttack (aggressive)" → base + suffix
+    version_suffix = ""
+    base = attack_name
+    if " (" in attack_name and attack_name.endswith(")"):
+        idx = attack_name.index(" (")
+        base = attack_name[:idx]
+        version_suffix = attack_name[idx:]
 
-    # Treat known acronyms as a single token so the per-letter split
-    # below doesn't turn ``LPC`` into ``L P C``.
+    # Strip trailing "Attack" from the class name only
+    if base.endswith("Attack"):
+        base = base[:-6]
+    base = base.replace("_", "\\_")
+
+    if not split_camel_case:
+        return base + version_suffix
+
     ACRONYMS = ("LPC",)
     for acronym in ACRONYMS:
-        if stripped == acronym:
-            return acronym
+        if base == acronym:
+            return acronym + version_suffix
 
-    return "".join(
+    formatted = "".join(
         " " + c if c.isupper() and i > 0 else c
-        for i, c in enumerate(stripped)
+        for i, c in enumerate(base)
     ).strip()
+    return formatted + version_suffix
+
+
+# Column headers for the eight statistics. Every generator renders a
+# statistic column through this, so "worst_case" reads the same everywhere.
+STAT_HEADERS = {
+    "mean": "Mean",
+    "std": "Std",
+    "median": "Median",
+    "p5": "P5",
+    "p10": "P10",
+    "p95": "P95",
+    "p99": "P99",
+    "worst_case": "Worst Case",
+}
+
+# Metrics reported as a percentage rather than a bare number.
+_PERCENT_METRICS = frozenset({"accuracy"})
+
+# Metrics stored as a 0-1 fraction but read as a percentage.
+_FRACTION_METRICS = frozenset({"ber"})
+
+# Metrics whose useful resolution is below 0.01.
+_FINE_GRAINED_METRICS = frozenset({"stoi", "sii", "ncm"})
+
+
+def stat_header(statistic: str) -> str:
+    """Column header for a statistic name."""
+    return STAT_HEADERS.get(statistic, statistic.replace("_", " ").title())
+
+
+def metric_label(metric: str) -> str:
+    """Human-readable label for a metric, with its unit or range."""
+    from deepmarkpy.utils.metrics import METRIC_LABELS
+
+    extra = {
+        "accuracy": "Accuracy (\\%)",
+        "ber": "BER (\\%)",
+        "emr": "EMR",
+    }
+    if metric in extra:
+        return extra[metric]
+    return METRIC_LABELS.get(metric, metric.upper().replace("_", " "))
+
+
+def format_metric_cell(metric: str, value) -> str:
+    """Render one metric value, in the unit that metric is read in.
+
+    Returns ``"N/A"`` for a missing value, which is deliberately distinct
+    from the ``"--"`` a report prints when a statistic was never computed.
+    """
+    if value is None:
+        return "N/A"
+    value = float(value)
+    if metric in _FRACTION_METRICS:
+        return f"{value * 100:.2f}\\%"
+    if metric in _PERCENT_METRICS:
+        return f"{value:.2f}\\%"
+    if metric in _FINE_GRAINED_METRICS:
+        return f"{value:.4f}"
+    return f"{value:.2f}"
+
+
+def format_emr_cell(count, total, rate) -> str:
+    """Render the exact-match rate as ``n/N (r%)``.
+
+    EMR is a count first: "3 of 20 files came back bit-perfect" is the
+    fact, and the percentage is the derived reading of it.
+    """
+    if rate is None:
+        return "N/A"
+    if count is not None and total:
+        return f"{int(count)}/{int(total)} ({float(rate) * 100:.1f}\\%)"
+    return f"{float(rate) * 100:.1f}\\%"
+
+
+# Figures are set narrower than the text block. At full width a chart with
+# a handful of bars towers over the table it belongs to, and the section
+# reads as a picture with a footnote rather than a table with a picture.
+DEFAULT_FIGURE_WIDTH = "0.72\\linewidth"
+
+# For a chart of two or three bars, even that is too much page.
+NARROW_FIGURE_WIDTH = "0.5\\linewidth"
+
+
+def container_section(rows, label: str = "tab:containers") -> str:
+    """A section listing the memory each running service holds.
+
+    Its own section rather than a column anywhere: this is a snapshot of
+    the deployment at one moment, not a measurement of the watermarking
+    method, and it covers services -- models, dockerized attacks, the
+    metric services -- rather than attacks or files.
+    """
+    if not rows:
+        return ""
+
+    body = []
+    for kind, name, container, used, limit in rows:
+        share = f"{100.0 * used / limit:.0f}\\%" if limit else "--"
+        body.append(
+            f"    {kind} & {name.replace('_', chr(92) + '_')} & "
+            f"{used:.0f} & {limit:.0f} & {share} \\\\"
+            if limit else
+            f"    {kind} & {name.replace('_', chr(92) + '_')} & "
+            f"{used:.0f} & -- & -- \\\\"
+        )
+
+    table = build_longtable(
+        "llccc",
+        "Service & Name & Memory (MiB) & Limit (MiB) & Of limit",
+        body,
+        "Resident memory of each running container this run used, read "
+        "once while the services were warm. This is the whole container -- "
+        "weights, Python runtime and web server -- not the size of a model, "
+        "and the services load their weights at start, so a container can "
+        "never be measured empty. Services that run natively or were not "
+        "running are absent rather than reported as zero.",
+        label,
+    )
+    return (
+        "\\needspace{5\\baselineskip}\n"
+        "\\section{Container Memory}\n\n" + table + "\n\n"
+    )
+
+
+def slugify(label: str) -> str:
+    """Filename- and label-safe form of a duration-group label.
+
+    The comparison is spelled out rather than stripped as punctuation.
+    Dropping it collapses ``"< 5.0s"`` and ``"> 5.0s"`` onto the same
+    slug, so a run with one boundary writes both bins' figures to the
+    same filenames and emits the same ``\\label`` twice.
+    """
+    text = label.replace("<", " lt ").replace(">", " gt ")
+    return "".join(
+        c if c.isalnum() else "_" for c in text
+    ).strip("_").replace("__", "_") or "group"
+
+
+def part_heading(label: str, subtitle: str = "") -> str:
+    """A ``\\part`` whose sections start again at 1.
+
+    Each duration part is a self-contained report over its own files, so
+    its sections are its first, second, third -- not the seventh, eighth
+    and ninth of a document the reader is not reading straight through.
+    ``\\part`` does not reset the section counter on its own.
+    """
+    heading = f"{label} ({subtitle})" if subtitle else label
+    return (
+        f"\\part{{{heading}}}\n"
+        "\\setcounter{section}{0}\n\n"
+    )
+
+
+def figure_block(filename: str, caption: str, label: str,
+                 width: str = DEFAULT_FIGURE_WIDTH) -> str:
+    """A centred ``figure`` environment, sized relative to the text block.
+
+    Every generator builds its figures through this, so one change of
+    ``DEFAULT_FIGURE_WIDTH`` resizes all five reports.
+    """
+    return (
+        "\\begin{figure}[H]\n"
+        "    \\centering\n"
+        f"    \\includegraphics[width={width}]{{{filename}}}\n"
+        f"    \\caption{{{caption}}}\n"
+        f"    \\label{{{label}}}\n"
+        "\\end{figure}\n"
+    )
 
 
 def build_longtable(
@@ -190,54 +371,3 @@ def compile_latex(report_dir: str, tex_basename: str) -> Optional[str]:
         if os.path.exists(aux):
             os.remove(aux)
     return pdf_path
-
-
-class MetricCaveats:
-    """Marks metric cells an attack makes unreliable, and explains why.
-
-    ``get_metric_caveat`` returns a different reason per case, so a single
-    hardcoded footnote describes only one of them: a table containing both a
-    desynchronization row and SignInversion's SI-SDR would explain the timing
-    shift twice and the scale-invariance not at all. Collecting the reasons
-    while a table is built gives each its own marker and its own sentence.
-
-    Every report generator that prints per-attack quality metrics uses this,
-    so a caveat added to ``attack_groups`` reaches all of them.
-    """
-
-    _MARKERS = ("\\dag", "\\ddag", "\\S", "\\P")
-
-    def __init__(self):
-        self._reasons = []
-
-    def mark(self, attack_name, metric):
-        """Return the superscript for this cell, or '' when it needs none."""
-        from deepmarkpy.utils.attack_groups import get_metric_caveat
-
-        reason = get_metric_caveat(attack_name, metric)
-        if not reason:
-            return ""
-        if reason not in self._reasons:
-            self._reasons.append(reason)
-        return f"\\textsuperscript{{{self._marker(reason)}}}"
-
-    def _marker(self, reason):
-        return self._MARKERS[self._reasons.index(reason) % len(self._MARKERS)]
-
-    @property
-    def any_flagged(self):
-        return bool(self._reasons)
-
-    def footnote(self):
-        """One sentence per distinct reason, or '' when nothing was marked."""
-        if not self._reasons:
-            return ""
-        sentences = " ".join(
-            f"\\textsuperscript{{{self._marker(r)}}}This metric {r}."
-            for r in self._reasons
-        )
-        return (
-            "\n\n{\\noindent\\footnotesize " + sentences
-            + " Values are shown for completeness; do not read them as "
-            "quality scores.}\n"
-        )

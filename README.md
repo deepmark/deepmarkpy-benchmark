@@ -150,36 +150,79 @@ You can check the status of the services using `docker-compose ps`. The first bu
 > ```
 
 ### 2. Run the CLI
-Ensure the Docker services are running (`docker-compose up -d`) if you are using containerized plugins. Then, execute the main benchmark script from your activated virtual environment (if used) or directly:
 
-**Single model:**
+Everything the benchmark *measures* is described by a JSON config file.
+The command line carries only operational settings: which config to run,
+where the audio is, where the reports go, seeding, verbosity, audio
+dumping, and the plugin directory. A run is therefore reproducible from
+its config file plus an audio directory.
+
+Start from a template — one per mode, each fully commented:
+
 ```bash
-deepmark-benchmark --wav_files_dir /path/to/audio \
-                  --wm_model AudioSealModel \
-                  --attack_types GaussianNoiseAttack LowpassFilterAttack
+mkdir -p configs
+deepmark-benchmark --init benchmark              > configs/benchmark.json
+deepmark-benchmark --init no_attacks             > configs/no_attacks.json
+deepmark-benchmark --init detection_reliability  > configs/detection_reliability.json
 ```
 
-**Multiple models (comparative report):**
+Edit the file, check it, then run it:
+
 ```bash
-deepmark-benchmark --wav_files_dir /path/to/audio \
-                  --wm_models AudioSealModel AwareModel PerthModel \
-                  --attack_types GaussianNoiseAttack LowpassFilterAttack
+deepmark-benchmark --config configs/benchmark.json --validate-only
+deepmark-benchmark --config configs/benchmark.json --wav_files_dir /path/to/audio
 ```
 
-When using `--wm_models` with two or more models, the benchmark runs each model individually and generates a comparative report with accuracy tables, radar chart, and per-metric comparisons. If only one model is provided via `--wm_models`, it behaves the same as `--wm_model`.
+`--validate-only` checks the file against the discovered plugins and
+exits without running anything, so a typo costs a second rather than an
+hour. It does not require the Docker services to be up.
 
-**Using attack groups:**
+**Three modes, three files.** Each config declares its own `"mode"`, and
+only accepts the keys that mode actually uses — a `no_attacks` file that
+mentions attacks is an error, not a silently ignored section.
+
+| Mode | What it measures | File |
+|------|------------------|------|
+| `benchmark` | Watermark survival under each attack, plus the audio-quality cost | `configs/benchmark.json` |
+| `no_attacks` | Baseline: does the model read back its own watermark, and what does embedding alone cost? | `configs/no_attacks.json` |
+| `detection_reliability` | False positives on clean audio and false negatives on watermarked audio | `configs/detection_reliability.json` |
+
+Pass several files to run several modes in one invocation. Each must
+declare a different mode; they run in the order given and write distinct
+filenames into the shared report directory:
+
 ```bash
-deepmark-benchmark --wav_files_dir /path/to/audio \
-                  --wm_model AudioSealModel \
-                  --attack_groups audio_distortion desynchronization
+deepmark-benchmark --config configs/benchmark.json configs/detection_reliability.json \
+                  --wav_files_dir /path/to/audio
 ```
 
-`--attack_groups` accepts one or more group tags. The tag is what you pass on the
-command line; the table below lists every group together with the attacks it
-covers. Groups can be combined with `--attack_types` to add individual attacks.
+**Comparing models.** List two or more models in `benchmark.json` and
+each is run in turn, with a comparative report added:
 
-| Tag | Attacks |
+```json
+"models": ["AudioSealModel", "AwareModel", "PerthModel"]
+```
+
+**Selecting attacks.** In `benchmark.json` or
+`detection_reliability.json`:
+
+```json
+"attacks": {
+  "groups": ["audio_distortion", "desynchronization"],
+  "list": ["LowpassFilterAttack", "GaussianNoiseAttack"]
+}
+```
+
+Groups and list combine, duplicates removed. In `benchmark` mode leaving
+both empty runs every discovered attack; in `detection_reliability` mode
+it measures the no-attack baseline only, since attacks are *added* to a
+baseline that is always measured.
+
+A group expands to the attacks it *declares*, not to the ones that
+happen to have imported. If a plugin failed to load, the run stops and
+names it rather than quietly measuring a smaller set.
+
+| Group | Attacks |
 |-----|---------|
 | `process_disruption` | `CrossModelAttack`, `CollusionAttack`, `ZeroBitCollusionAttack`, `Collusion2Attack`, `SameModelAttack` |
 | `audio_editing` | `CutSamplesAttack`, `CropBeginningAttack`, `CropRandomAttack`, `WaveletAttack`, `LowpassFilterAttack`, `HighpassFilterAttack`, `BandstopFilterAttack`, `SmoothingAttack`, `ChorusAttack`, `FlangerAttack`, `EchoAttack`, `EqualizerAttack`, `QuantizationAttack`, `STFTQuantizationAttack`, `PCMQuantizationAttack`, `Mp3CompressionAttack`, `EncodecAttack`, `DescriptAudioCodecAttack`, `OpusCodecAttack`, `Codec2VocoderAttack`, `ResamplingPolyAttack`, `MixingAttack` |
@@ -192,23 +235,33 @@ covers. Groups can be combined with `--attack_types` to add individual attacks.
 
 | Flag | Purpose |
 |------|---------|
-| `--wav_files_dir` | Directory of `.wav` files to benchmark (required) |
-| `--wm_model` / `--wm_models` | One model, or several for a comparative report (one required) |
-| `--attack_types` | Individual attacks to run. Omit to run every discovered attack |
-| `--attack_groups` | Attack groups to run; see the table above |
-| `--no_attacks` | Embed and detect only, to measure baseline fidelity with no attack applied |
-| `--detection_reliability` | Measure false-positive and false-negative rates instead of bit accuracy |
-| `--calculate_quality_metrics` | Compute the full metric set (PESQ, PSNR, SI-SDR, MCD, ViSQOL, STOI, SII, NCM) and emit the detailed report |
-| `--crop_before_attack PERCENT` | Crop this percentage from the start of the watermarked audio before each attack |
-| `--save_audio` | Write watermarked and attacked audio to `<report_dir>/audio/` |
+| `--config PATH [PATH ...]` | Config file(s) to run, one per mode, in the order given. Required unless `--init` is used |
+| `--init MODE` | Print a fresh, fully-commented config file for `MODE` to stdout and exit |
+| `--validate-only` | Validate the config file(s) against the discovered plugins and exit without running anything |
+| `--wav_files_dir DIR` | Directory of `.wav`/`.mp3` files. Overrides `general.wav_files_dir`; required if neither sets it |
 | `--report_dir DIR` | Where reports and saved audio go (default `./report`). **Its contents are deleted at the start of every run**, so do not point it at a directory holding anything else |
 | `--seed N` | Seed the host-side RNGs so a run can be repeated. Off by default, which keeps the watermark payload and attack noise fresh per run. Does not reach the diffusion, VAE, speech_enhancement_2 or network_transmission services, which stay stochastic server-side |
-| `--plugins_dir DIR` | Load third-party plugins from this directory (also `DEEPMARK_PLUGINS_DIR`) |
+| `--save_audio` | Write watermarked and attacked audio to `<report_dir>/audio/` |
 | `--verbose` | Per-file and per-attack progress logging |
+| `--plugins_dir DIR` | Load third-party plugins from this directory (also `DEEPMARK_PLUGINS_DIR`) |
+| `--version` | Print the installed version and exit |
 
-Attack parameters are added to this list dynamically from each plugin's
-`config.json`, so `deepmark-benchmark --help` is the complete and current
-reference — for example `--snr_db_gaussian_noise` or `--order_bandstop`.
+That is the whole list — it does not grow with the plugin set. Models,
+attacks, attack parameters, metrics, statistics, duration groups and
+cropping are config-file settings, so there is one place to look for
+each of them and no flag whose name has to be globally unique.
+
+**Precedence.** The six operational keys above also exist under
+`general` in every config file. The command line wins, the config file
+is next, and the built-in default applies when neither says anything
+(`report_dir` = `report`, no seed, no verbosity, no audio dumping).
+`wav_files_dir` has no built-in default: set it in one place or the
+other, or the run stops before it starts. Nothing else appears in both
+places, so there is no other conflict to resolve.
+
+**Exit codes.** `0` success, `1` a runtime failure (for example a
+missing audio directory), `2` an invalid configuration or an unreachable
+model service — nothing was run.
 
 Every attack belongs to exactly one group; the canonical mapping lives in
 `src/deepmarkpy/utils/attack_groups.py` — update it there when adding a new
@@ -216,22 +269,32 @@ attack so the reports pick the right metrics for it, and a test will fail if
 one is left ungrouped.
 
 Metrics that compare the two signals sample by sample (PSNR, SI-SDR, STOI,
-MCD, NCM) report an attack's timing shift as if it were quality loss. The
+MCD, NCM) report an attack's timing shift as if it were quality loss, and the
 benchmark does not resynchronize — a desynchronization attack is meant to move
-the time axis — so those values are still reported for the desynchronization
-group but marked with a dagger in the tables. Read them as evidence the attack
-shifted the signal, not as quality scores; the group's NISQA columns are
-reference-free and remain valid.
+the time axis. Which is why the shipped default disables them for the
+`desynchronization` group, leaving MCD, ViSQOL and the reference-free NISQA
+dimensions. Enable them there if you want them, in which case they are printed
+like any other metric: a metric appears in a report because the config asked
+for it, and the report adds no commentary of its own about whether the value
+is worth reading.
+
+The same choice is available per group for every metric. `SignInversionAttack`
+is the other classic case: SI-SDR is scale-invariant, so a polarity flip leaves
+its score exactly at the no-attack value even though detection collapses.
+Disable `si_sdr` for `audio_distortion` if that reading is unhelpful.
 
 **Codec2 Vocoder Attack:**
 
 `Codec2VocoderAttack` simulates transmission through a low-bitrate voice channel
 (similar to MELP/MELPe military vocoders). It encodes audio at a given bitrate
 using the Codec2 codec and decodes it back to PCM. The `bitrate_codec2` parameter
-in `config.json` accepts either a single value or a list of bitrates:
+accepts either a single value or a list of bitrates, either in the plugin's
+`config.json` or in your config file's `attack_parameters`:
 
 ```json
-{"bitrate_codec2": [700, 1200, 2400]}
+"attack_parameters": {
+  "Codec2VocoderAttack": { "bitrate_codec2": [700, 1200, 2400] }
+}
 ```
 
 When a list is provided, the benchmark automatically expands it into separate
@@ -245,14 +308,264 @@ runs — one per bitrate — and reports results as `Codec2VocoderAttack_700`,
 > an underscore, the group lookup will incorrectly treat the part after the last
 > underscore as a suffix.
 
-### 3. Quality Metrics (Optional)
+### Configuration Files
 
-Use `--calculate_quality_metrics` to compute audio quality metrics and generate a detailed report:
+JSON has no comment syntax, so the shipped templates document themselves
+with keys that start with an underscore. The parser ignores every
+`_`-prefixed key — keep them, delete them, or add your own notes the
+same way.
+
+An abridged `configs/benchmark.json`:
+
+```json
+{
+  "mode": "benchmark",
+  "general": {
+    "wav_files_dir": null,
+    "report_dir": "report",
+    "seed": null,
+    "verbose": false,
+    "save_audio": false,
+    "plugins_dir": null
+  },
+  "models": ["AudioSealModel"],
+  "attacks": { "groups": [], "list": [] },
+  "attack_parameters": {
+    "GaussianNoiseAttack": { "snr_db_gaussian_noise": 25 }
+  },
+  "calculate_quality_metrics": true,
+  "statistics": ["mean", "std", "median", "p5", "p95", "worst_case"],
+  "metrics": {
+    "defaults": {
+      "accuracy": { "enabled": true, "statistics": ["mean", "worst_case"] },
+      "pesq": { "enabled": true },
+      "mcd":  { "enabled": true }
+    },
+    "per_group": {
+      "desynchronization": { "pesq": { "enabled": false } }
+    }
+  },
+  "comparison": { "primary_statistic": "mean" },
+  "crop_before_attack": null,
+  "duration_groups": { "boundaries": [], "include_overall": false }
+}
+```
+
+**Per-attack parameters** are keyed by attack class name for its default
+version, or `AttackName:version` for one named version. A bare name
+touches only the default, never the named presets. Naming a version the
+plugin does not have *defines* it, provided you give **all** of that
+attack's parameters; give only some and the entry is skipped with a
+`W010` warning, since the rest would silently come from the default
+preset. Both the attack name and each parameter are checked against the
+discovered plugins, with the type checked against the plugin's own
+default, before the run starts.
+
+To see which version will run with which values, before running
+anything:
 
 ```bash
-deepmark-benchmark --wav_files_dir /path/to/audio --wm_model AudioSealModel \
-                  --attack_types GaussianNoiseAttack LowpassFilterAttack \
-                  --calculate_quality_metrics
+deepmark-benchmark --config configs/benchmark.json --validate-only
+```
+
+```
+configs/benchmark.json: attack parameters in effect --
+    GaussianNoiseAttack (mild): snr_db_gaussian_noise=45
+    GaussianNoiseAttack (default): snr_db_gaussian_noise=35
+    GaussianNoiseAttack (aggressive): snr_db_gaussian_noise=20
+    GaussianNoiseAttack (brutal): snr_db_gaussian_noise=10
+    GaussianNoiseAttack (extreme): snr_db_gaussian_noise=3
+```
+
+Those five versions come from the config file: no shipped attack
+declares presets of its own, so `mild`, `aggressive`, `brutal` and
+`extreme` are ones that file defines. The values shown are the
+*effective* ones — the plugin's default with the override for that
+version applied on top, which is what `apply()` receives. The
+same mapping is written to `run_metadata.json` under
+`attack_parameters_resolved`, so a finished run can still be traced back
+to the values that produced it.
+
+**`calculate_quality_metrics`** is the master switch for the signal
+metrics. When `true`, the `metrics` block decides what runs. When `false`
+or absent, only accuracy and the always-on trio — PESQ, ViSQOL, STOI —
+are computed, uniformly across every group, and the enable flags are
+ignored; per-metric `statistics` still apply, and `ber`/`emr` keep
+honouring their flags because both are derived from accuracy for free.
+Set it `false` for a fast robustness-only pass.
+
+#### Per-group metrics and statistics
+
+Which metrics make sense depends on the attack family. A time-stretch
+moves the time axis, so PESQ and STOI report the shift rather than a
+quality change; a length-changing crop cannot be compared to the
+original at all. Those exclusions used to be hardcoded in the report
+generators, where no config could reach them. They are now yours to set.
+
+`metrics.defaults` applies to every attack group. `metrics.per_group`
+overrides it for one group. **Inheritance is per metric, not per block**:
+a group section listing only `pesq` inherits every other metric from
+`defaults` untouched, so each section states only what it changes.
+
+Statistics resolve in this order — first list that exists wins, and the
+report columns appear in *that list's* order:
+
+1. `metrics.per_group.<group>.<metric>.statistics`
+2. `metrics.per_group.<parent group>.<metric>.statistics` (subsections only)
+3. `metrics.defaults.<metric>.statistics`
+4. the top-level `statistics` list
+5. all eight statistics
+
+Delete the top-level `statistics` key entirely and all eight are
+computed: `mean`, `std`, `median`, `p5`, `p10`, `p95`, `p99`,
+`worst_case`.
+
+Configurable group keys:
+
+| Key | Covers |
+|-----|--------|
+| `process_disruption`, `audio_editing`, `audio_distortion`, `desynchronization`, `ai_attacks`, `transmission` | The six attack families |
+| `frequency_filtering`, `temporal_editing`, `audio_effects`, `compression_quantization` | Report subsections of `audio_editing`. They inherit from `audio_editing`, which inherits from `defaults`. Not selectable in `attacks.groups` |
+| `other` | Attacks belonging to no declared family, including third-party plugins |
+
+A section for a group whose attacks this run does not select is fine —
+it is reported as unused and ignored. A **misspelled** group name is an
+error, with the closest valid name suggested.
+
+The shipped templates reproduce the metric matrix the benchmark has
+always applied, so an unedited `--init` file changes nothing about what
+a run reports. A test enforces that.
+
+> **NISQA costs the same whichever dimensions you enable.** All five
+> come back from a single request, so listing fewer narrows the tables
+> without making the run faster. The validator says so when it sees a
+> partial selection.
+
+#### Validation
+
+Every problem in every file is reported together, before anything runs,
+each with a stable code, the exact JSON path, the offending value, and a
+suggestion when the value looks like a typo:
+
+```
+Found 3 configuration problems:
+
+[E005] configs/benchmark.json: mode
+    unknown mode. Valid modes: benchmark, no_attacks, detection_reliability.
+    got: "benchmrak"
+    did you mean 'benchmark'?
+
+[E027] configs/benchmark.json: metrics.per_group.desync
+    unknown attack group. Configurable groups: process_disruption, ...
+    got: "desync"
+    did you mean 'desynchronization'?
+
+[E031] configs/benchmark.json: crop_before_attack
+    must be greater than 0 and less than 100: it is the percentage cropped
+    from the start of the watermarked audio. Use null to disable cropping.
+    got: 150
+```
+
+Warnings are printed and the run proceeds: a `per_group` section for a
+group this run does not reach, a `metrics` block that
+`calculate_quality_metrics` is ignoring, or a metric whose backing
+service is unreachable.
+
+> **Upgrading from the single `benchmark_config.json`?** Its `modes`
+> block and `"mean:T std:F ..."` statistic strings are gone. Passing an
+> old file produces an `[E038]` error naming what changed; run
+> `deepmark-benchmark --init benchmark` for a fresh one.
+
+### Running with the pre-2.0 flags
+
+Scripts written against the previous release keep working. When
+`--config` is absent the old flags are accepted and assembled into a
+configuration internally, so they run through the same validator and the
+same reports:
+
+```bash
+deepmark-benchmark \
+  --wm_models AudioSealModel PerthModel \
+  --wav_files_dir ./audio \
+  --attack_groups audio_distortion desynchronization \
+  --calculate_quality_metrics \
+  --crop_before_attack 10 \
+  --snr_db_gaussian_noise 25
+```
+
+| Flag | Config key |
+|---|---|
+| `--wm_model`, `--wm_models` | `models` |
+| `--attack_types` | `attacks.list` |
+| `--attack_groups` | `attacks.groups` |
+| `--no_attacks` | `"mode": "no_attacks"` |
+| `--detection_reliability` | `"mode": "detection_reliability"` |
+| `--calculate_quality_metrics` | `calculate_quality_metrics` |
+| `--crop_before_attack` | `crop_before_attack` |
+| `--<plugin parameter>` | `attack_parameters.<Attack>.<parameter>` |
+
+Passing `--no_attacks` and `--detection_reliability` together runs both,
+as it always did — one config per mode.
+
+Give `--config` and the file decides; any flag from the table is then
+ignored and named in a warning. The flags cover what they always covered,
+which is less than a config file can say: per-group metrics and
+statistics, the `efficiency` section, `duration_groups`, `comparison` and
+per-version attack parameters have no flag, and a bare parameter flag
+reaches an attack's default preset only.
+
+### Attack Versions
+
+An attack can carry several parameter presets (versions). No shipped
+attack does — every plugin's `config.json` holds one flat parameter set,
+which is its `default` version — so in practice you define the ones you
+want in your config file (see below), and a plugin may also declare them
+itself by putting each preset under a name:
+
+```json
+{
+  "default": {"snr_db_gaussian_noise": 35},
+  "aggressive": {"snr_db_gaussian_noise": 10},
+  "mild": {"snr_db_gaussian_noise": 50}
+}
+```
+
+Define them in `attack_parameters` — giving every parameter the attack
+has, so the version is fully specified — and select them with the
+`AttackName:version` syntax:
+
+```json
+"attack_parameters": {
+  "GaussianNoiseAttack:aggressive": {"snr_db_gaussian_noise": 10},
+  "GaussianNoiseAttack:mild": {"snr_db_gaussian_noise": 50}
+},
+"attacks": {
+  "list": ["GaussianNoiseAttack:aggressive", "GaussianNoiseAttack:mild"]
+}
+```
+
+Naming a multi-version attack **without** a version expands it into one
+run per version. The report labels each as `GaussianNoise (aggressive)`.
+A bare name and `:default` are the same target. Any other version name
+must be defined in `attack_parameters`; naming one that is not is a
+validation error listing the versions that exist.
+
+### 3. Quality Metrics (Optional)
+
+Set `"calculate_quality_metrics": true` in the config file to compute
+audio quality metrics and generate a detailed report, and choose which
+ones under `metrics` (see [Per-group metrics and
+statistics](#per-group-metrics-and-statistics)):
+
+```json
+"calculate_quality_metrics": true,
+"metrics": {
+  "defaults": {
+    "pesq": { "enabled": true },
+    "stoi": { "enabled": true },
+    "mcd":  { "enabled": false }
+  }
+}
 ```
 
 **Audio Quality Metrics:**
@@ -321,26 +634,34 @@ If NISQA is not installed or the weights file is missing, the metric is silently
 
 ### 4. Detection Reliability (Optional)
 
-Use `--detection_reliability` to measure false positive and false negative rates. This mode supports a **single model** per run and requires the model to implement `is_watermarked()` (see [Adding a New Watermarking Model](#adding-a-new-watermarking-model)).
+`configs/detection_reliability.json` measures false positive and false
+negative rates. It takes **exactly one model**, which must implement
+`is_watermarked()` (see [Adding a New Watermarking
+Model](#adding-a-new-watermarking-model)).
 
 ```bash
-deepmark-benchmark --wav_files_dir /path/to/audio \
-                  --wm_model PerthModel \
-                  --detection_reliability
+deepmark-benchmark --config configs/detection_reliability.json \
+                  --wav_files_dir /path/to/audio
 ```
 
 Without attacks the mode measures:
 - **False positive**: detection on clean (unwatermarked) audio reports a watermark present.
 - **False negative**: detection on watermarked audio fails to find the watermark.
 
-When combined with `--attack_types` or `--attack_groups`, FP/FN are additionally reported per attack (attack applied to clean audio for FP, attack applied to watermarked audio for FN).
+Add attacks in the file and FP/FN are additionally reported per attack —
+the attack applied to clean audio for FP, to watermarked audio for FN:
 
-```bash
-deepmark-benchmark --wav_files_dir /path/to/audio \
-                  --wm_model AudioSealModel \
-                  --detection_reliability \
-                  --attack_types GaussianNoiseAttack LowpassFilterAttack
+```json
+"attacks": { "list": ["GaussianNoiseAttack", "LowpassFilterAttack"] }
 ```
+
+Note that every attack runs **twice per file** here, so a full attack set
+costs about double what the same set costs in benchmark mode.
+
+There is no `ber` metric in this mode: each file is scored as a binary
+detected/not-detected outcome, so there are no payload bits to disagree
+and a bit error rate would be meaningless. Naming it is a validation
+error rather than a silently ignored key.
 
 Results are saved to `report/detection_reliability.json` and a dedicated `detection_reliability_report.pdf` is generated.
 
@@ -352,13 +673,13 @@ Results are saved to `report/detection_reliability.json` and a dedicated `detect
 
 ### 5. Save Audio (Optional)
 
-Use `--save_audio` to write intermediate audio files to disk for manual inspection. Files are saved to `<report_dir>/audio/`.
+Use `--save_audio` (or `"save_audio": true` under `general`) to write
+intermediate audio files to disk for manual inspection. Files are saved
+to `<report_dir>/audio/`.
 
 ```bash
-deepmark-benchmark --wav_files_dir /path/to/audio \
-                  --wm_model AudioSealModel \
-                  --detection_reliability \
-                  --attack_types GaussianNoiseAttack \
+deepmark-benchmark --config configs/detection_reliability.json \
+                  --wav_files_dir /path/to/audio \
                   --save_audio
 ```
 
@@ -371,20 +692,36 @@ In the standard benchmark mode, watermarked and attacked-watermarked files are s
 
 ### 6. View Results
 
-The benchmark generates the following outputs in the `report/` directory:
+The benchmark generates the following outputs in the `report/` directory.
+Each mode writes distinct filenames, so running several in one
+invocation does not make them overwrite each other.
 
-**Single model (`--wm_model`):**
+**`benchmark` mode, one model:**
 - `benchmark_results.json` – Detailed per-file, per-attack results
-- `benchmark_stats.json` – Mean accuracy per attack
-- `benchmark_report.tex/.pdf` – Accuracy table, bar chart, and performance analysis
-- `detailed_report.tex/.pdf` – Full report with attacks grouped by category and per-group quality/intelligibility metrics (only with `--calculate_quality_metrics`)
+- `benchmark_stats.json` – Per-attack statistics, carrying exactly the metrics and statistics the config asked for
+- `run_metadata.json` – Version, git revision, seed, plugin inventory, and the config file the run came from
+- `benchmark_report.tex/.pdf` – Accuracy per attack family, bar chart, and performance analysis
+- `detailed_report.tex/.pdf` – Per-family metric breakdowns against a "no attack (watermark only)" baseline (whenever any signal metric is enabled)
 
-**Multiple models (`--wm_models`):**
-- `report/<ModelName>/` – Individual model reports (same as single model)
+**`benchmark` mode, several models:**
+- `report/<ModelName>/` – Individual model reports (same as above)
 - `report/comparison/` – Comparative report with:
-  - Accuracy comparison table with rank-based coloring
+  - Accuracy comparison table with rank-based coloring, showing `comparison.primary_statistic`
+  - One further table per other statistic configured for accuracy
   - Radar chart comparing all models
-  - Per-metric comparison tables filtered to relevant attacks (only with `--calculate_quality_metrics`)
+
+**`no_attacks` mode:**
+- `no_attacks_<ModelName>.json` – Per-file baseline results
+- `no_attacks_report.tex/.pdf` – Detection fidelity and the audio-quality cost of embedding
+
+**`detection_reliability` mode:**
+- `detection_reliability.json` – FP/FN counts and per-attack statistics
+- `detection_reliability_report.tex/.pdf` – Baseline and per-family reliability
+
+Every table's columns come from the config file. If a metric is enabled
+but produced no value anywhere — an unreachable service, a missing
+optional package — it is named in a footnote under the section rather
+than rendered as a table of `N/A`s or dropped without a word.
 
 ## Adding a New Plugin
 
@@ -457,7 +794,8 @@ class NewAttack(BaseAttack):
 
 5.	Run the Benchmark
 ```bash 
-deepmark-benchmark --wav_files_dir /path/to/audio --wm_model AudioSealModel --attack_types NewAttack
+# Add it to your config file's attacks.list, then:
+deepmark-benchmark --config configs/benchmark.json --wav_files_dir /path/to/audio
 ```
 
 ### Adding a New Watermarking Model
@@ -486,7 +824,7 @@ class NewModel(BaseModel):
     def is_watermarked(self, detect_output) -> bool:
         """Decide whether a watermark is present based on detect() output.
 
-        Required for --detection_reliability support. Each model defines
+        Required for detection_reliability mode. Each model defines
         its own logic here. Examples:
           - Zero-bit model: return bool(detect_output)
           - Confidence model: return confidence >= threshold
@@ -495,7 +833,7 @@ class NewModel(BaseModel):
 ```
 
 > **`is_watermarked()` is optional** — only needed if you want the model to
-> support `--detection_reliability`. Models without it work normally in the
+> support the `detection_reliability` mode. Models without it work normally in the
 > standard benchmark mode.
 
 3.	Add config.json
@@ -531,7 +869,8 @@ class NewModel(BaseModel):
 
 5.	Run the Benchmark with the New Model
 ```Shell
-deepmark-benchmark --wav_files_dir /path/to/audio --wm_model NewModel --attack_types CutSamplesAttack
+# Put "NewModel" in your config file's models list, then:
+deepmark-benchmark --config configs/benchmark.json --wav_files_dir /path/to/audio
 ```
 
 ### Docker Integration

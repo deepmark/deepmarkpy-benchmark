@@ -7,9 +7,9 @@ from deepmarkpy.utils.attack_groups import (
     ATTACK_GROUPS,
     get_attacks_for_groups,
     get_group_for_attack,
-    get_metrics_for_attack,
     group_attacks,
 )
+from deepmarkpy.utils.metric_resolver import MetricResolver
 
 
 class TestGroupedAttacksMatchPlugins:
@@ -64,17 +64,25 @@ class TestGroupAttacks:
         assert grouped["other"]["attacks"] == ["FakeAttack"]
 
 
-class TestGetMetricsForAttack:
+class TestMetricsForAttack:
+    """The taxonomy decides the default metric set for each attack, via
+    the matrix ``MetricResolver.from_attack_groups`` builds from it."""
+
+    @staticmethod
+    def _metrics(attack):
+        return MetricResolver.from_attack_groups().metrics_for_attack(attack)
+
     def test_returns_group_metrics(self):
-        metrics = get_metrics_for_attack("GaussianNoiseAttack")
+        metrics = self._metrics("GaussianNoiseAttack")
         assert "pesq" in metrics
         assert "stoi" in metrics
 
     def test_process_disruption_has_metrics(self):
-        metrics = get_metrics_for_attack("SameModelAttack")
+        metrics = self._metrics("SameModelAttack")
         assert "pesq" in metrics
         assert "nisqa_mos" in metrics
 
-    def test_unknown_attack_returns_all_metrics(self):
-        from deepmarkpy.utils.metrics import ALL_METRICS
-        assert set(get_metrics_for_attack("FakeAttack")) == set(ALL_METRICS)
+    def test_unknown_attack_gets_the_full_set(self):
+        """An ungrouped attack lands in "other", which enables everything."""
+        from deepmarkpy.utils.metric_resolver import SIGNAL_METRICS
+        assert set(self._metrics("FakeAttack")) == set(SIGNAL_METRICS)

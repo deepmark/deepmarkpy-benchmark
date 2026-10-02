@@ -1,5 +1,7 @@
 """Tests for the detection_reliability module."""
 
+import time
+
 import numpy as np
 import pytest
 
@@ -9,11 +11,15 @@ from deepmarkpy.utils.detection_reliability import (
 )
 from deepmarkpy.utils.detection_reliability_report_generator import (
     _format_count,
-    _format_metric,
     _format_pct,
     _short_model_name,
-    _metric_label,
     generate_detection_reliability_report,
+)
+# Metric formatting and labelling are shared by every generator, so a
+# caption or a unit reads the same wherever it appears.
+from deepmarkpy.utils.latex_helpers import (
+    format_metric_cell as _format_metric,
+    metric_label as _metric_label,
 )
 
 
@@ -78,13 +84,17 @@ class TestFormatHelpers:
         assert _format_pct(0, 0) == "N/A"
 
     def test_format_metric_none(self):
-        assert _format_metric(None) == "N/A"
-
-    def test_format_metric_na_string(self):
-        assert _format_metric("N/A") == "N/A"
+        assert _format_metric("pesq", None) == "N/A"
 
     def test_format_metric_float(self):
-        assert _format_metric(3.14159) == "3.14"
+        assert _format_metric("pesq", 3.14159) == "3.14"
+
+    def test_format_metric_uses_the_unit_the_metric_is_read_in(self):
+        # A percentage, a 0-1 fraction shown as a percentage, and a score
+        # whose useful resolution is below 0.01 all format differently.
+        assert _format_metric("accuracy", 91.5) == "91.50\\%"
+        assert _format_metric("ber", 0.085) == "8.50\\%"
+        assert _format_metric("stoi", 0.9412) == "0.9412"
 
     def test_short_model_name_strips_model(self):
         assert _short_model_name("AudioSealModel") == "AudioSeal"
@@ -285,7 +295,11 @@ class TestReportGeneration:
             "no_attack": {
                 "false_positive_count": 0,
                 "false_negative_count": 0,
-                "metrics": {"pesq": 4.1, "stoi": 0.98, "visqol": 4.5},
+                "metrics": {
+                    "pesq": {"mean": 4.1},
+                    "stoi": {"mean": 0.98},
+                    "visqol": {"mean": 4.5},
+                },
             },
             "attacks": {},
         }
@@ -294,5 +308,118 @@ class TestReportGeneration:
         )
         with open(tex_path) as f:
             content = f.read()
-        assert "Watermarked Audio Quality" in content
+        assert "Audio quality" in content
         assert "4.10" in content
+
+
+class TestTimingsMeanTheSameThingHere:
+    """This mode detects twice per attack, so which call is timed matters.
+
+    It runs detect on the attacked clean signal for the false-positive
+    rate and on the attacked watermarked signal for the false negative.
+    Only the second matches what ``Benchmark.run`` times, and the
+    un-attacked detect belongs to the baseline, not to any attack.
+    """
+
+    MARK = 7.0
+    EMBED, ATTACK = 0.01, 0.03
+    CLEAN_DETECT, ATTACKED_DETECT = 0.05, 0.20
+
+    class _Model:
+        def __init__(self, outer):
+            self.outer = outer
+            self.config = {"is_zero_bit": True, "sampling_rate": 16000}
+
+        def generate_watermark(self):
+            return np.array([1])
+
+        def embed(self, audio, watermark_data, sampling_rate):
+            time.sleep(self.outer.EMBED)
+            return audio
+
+        def detect(self, audio, sampling_rate):
+            attacked = audio[0] == self.outer.MARK
+            time.sleep(self.outer.ATTACKED_DETECT if attacked
+                       else self.outer.CLEAN_DETECT)
+            return 1
+
+        def is_watermarked(self, detect_output):
+            return bool(detect_output)
+
+    class _Attack:
+        MARK = 7.0
+        PAUSE = 0.03
+
+        def __init__(self, version=None):
+            self.config = {}
+
+        def apply(self, audio, **kwargs):
+            time.sleep(self.PAUSE)
+            marked = np.array(audio, copy=True)
+            marked[0] = self.MARK
+            return marked
+
+    @pytest.fixture
+    def result(self, tmp_path):
+        import soundfile as sf
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+
+        path = tmp_path / "a.wav"
+        sf.write(str(path),
+                 np.sin(np.linspace(0, 1, 16000)).astype(np.float32), 16000)
+
+        outer = self
+        model_cls = lambda: TestTimingsMeanTheSameThingHere._Model(outer)
+
+        class _Benchmark:
+            models = {"TestModel": {
+                "class": model_cls,
+                "config": {"is_zero_bit": True, "sampling_rate": 16000},
+            }}
+            attacks = {"GaussianNoiseAttack": {
+                "class": TestTimingsMeanTheSameThingHere._Attack,
+                "config": {},
+            }}
+
+        resolver = MetricResolver(efficiency={
+            "enabled": True,
+            "metrics": {m: {"enabled": True, "statistics": ["mean"]}
+                        for m in ("embed_latency", "detect_latency",
+                                  "attack_latency")},
+        })
+        return run_detection_reliability(
+            _Benchmark(), [str(path)], "TestModel",
+            attack_types=["GaussianNoiseAttack"], metric_resolver=resolver,
+        )
+
+    def test_detect_latency_reaches_the_per_attack_table(self, result):
+        """It was copied before the call that measures it, so it was absent."""
+        timings = result["attacks"]["GaussianNoiseAttack"]["timings"]
+        assert "detect_latency" in timings
+
+    def test_the_attacks_detect_is_the_one_reported(self, result):
+        timings = result["attacks"]["GaussianNoiseAttack"]["timings"]
+        assert timings["detect_latency"]["mean"] == pytest.approx(
+            self.ATTACKED_DETECT, abs=0.05,
+        )
+
+    def test_the_baseline_keeps_its_own_detect(self, result):
+        """The un-attacked detect must not be overwritten by an attack's."""
+        timings = result["no_attack"]["timings"]
+        assert timings["detect_latency"]["mean"] == pytest.approx(
+            self.CLEAN_DETECT, abs=0.05,
+        )
+
+    def test_the_per_file_record_does_not_mix_the_two(self, result):
+        record = next(iter(result["per_file"].values()))
+        assert record["detect_latency"] == pytest.approx(
+            self.CLEAN_DETECT, abs=0.05,
+        )
+        assert record["attacks"]["GaussianNoiseAttack"]["detect_latency"] == \
+            pytest.approx(self.ATTACKED_DETECT, abs=0.05)
+
+    def test_embedding_is_carried_onto_the_attack_once_per_file(self, result):
+        timings = result["attacks"]["GaussianNoiseAttack"]["timings"]
+        assert timings["embed_latency"]["mean"] == pytest.approx(
+            self.EMBED, abs=0.05,
+        )
