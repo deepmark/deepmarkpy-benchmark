@@ -140,3 +140,41 @@ class TestAFailedDecisionIsNotAZeroCount:
         )
         assert all("detected" not in f for f in results["files"])
         assert any("failed on every file" in r.message for r in caplog.records)
+
+
+class FlakyModel(_StubModel):
+    """Decides on most files, raises on the second one."""
+
+    def __init__(self):
+        super().__init__()
+        self._calls = 0
+
+    def detect(self, audio, sampling_rate):
+        return np.ones(16, dtype=np.int32)
+
+    def is_watermarked(self, detect_output):
+        self._calls += 1
+        if self._calls == 2:
+            raise ValueError("contract mismatch on this file")
+        return True
+
+
+class TestAPartialFailureIsNotANegative:
+    """Some files decided, some raised: the count is over the decided ones.
+
+    Counting every file in the denominator reported each failure as "not
+    detected", so a model that found its watermark everywhere it answered
+    showed 2/3 instead of 2/2.
+    """
+
+    def test_the_failed_file_is_left_out_of_the_count(self, audio_files):
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+        from deepmarkpy.utils.no_attacks_report_generator import _summarize_model
+
+        results = run(FlakyModel, audio_files)
+        assert results["supports_detection"] is True
+        assert [("detected" in f) for f in results["files"]] == [True, False, True]
+
+        summary = _summarize_model(results, MetricResolver())
+        assert summary["positive_detections"] == 2
+        assert summary["detection_n"] == 2

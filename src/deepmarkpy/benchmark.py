@@ -194,7 +194,11 @@ def expand_attacks(attack_types, attacks_registry, parameters=None,
         version = None
         atk_name = atk_spec
         if ":" in atk_spec:
-            atk_name, version = atk_spec.rsplit(":", 1)
+            # At the first colon, as config validation and availability
+            # checks split it: a class name cannot hold one, a version name
+            # can. Splitting at the last made "FooAttack:v:2" resolve to a
+            # class "FooAttack:v" that validation never saw.
+            atk_name, _, version = atk_spec.partition(":")
 
         if atk_name not in attacks_registry:
             add((atk_name, atk_spec, {}, version))

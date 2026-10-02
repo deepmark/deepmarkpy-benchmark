@@ -92,6 +92,24 @@ class TestExpandAttacks:
             ("NoSuchAttack", "NoSuchAttack", {}, None)
         ]
 
+    def test_a_colon_inside_the_version_stays_in_the_version(self):
+        """Validation splits at the first colon. Splitting here at the last
+        made "GaussianNoiseAttack:v:2" a class "GaussianNoiseAttack:v",
+        which benchmark mode silently skipped."""
+        registry = {"GaussianNoiseAttack": {
+            "config": {"snr_db_gaussian_noise": 35},
+            "_raw_config": {
+                "default": {"snr_db_gaussian_noise": 35},
+                "v:2": {"snr_db_gaussian_noise": 10},
+            },
+        }}
+        (cls, display, _, version), = expand_attacks(
+            ["GaussianNoiseAttack:v:2"], registry,
+        )
+        assert cls == "GaussianNoiseAttack"
+        assert version == "v:2"
+        assert display == "GaussianNoiseAttack (v:2)"
+
 
 class TestAggregationTransparency:
     @staticmethod

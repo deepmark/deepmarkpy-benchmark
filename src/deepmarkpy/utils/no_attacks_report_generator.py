@@ -133,10 +133,13 @@ def _summarize_model(results, resolver):
     # it there is no honest count to print: a threshold on detect() output
     # would be this report guessing what the output means.
     if results.get("supports_detection"):
+        # Counted over the files the model actually decided. A file whose
+        # is_watermarked() raised has no answer, and counting it in the
+        # denominator reported each failure as "not detected".
+        decided = [f for f in files if "detected" in f]
         summary["supports_detection"] = True
-        summary["positive_detections"] = sum(
-            1 for f in files if f.get("detected")
-        )
+        summary["positive_detections"] = sum(1 for f in decided if f["detected"])
+        summary["detection_n"] = len(decided)
 
     if resolver.is_enabled(None, "emr") and accuracies:
         exact = sum(1 for a in accuracies if a == 100.0)
@@ -241,7 +244,8 @@ def _accuracy_table(models_data, resolver, is_zero_bit, label):
             )
         if show_detected:
             cells.append(
-                f"{data.get('positive_detections', 0)}/{data['n_files']}"
+                f"{data.get('positive_detections', 0)}/"
+                f"{data.get('detection_n', data['n_files'])}"
                 if data.get("supports_detection") else "N/A"
             )
         if show_ber and len(ber_statistics) == 1:
