@@ -5,8 +5,33 @@ import os
 
 import pytest
 
-from deepmarkpy.utils.latex_helpers import display_attack_name
+from deepmarkpy.utils.latex_helpers import display_attack_name, latex_escape
 from deepmarkpy.utils.report_generator import BenchmarkReportGenerator, generate_benchmark_report
+
+
+class TestVersionNamesAreEscaped:
+    """A version name is the config author's own text, printed in every
+    table. Only the base name was escaped, so ``very_aggressive`` reached
+    LaTeX as a subscript and broke the compile."""
+
+    def test_an_underscore_in_the_version_is_escaped(self):
+        assert display_attack_name("GaussianNoiseAttack (very_aggressive)") \
+            == "GaussianNoise (very\\_aggressive)"
+
+    def test_every_special_character_is_made_literal(self):
+        escaped = latex_escape("a&b%c$d#e_f{g}h~i^j\\k")
+        for raw in ("&", "%", "$", "#", "_", "{", "}"):
+            assert f"\\{raw}" in escaped
+        assert "\\textbackslash{}" in escaped
+        assert "\\textasciitilde{}" in escaped
+        assert "\\textasciicircum{}" in escaped
+
+    def test_the_figures_read_back_the_original_text(self):
+        """Charts take the table labels and undo the LaTeX for drawing."""
+        from deepmarkpy.utils.report_charts import plain
+
+        original = "x (a&b%c$d#e_f{g}h~i^j\\k)"
+        assert plain(latex_escape(original)) == original
 
 
 # ---------------------------------------------------------------------------

@@ -74,6 +74,29 @@ def make_preamble(
     )
 
 
+_LATEX_SPECIAL = {
+    "\\": "\\textbackslash{}",
+    "&": "\\&",
+    "%": "\\%",
+    "$": "\\$",
+    "#": "\\#",
+    "_": "\\_",
+    "{": "\\{",
+    "}": "\\}",
+    "~": "\\textasciitilde{}",
+    "^": "\\textasciicircum{}",
+}
+
+
+def latex_escape(text: str) -> str:
+    """``text`` with every LaTeX special character made literal.
+
+    One pass over the characters, so a replacement is never escaped again.
+    ``report_charts.plain`` reverses it for the figures.
+    """
+    return "".join(_LATEX_SPECIAL.get(c, c) for c in text)
+
+
 def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str:
     """Render an attack class name as human-readable text.
 
@@ -99,7 +122,11 @@ def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str
     # Strip trailing "Attack" from the class name only
     if base.endswith("Attack"):
         base = base[:-6]
-    base = base.replace("_", "\\_")
+    base = latex_escape(base)
+    # A version name is the config author's own text -- "very_aggressive"
+    # is a natural one -- and every table prints this, so it is escaped
+    # like the base rather than trusted.
+    version_suffix = latex_escape(version_suffix)
 
     if not split_camel_case:
         return base + version_suffix

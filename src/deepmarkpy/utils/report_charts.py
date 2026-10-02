@@ -54,7 +54,15 @@ MODEL_COLORS = (
 )
 
 
+# Private-use stand-ins for characters a later rule would otherwise eat:
+# an escaped "$" must survive the math-mode "$" removal, and a literal
+# backslash must not start another escape. Restored at the very end.
+_DOLLAR, _BACKSLASH = "", ""
+
 _LATEX_TO_TEXT = (
+    ("\\textbackslash{}", _BACKSLASH),
+    ("\\textasciitilde{}", "~"),
+    ("\\textasciicircum{}", "^"),
     ("\\textsuperscript{0}", "⁰"),
     ("---", "—"),
     ("--", "–"),
@@ -62,10 +70,16 @@ _LATEX_TO_TEXT = (
     ("\\_", "_"),
     ("\\&", "&"),
     ("\\#", "#"),
+    ("\\{", "{"),
+    ("\\}", "}"),
+    ("\\$", _DOLLAR),
     ("$\\sim$", "~"),
+    ("$\\geq$", "≥"),
     ("$<$", "<"),
     ("$>$", ">"),
     ("$", ""),
+    (_DOLLAR, "$"),
+    (_BACKSLASH, "\\"),
 )
 
 

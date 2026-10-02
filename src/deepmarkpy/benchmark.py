@@ -431,7 +431,8 @@ class Benchmark:
             )
 
             timings = {}
-            with efficiency.measure(timings, "embed_latency"):
+            with efficiency.measure(timings, "embed_latency",
+                                    resolver.is_enabled(None, "embed_latency")):
                 watermarked_audio = model_instance.embed(
                     audio=audio, watermark_data=file_watermark,
                     sampling_rate=sampling_rate,
@@ -451,7 +452,8 @@ class Benchmark:
             # ``detect()`` -- AudioSeal's reads the confidence out of the
             # (watermark, confidence) pair -- so the unsplit value is kept
             # rather than reassembled from the parts below.
-            with efficiency.measure(timings, "detect_latency"):
+            with efficiency.measure(timings, "detect_latency",
+                                    resolver.is_enabled(None, "detect_latency")):
                 detect_output = model_instance.detect(
                     watermarked_audio, sampling_rate,
                 )
@@ -656,7 +658,8 @@ class Benchmark:
 
             # Embed watermark
             file_timings = {}
-            with efficiency.measure(file_timings, "embed_latency"):
+            with efficiency.measure(file_timings, "embed_latency",
+                                    resolver.is_enabled(None, "embed_latency")):
                 watermarked_audio = model_instance.embed(
                     audio=audio, watermark_data=file_watermark,
                     sampling_rate=sampling_rate
@@ -737,7 +740,8 @@ class Benchmark:
                         "different_model_name_cross_model"] = different_model_name
 
                 attack_timings = {}
-                with efficiency.measure(attack_timings, "attack_latency"):
+                with efficiency.measure(attack_timings, "attack_latency",
+                                        resolver.is_enabled(None, "attack_latency")):
                     attacked_audio, different_watermark = apply_attack(
                         attack_instance,
                         attack_class_name,
@@ -766,7 +770,8 @@ class Benchmark:
                         logger.info(f"Saved attacked audio: {attacked_filename}")
                 
                 confidence = None
-                with efficiency.measure(attack_timings, "detect_latency"):
+                with efficiency.measure(attack_timings, "detect_latency",
+                                        resolver.is_enabled(None, "detect_latency")):
                     if returns_confidence:
                         detected_message, confidence = model_instance.detect(attacked_audio, sampling_rate)
                     else:

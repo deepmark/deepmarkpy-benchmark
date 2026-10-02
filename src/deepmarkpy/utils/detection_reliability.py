@@ -277,6 +277,9 @@ def run_detection_reliability(
     # whatever any group asks for -- not just what metrics.defaults enables,
     # which a config that states its metrics per group leaves empty.
     baseline_metrics = resolver.all_signal_metrics()
+    # Timings the config asked for. Anything else is not measured at all,
+    # so the per-file records carry none of it.
+    timed = {m: resolver.is_enabled(None, m) for m in EFFICIENCY_METRICS}
     no_attack_metrics: Dict[str, List[float]] = {
         m: [] for m in baseline_metrics
     }
@@ -317,12 +320,15 @@ def run_detection_reliability(
         # --- Step 2: embed + detect (FN without attack) ---
         watermark = model_instance.generate_watermark()
         file_timings: Dict[str, float] = {}
-        with efficiency.measure(file_timings, "embed_latency"):
+        with efficiency.measure(file_timings, "embed_latency",
+                                timed["embed_latency"]):
             watermarked_audio = model_instance.embed(
                 audio=audio, watermark_data=watermark, sampling_rate=sr,
             )
-        fn_this = not _detect(model_instance, watermarked_audio, sr,
-                              record=file_timings)
+        fn_this = not _detect(
+            model_instance, watermarked_audio, sr,
+            record=file_timings if timed["detect_latency"] else None,
+        )
         if fn_this:
             fn_no_attack += 1
         file_record["no_attack_fn"] = fn_this
@@ -387,7 +393,8 @@ def run_detection_reliability(
             # Step 4: attack the watermarked audio, then detect.
             attack_timings: Dict[str, float] = {}
             try:
-                with efficiency.measure(attack_timings, "attack_latency"):
+                with efficiency.measure(attack_timings, "attack_latency",
+                                        timed["attack_latency"]):
                     attacked_wm, _ = apply_attack(
                         attack_instance, attack_class_name,
                         target_audio=watermarked_audio, clean_audio=audio,
@@ -415,8 +422,10 @@ def run_detection_reliability(
                 attack_state[attack_name]["fp_count"] += 1
 
             attack_state[attack_name]["fn_attempts"] += 1
-            wm_detected = _detect(model_instance, attacked_wm, sr,
-                                  record=attack_timings)
+            wm_detected = _detect(
+                model_instance, attacked_wm, sr,
+                record=attack_timings if timed["detect_latency"] else None,
+            )
             if not wm_detected:
                 attack_state[attack_name]["fn_count"] += 1
 

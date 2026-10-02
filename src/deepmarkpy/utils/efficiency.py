@@ -37,19 +37,25 @@ def log(message, *args, level=logging.INFO):
 
 
 @contextmanager
-def measure(record, key):
+def measure(record, key, enabled=True):
     """Time the block and store the elapsed seconds under ``key``.
 
     Args:
         record: the dict to write into -- the per-file or per-attack
             result entry, so the number travels with what it describes.
         key: the metric name, e.g. ``"embed_latency"``.
+        enabled: whether the config asked for this metric. When it did
+            not, the block runs untimed and nothing is written, so the raw
+            results carry no timing the run was told not to take.
 
     Wall clock, not CPU time: the work being timed usually happens in
     another process behind HTTP, where this process's CPU time says
     nothing. That also means the number includes transport, which is why
     the reports say whether an attack ran natively or over HTTP.
     """
+    if not enabled:
+        yield
+        return
     start = time.perf_counter()
     try:
         yield

@@ -881,6 +881,9 @@ class TestEfficiencySection:
         stats = json.loads((report_dir / "benchmark_stats.json").read_text())
         row = next(iter(stats.values()))
 
+        # The raw results too, not only the aggregate: the timings used to
+        # be taken regardless and merely filtered out when reduced.
+        assert not [k for k in entry if "latency" in k], entry
         assert not [k for k in row if "latency" in k], row
         tex = (report_dir / "benchmark_report.tex").read_text()
         assert "tab:benchmark_efficiency" not in tex
@@ -1015,10 +1018,31 @@ class TestReliabilityModeTimings:
         )
         attack = next(iter(result["attacks"].values()))
         assert not attack.get("timings"), attack.get("timings")
+        assert not result["no_attack"].get("timings")
+
+        record = next(iter(result["per_file"].values()))
+        assert not [k for k in record if "latency" in k], record
+        for attack_record in record["attacks"].values():
+            assert not [k for k in attack_record if "latency" in k], attack_record
 
         tex = (report_dir / "detection_reliability_report.tex").read_text()
         assert "tab:dr_efficiency" not in tex
         assert "Attack time" not in tex
+
+    def test_every_duration_part_states_the_embedding_cost(
+        self, tmp_path, plugins_dir, audio_dir,
+    ):
+        """Each part is rebuilt from the per-file records, and that rebuild
+        dropped the baseline timings, so the grouped report lost the line
+        the flat one carries."""
+        report_dir = self._run(
+            tmp_path, plugins_dir, audio_dir,
+            duration_groups={"boundaries": [1.2], "include_overall": True},
+        )
+        tex = (report_dir / "detection_reliability_report.tex").read_text()
+        parts = tex.count("\\part{")
+        assert parts >= 2, tex
+        assert tex.count("Embedding cost per file") == parts
 
     def test_the_section_no_longer_warns_that_the_mode_ignores_it(
         self, tmp_path,

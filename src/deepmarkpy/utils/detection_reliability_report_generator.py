@@ -779,6 +779,7 @@ def _aggregate_per_file_to_result(
     no_attack_fp = 0
     no_attack_fn = 0
     no_attack_metrics = {}
+    no_attack_timings = {}
 
     for _, file_data in per_file.items():
         if file_data.get("no_attack_fp"):
@@ -789,6 +790,13 @@ def _aggregate_per_file_to_result(
         for metric, value in (file_data.get("no_attack_metrics") or {}).items():
             if value is not None:
                 no_attack_metrics.setdefault(metric, []).append(value)
+        # The baseline's timings sit at the top of the per-file record, as
+        # run_detection_reliability writes them. Left out, every duration
+        # part lost its embedding-cost line while the flat report kept it.
+        for metric in EFFICIENCY_METRICS:
+            value = file_data.get(metric)
+            if value is not None and resolver.is_enabled(None, metric):
+                no_attack_timings.setdefault(metric, []).append(value)
 
         for attack_name, atk_data in (file_data.get("attacks") or {}).items():
             state = grouped.setdefault(attack_name, {
@@ -821,6 +829,13 @@ def _aggregate_per_file_to_result(
                 values, resolver.statistics_for(None, metric), metric,
             )
             for metric, values in no_attack_metrics.items()
+        }
+    if no_attack_timings:
+        no_attack["timings"] = {
+            metric: _compute_metric_stats(
+                values, resolver.statistics_for(None, metric), metric,
+            )
+            for metric, values in no_attack_timings.items()
         }
 
     attacks = {}
