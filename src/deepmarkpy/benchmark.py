@@ -70,6 +70,33 @@ def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, 
     return attacked_audio, extra
 
 
+def resolve_cross_model_name(entry_kwargs, attacks_registry, models):
+    """The second model ``CrossModelAttack`` re-embeds with.
+
+    The attack reads this from its kwargs and, unlike every other plugin,
+    has no fallback to its own config.json. It used to arrive from the CLI;
+    parameters are config driven now, so both run loops resolve it here --
+    the entry's own kwargs first, the plugin's config.json default second --
+    and hand it over. Raises before any audio is touched when the name is
+    not a discovered model.
+    """
+    name = entry_kwargs.get(
+        "different_model_name_cross_model",
+        (attacks_registry["CrossModelAttack"].get("config") or {}).get(
+            "different_model_name_cross_model"
+        ),
+    )
+    if name not in models:
+        raise ValueError(
+            f"CrossModelAttack needs a second model, but "
+            f"'{name}' is not among the "
+            f"discovered models: {sorted(models)}. Set "
+            f"attack_parameters.CrossModelAttack."
+            f"different_model_name_cross_model in the config."
+        )
+    return name
+
+
 def require_attacks_available(attack_types, attacks_registry, plugin_failures=None):
     """Raise when a requested attack is absent from ``attacks_registry``.
 
@@ -242,9 +269,15 @@ def instantiate_attack(attack_cls, class_name, version):
         return attack_cls(version=version)
 
     if version and version != "default":
-        logger.warning(
-            f"{class_name} does not support versions. "
-            f"Ignoring version '{version}'."
+        # Warning and carrying on ran the default preset under the
+        # requested version's display name, so the results would be
+        # labelled as data they are not.
+        raise ValueError(
+            f"{class_name} does not support versions, so version "
+            f"'{version}' cannot be loaded: its constructor takes no "
+            f"'version' argument. Accept 'version' in {class_name}.__init__ "
+            f"and pass it to super().__init__(version=version), or select "
+            f"the attack without a version."
         )
     return attack_cls()
 
@@ -693,29 +726,13 @@ class Benchmark:
 
                 if attack_class_name == "CrossModelAttack":
                     # Read the entry's own kwargs, not the run-level ones:
-                    # per-attack parameters travel per expanded entry now,
-                    # and the plugin's config.json default is the fallback.
-                    different_model_name = current_attack_kwargs.get(
-                        "different_model_name_cross_model",
-                        (self.attacks[attack_class_name].get("config") or {}).get(
-                            "different_model_name_cross_model"
-                        ),
+                    # per-attack parameters travel per expanded entry now.
+                    different_model_name = resolve_cross_model_name(
+                        current_attack_kwargs, self.attacks, self.models,
                     )
                     logger.info(f"Different model is chosen and it's {different_model_name}")
-                    if different_model_name not in self.models:
-                        raise ValueError(
-                            f"CrossModelAttack needs a second model, but "
-                            f"'{different_model_name}' is not among the "
-                            f"discovered models: {sorted(self.models)}. Set "
-                            f"attack_parameters.CrossModelAttack."
-                            f"different_model_name_cross_model in the config."
-                        )
                     different_model_cls = self.models[different_model_name]["class"]
                     different_model_instance = different_model_cls()
-                    # The attack reads this from its kwargs and, unlike every
-                    # other plugin, has no fallback to its own config.json.
-                    # It used to arrive from the CLI; parameters are config
-                    # driven now, so the resolved name is handed over here.
                     current_attack_kwargs[
                         "different_model_name_cross_model"] = different_model_name
 

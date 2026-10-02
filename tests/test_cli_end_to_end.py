@@ -377,6 +377,36 @@ class TestBenchmarkMode:
             "\\part{"
         ) == 1
 
+    @pytest.mark.parametrize("include_overall", [True, False])
+    def test_comparison_stats_cover_every_bin(
+        self, tmp_path, plugins_dir, audio_dir, monkeypatch, include_overall,
+    ):
+        """The flat stats the comparative report ranks are over every file.
+
+        Without "Overall" this used to take the first bin, so a multi-model
+        comparison quietly left out every file in the later bins.
+        """
+        returned = []
+        original = run_module.run_single_model
+
+        def capture(*args, **kwargs):
+            out = original(*args, **kwargs)
+            returned.append(out)
+            return out
+
+        monkeypatch.setattr(run_module, "run_single_model", capture)
+        config = write_config(
+            tmp_path, "bins.json",
+            duration_groups={"boundaries": [1.2],
+                             "include_overall": include_overall},
+        )
+        run_cli("--config", config, "--wav_files_dir", audio_dir,
+                "--report_dir", str(tmp_path / "report"),
+                "--plugins_dir", plugins_dir)
+
+        (_, _, stats), = returned
+        assert stats[ATTACK_NAME]["accuracy_n"] == 3
+
 
 class TestNoAttacksMode:
     def test_writes_its_own_report_and_no_attack_results(
@@ -1102,6 +1132,9 @@ class TestContainerSectionCoversTheWholeRun:
     -- reported it as unused while the service was being called.
     """
 
+    class _DockerAttack:
+        endpoint = "http://localhost:9999/attack"
+
     def _rows_for(self, tmp_path, **overrides):
         from unittest.mock import patch
 
@@ -1109,18 +1142,21 @@ class TestContainerSectionCoversTheWholeRun:
         from deepmarkpy.config import load_config_data
         from deepmarkpy.run import _container_rows
 
-        config = load_config_data({
+        data = {
             "mode": "benchmark",
             "models": ["AudioSealModel", "PerthModel"],
             "calculate_quality_metrics": True,
             "efficiency": {"enabled": True, "metrics": {
                 "container_footprint": {"enabled": True}}},
-            **overrides,
-        }, quiet=True)
+        }
+        data.update(overrides)
+        config = load_config_data(data, quiet=True)
 
         benchmark = Benchmark.__new__(Benchmark)
         benchmark.models = {}
-        benchmark.attacks = {}
+        benchmark.attacks = {
+            "DiffusionAttack": {"class": self._DockerAttack, "config": {}},
+        }
 
         seen = {}
 
@@ -1148,6 +1184,21 @@ class TestContainerSectionCoversTheWholeRun:
                                    "nisqa_col", "nisqa_loud")},
         })
         assert not any(label == "NISQA" for _, label, _ in entries), entries
+
+    def test_benchmark_mode_without_a_selection_counts_every_attack(
+        self, tmp_path,
+    ):
+        entries = self._rows_for(tmp_path)
+        assert ("Attack", "DiffusionAttack",
+                self._DockerAttack.endpoint) in entries, entries
+
+    @pytest.mark.parametrize("mode", ["no_attacks", "detection_reliability"])
+    def test_a_mode_that_runs_no_attacks_counts_none(self, tmp_path, mode):
+        """No selection there means no attacks, not every attack, so a
+        running service it never called is not this run's footprint."""
+        # detection_reliability measures one model per config.
+        entries = self._rows_for(tmp_path, mode=mode, models=["AudioSealModel"])
+        assert not any(kind == "Attack" for kind, _, _ in entries), entries
 
 
 class TestTheFlagInterfaceStillWorks:

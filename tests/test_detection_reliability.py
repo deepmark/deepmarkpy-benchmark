@@ -423,3 +423,62 @@ class TestTimingsMeanTheSameThingHere:
         assert timings["embed_latency"]["mean"] == pytest.approx(
             self.EMBED, abs=0.05,
         )
+
+
+class TestCrossModelGetsItsSecondModelHereToo:
+    """The plugin reads the second model's name from its kwargs only.
+
+    ``Benchmark.run`` falls back to the plugin's config.json default; this
+    pass did not, so with no ``attack_parameters`` override every file
+    raised inside the per-attack ``try`` and the row came out with zero
+    attempts instead of a measurement.
+    """
+
+    class _Model:
+        def generate_watermark(self):
+            return np.array([1])
+
+        def embed(self, audio, watermark_data, sampling_rate):
+            return audio + 0.001
+
+        def detect(self, audio, sampling_rate):
+            return 1
+
+        def is_watermarked(self, detect_output):
+            return bool(detect_output)
+
+    def _run(self, tmp_path, default_second_model):
+        import soundfile as sf
+        from deepmarkpy.plugins.attacks.cross_model.attack import CrossModelAttack
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+
+        path = tmp_path / "a.wav"
+        sf.write(str(path),
+                 np.sin(np.linspace(0, 1, 16000)).astype(np.float32), 16000)
+
+        config = {"is_zero_bit": True, "sampling_rate": 16000}
+
+        class _Benchmark:
+            models = {
+                "TestModel": {"class": self._Model, "config": config},
+                "OtherModel": {"class": self._Model, "config": config},
+            }
+            attacks = {"CrossModelAttack": {
+                "class": CrossModelAttack,
+                "config": {"different_model_name_cross_model":
+                           default_second_model},
+            }}
+
+        return run_detection_reliability(
+            _Benchmark(), [str(path)], "TestModel",
+            attack_types=["CrossModelAttack"], metric_resolver=MetricResolver(),
+        )
+
+    def test_the_plugin_default_is_used_without_an_override(self, tmp_path):
+        row = self._run(tmp_path, "OtherModel")["attacks"]["CrossModelAttack"]
+        assert row["false_positive_attempts"] == 1
+        assert row["false_negative_attempts"] == 1
+
+    def test_an_unknown_second_model_stops_the_run(self, tmp_path):
+        with pytest.raises(ValueError, match="different_model_name_cross_model"):
+            self._run(tmp_path, "NotAModel")

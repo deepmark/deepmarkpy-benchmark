@@ -245,13 +245,13 @@ class TestAVersionIsNeverSilentlyDropped:
         built = instantiate_attack(self._TakesVersion, "X", "aggressive")
         assert built.version == "aggressive"
 
-    def test_a_versionless_attack_is_built_and_warned_about(self, caplog):
+    def test_a_versionless_attack_asked_for_a_version_is_refused(self):
+        """Building it anyway ran the default preset under the requested
+        version's name, so the row was labelled as data it is not."""
         from deepmarkpy.benchmark import instantiate_attack
 
-        with caplog.at_level("WARNING"):
-            built = instantiate_attack(self._TakesNone, "X", "aggressive")
-        assert built.version == "default-preset"
-        assert "does not support versions" in caplog.text
+        with pytest.raises(ValueError, match="does not support versions"):
+            instantiate_attack(self._TakesNone, "X", "aggressive")
 
     def test_a_versionless_attack_asked_for_the_default_is_silent(self, caplog):
         from deepmarkpy.benchmark import instantiate_attack

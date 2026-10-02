@@ -30,6 +30,7 @@ from deepmarkpy.benchmark import (
     expand_attacks,
     instantiate_attack,
     require_attacks_available,
+    resolve_cross_model_name,
     _BENCHMARK_INTERNAL_KEYS,
 )
 from deepmarkpy.utils.metrics import compute_metrics
@@ -246,6 +247,19 @@ def run_detection_reliability(
         parameters=attack_parameters,
         extra_versions=extra_attack_versions,
     )
+    # CrossModelAttack has no config.json fallback of its own, so without
+    # this every file raised inside the per-attack try below and the row
+    # came out with zero attempts. Resolved once, before any audio, so an
+    # unknown model stops the run the same way benchmark.run does.
+    expanded_attacks = [
+        (cls, name, {**overrides, "different_model_name_cross_model":
+                     resolve_cross_model_name(
+                         {**attack_kwargs, **overrides},
+                         benchmark.attacks, benchmark.models,
+                     )}, version)
+        if cls == "CrossModelAttack" else (cls, name, overrides, version)
+        for cls, name, overrides, version in expanded_attacks
+    ]
     n_files = len(filepaths)
 
     if save_audio and output_dir:

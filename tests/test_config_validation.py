@@ -441,7 +441,7 @@ class TestCropAndDurationCodes:
         config = load_configs([write(tmp_path, {"duration_groups": {
             "boundaries": [5, 10], "include_overall": True}})],
             ATTACKS, MODELS)[0]
-        assert config.duration_labels() == ["< 5.0s", "5.0–10.0s", "> 10.0s"]
+        assert config.duration_labels() == ["< 5.0s", "5.0–10.0s", "≥ 10.0s"]
         assert config.duration_include_overall is True
 
 

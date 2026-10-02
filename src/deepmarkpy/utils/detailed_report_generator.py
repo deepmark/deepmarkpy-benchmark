@@ -40,6 +40,7 @@ from deepmarkpy.utils.latex_helpers import (
     compile_latex,
     container_section,
     display_attack_name,
+    duration_label_tex,
     figure_block,
     format_emr_cell,
     format_metric_cell,
@@ -1051,7 +1052,7 @@ class DetailedReportGenerator:
             aggregated = self.aggregate_results(
                 group_results, is_zero_bit=is_zero_bit,
             )
-            safe_label = group_label_text.replace("<", "$<$").replace(">", "$>$")
+            safe_label = duration_label_tex(group_label_text)
             slug = slugify(group_label_text)
             parts.append(
                 part_heading(safe_label, f"{len(group_results)} files")

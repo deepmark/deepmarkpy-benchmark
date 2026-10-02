@@ -183,6 +183,21 @@ def get_audio_duration(file_path: str) -> float:
     return info.duration
 
 
+def duration_bin_labels(boundaries):
+    """Human-readable labels for the bins ``boundaries`` define.
+
+    Bins are half-open, ``[lower, upper)``: a file exactly on a boundary
+    belongs to the bin above it. So the first bin is ``< b0`` and the last
+    is ``≥ bN`` -- labelling it ``>`` described a population that left out
+    a file of exactly ``bN`` seconds, which it in fact holds.
+    """
+    labels = [f"< {boundaries[0]}s"]
+    for i in range(len(boundaries) - 1):
+        labels.append(f"{boundaries[i]}–{boundaries[i+1]}s")
+    labels.append(f"≥ {boundaries[-1]}s")
+    return labels
+
+
 def partition_files_by_duration(filepaths, boundaries):
     """Partition files into groups based on audio duration.
 
@@ -192,16 +207,14 @@ def partition_files_by_duration(filepaths, boundaries):
 
     Returns:
         List of (label, file_list) tuples. Labels are human-readable
-        (e.g. "< 5s", "5–10s", "> 30s"). Each file appears in exactly one group.
+        (e.g. "< 5s", "5–10s", "≥ 30s"); see ``duration_bin_labels``.
+        Each file appears in exactly one group.
     """
     if not boundaries:
         return [("all", list(filepaths))]
 
     groups = [[] for _ in range(len(boundaries) + 1)]
-    labels = [f"< {boundaries[0]}s"]
-    for i in range(len(boundaries) - 1):
-        labels.append(f"{boundaries[i]}–{boundaries[i+1]}s")
-    labels.append(f"> {boundaries[-1]}s")
+    labels = duration_bin_labels(boundaries)
 
     for fp in filepaths:
         try:

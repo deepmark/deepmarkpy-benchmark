@@ -324,15 +324,17 @@ class ModeConfig:
         return bool(self.duration_boundaries)
 
     def duration_labels(self) -> List[str]:
-        """Human-readable bin labels, e.g. ``["< 5s", "5-10s", "> 30s"]``."""
-        bounds = self.duration_boundaries
-        if not bounds:
+        """Human-readable bin labels, e.g. ``["< 5s", "5–10s", "≥ 30s"]``.
+
+        The same labels the run partitions files under, so the two cannot
+        describe the bins differently.
+        """
+        if not self.duration_boundaries:
             return []
-        labels = [f"< {bounds[0]}s"]
-        labels += [f"{bounds[i]}–{bounds[i + 1]}s"
-                   for i in range(len(bounds) - 1)]
-        labels.append(f"> {bounds[-1]}s")
-        return labels
+        # Imported here: utils.utils pulls in librosa, which config loading
+        # (and --validate-only) should not pay for.
+        from deepmarkpy.utils.utils import duration_bin_labels
+        return duration_bin_labels(self.duration_boundaries)
 
 
 # ---------------------------------------------------------------------------

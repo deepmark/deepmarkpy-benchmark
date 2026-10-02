@@ -650,7 +650,57 @@ class TestDurationPartsAreSelfContained:
         slug, so both bins wrote their figures to the same filenames."""
         assert slugify("< 5.0s") != slugify("> 5.0s")
 
-    @pytest.mark.parametrize("label", ["< 4.0s", "4.0-6.0s", "Overall", "???"])
+    @pytest.mark.parametrize("label", ["< 4.0s", "4.0-6.0s", "≥ 6.0s",
+                                       "Overall", "???"])
     def test_every_label_yields_a_usable_slug(self, label):
         slug = slugify(label)
         assert slug and all(c.isalnum() or c == "_" for c in slug)
+
+
+class TestTheLastDurationBinIsInclusive:
+    """A file exactly on the last boundary goes into the last bin, which
+    was labelled ``> b`` -- describing a population that excluded it."""
+
+    def test_a_file_on_the_last_boundary_is_in_a_bin_that_says_so(
+        self, tmp_path,
+    ):
+        import numpy as np
+        import soundfile as sf
+        from deepmarkpy.utils.utils import partition_files_by_duration
+
+        path = tmp_path / "two_seconds.wav"
+        sf.write(str(path), np.zeros(32000, dtype=np.float32), 16000)
+
+        (label, files), = partition_files_by_duration([str(path)], [1.0, 2.0])
+        assert files == [str(path)]
+        assert label == "≥ 2.0s"
+
+    def test_the_config_names_the_bins_the_run_uses(self):
+        from deepmarkpy.config import ModeConfig
+        from deepmarkpy.utils.utils import duration_bin_labels
+
+        config = ModeConfig(mode="benchmark", source="c.json",
+                            duration_boundaries=[5.0, 10.0])
+        assert config.duration_labels() == duration_bin_labels([5.0, 10.0])
+
+    def test_the_two_sides_of_one_boundary_still_get_different_slugs(self):
+        assert slugify("< 5.0s") != slugify("≥ 5.0s")
+
+    def test_a_grouped_report_carries_no_raw_sign_pdflatex_cannot_set(
+        self, tmp_path,
+    ):
+        """≥ has no glyph under pdflatex's default input encoding, in the
+        heading text or in a \\label name."""
+        from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
+
+        stats = {label: {"n_files": 2, "stats": {
+            "GaussianNoiseAttack": {"accuracy_mean": 93.0, "accuracy_n": 2},
+        }} for label in ("< 5.0s", "≥ 5.0s")}
+        stats_file = tmp_path / "stats.json"
+        stats_file.write_text(json.dumps(stats))
+        BenchmarkReportGenerator(str(tmp_path)).generate_full_report(
+            str(stats_file), "TestModel",
+        )
+        tex = (tmp_path / "benchmark_report.tex").read_text()
+        assert "≥" not in tex
+        assert "$\\geq$ 5.0s" in tex

@@ -941,7 +941,13 @@ def _container_rows(benchmark, config, model_names):
         if url:
             entries.append(("Model", name, url))
 
-    for spec in (config.selected_attack_specs() or list(benchmark.attacks)):
+    # No selection means "every attack" in benchmark mode only. no_attacks
+    # runs none, and detection_reliability without attacks measures the
+    # baseline alone, so their footprint must not include attack services.
+    specs = config.selected_attack_specs()
+    if specs is None:
+        specs = list(benchmark.attacks) if config.mode == "benchmark" else []
+    for spec in specs:
         name = spec.split(":")[0]
         entry = benchmark.attacks.get(name)
         if not entry:
@@ -1273,12 +1279,16 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
             json.dump(to_json_safe(all_group_stats), fp, indent=4)
         logger.info(f"Duration-grouped statistics saved to {stats_path}")
 
-        # The comparative report needs one flat table, so it uses the
-        # combined section when there is one and the first bin otherwise.
-        if config.duration_include_overall and "Overall" in all_group_stats:
+        # The comparative report needs one flat table over every file.
+        # "Overall" is exactly that when the config asked for it; otherwise
+        # it is computed here. Falling back to the first bin, as this once
+        # did, silently dropped every file in the later bins.
+        if "Overall" in all_group_stats:
             stats = all_group_stats["Overall"]["stats"]
         else:
-            stats = list(all_group_stats.values())[0]["stats"]
+            stats = benchmark.compute_mean_accuracy(
+                results, resolver=config.resolver,
+            )
     else:
         stats = benchmark.compute_mean_accuracy(results, resolver=config.resolver)
         with open(stats_path, "w") as fp:

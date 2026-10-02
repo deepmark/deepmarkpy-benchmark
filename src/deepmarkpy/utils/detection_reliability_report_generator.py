@@ -41,6 +41,7 @@ from deepmarkpy.utils.latex_helpers import (
     compile_latex,
     container_section,
     display_attack_name,
+    duration_label_tex,
     figure_block,
     format_emr_cell,
     format_metric_cell,
@@ -740,7 +741,7 @@ def _build_grouped_dr_sections(
         group_per_file = {
             fp: data for fp, data in per_file.items() if fp in group_file_set
         }
-        safe_label = group_label_text.replace("<", "$<$").replace(">", "$>$")
+        safe_label = duration_label_tex(group_label_text)
         if not group_per_file:
             sections.append(
                 part_heading(safe_label, f"{len(group_files)} files")

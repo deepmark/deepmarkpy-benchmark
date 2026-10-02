@@ -42,6 +42,7 @@ from deepmarkpy.utils.latex_helpers import (
     build_longtable,
     compile_latex,
     container_section,
+    duration_label_tex,
     figure_block,
     format_emr_cell,
     format_metric_cell,
@@ -743,7 +744,7 @@ def generate_no_attacks_report(all_results, report_dir="report",
                 model: _summarize_model(res, resolver)
                 for model, res in group_results.items()
             }
-            safe_label = group_label.replace("<", "$<$").replace(">", "$>$")
+            safe_label = duration_label_tex(group_label)
             n_group = next(iter(group_summaries.values()))["n_files"]
             sections.append(
                 part_heading(safe_label, f"{n_group} files")

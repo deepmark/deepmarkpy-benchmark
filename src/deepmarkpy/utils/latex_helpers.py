@@ -246,10 +246,22 @@ def slugify(label: str) -> str:
     slug, so a run with one boundary writes both bins' figures to the
     same filenames and emits the same ``\\label`` twice.
     """
-    text = label.replace("<", " lt ").replace(">", " gt ")
+    text = (label.replace("<", " lt ").replace("≥", " ge ")
+            .replace(">", " gt "))
     return "".join(
         c if c.isalnum() else "_" for c in text
     ).strip("_").replace("__", "_") or "group"
+
+
+def duration_label_tex(label: str) -> str:
+    """A duration-group label as LaTeX text.
+
+    The comparison signs are typeset in math mode; ``≥`` in particular
+    has no text-mode glyph under pdflatex's default input encoding, so a
+    raw one stops the compile.
+    """
+    return (label.replace("<", "$<$").replace(">", "$>$")
+            .replace("≥", "$\\geq$"))
 
 
 def part_heading(label: str, subtitle: str = "") -> str:

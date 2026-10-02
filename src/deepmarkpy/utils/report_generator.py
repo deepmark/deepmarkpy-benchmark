@@ -38,6 +38,7 @@ from deepmarkpy.utils.latex_helpers import (
     build_longtable,
     container_section,
     display_attack_name,
+    duration_label_tex,
     figure_block,
     format_emr_cell,
     format_metric_cell,
@@ -977,8 +978,9 @@ class BenchmarkReportGenerator:
             if first_group_stats is None:
                 first_group_stats = group_stats
 
-            safe_label = group_label_text.replace("<", "$<$").replace(">", "$>$")
-            suffix = group_label_text.replace(" ", "_")
+            safe_label = duration_label_tex(group_label_text)
+            # \label names must be plain ASCII under pdflatex; ≥ is not.
+            suffix = slugify(group_label_text)
             sections = self._grouped_sections(group_stats, label_suffix=suffix)
 
             # Each bin gets its own ranking chart. Drawing only the first
