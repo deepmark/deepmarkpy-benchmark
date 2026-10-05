@@ -379,7 +379,7 @@ class BenchmarkReportGenerator:
         # BER is a metric like any other, but with a single statistic it
         # reads better beside the accuracy it is derived from, so it is
         # already in the accuracy table; with several it gets its own.
-        if "ber" in enabled:
+        if "ber" in enabled and not self.is_zero_bit:
             ber_statistics = self.resolver.statistics_for(group_key, "ber")
             if len(ber_statistics) > 1:
                 tables.append(self._metric_table(
@@ -498,7 +498,9 @@ class BenchmarkReportGenerator:
 
         ber_statistics = self.resolver.statistics_for(group_key, "ber")
         inline_ber = (
-            self.resolver.is_enabled(group_key, "ber") and len(ber_statistics) == 1
+            not self.is_zero_bit
+            and self.resolver.is_enabled(group_key, "ber")
+            and len(ber_statistics) == 1
         )
         if inline_ber:
             headers.append(metric_label("ber"))

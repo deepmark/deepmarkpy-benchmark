@@ -141,6 +141,10 @@ class TestKeyCodes:
 
 
 class TestModelCodes:
+    def test_empty_registry_rejects_model_names(self, tmp_path):
+        found, _ = codes(write(tmp_path, {}), models_registry={})
+        assert "E011" in found
+
     def test_E010_models_missing(self, tmp_path):
         found, _ = codes(write(tmp_path, {"models": None}))
         assert "E010" in found
@@ -168,6 +172,19 @@ class TestModelCodes:
 
 
 class TestAttackCodes:
+    @pytest.mark.parametrize("spec", ["EchoAttack", "EchoAttack:mild"])
+    def test_empty_registry_rejects_attack_names(self, tmp_path, spec):
+        found, _ = codes(
+            write(tmp_path, {"attacks": {"list": [spec]}}), attacks_registry={},
+        )
+        assert "E014" in found
+
+    def test_empty_registry_rejects_parameter_targets(self, tmp_path):
+        found, _ = codes(write(tmp_path, {
+            "attack_parameters": {"EchoAttack": {"delay_echo": 0.2}},
+        }), attacks_registry={})
+        assert "E017" in found
+
     def test_E013_unknown_group_suggests_closest(self, tmp_path):
         found, error = codes(write(
             tmp_path, {"attacks": {"groups": ["audio_distorsion"]}}))
@@ -469,6 +486,16 @@ class TestComparisonCodes:
 
 
 class TestSeedAndLegacyCodes:
+    @pytest.mark.parametrize("seed", [-1, 2**32])
+    def test_E037_seed_outside_numpy_range(self, tmp_path, seed):
+        found, _ = codes(write(tmp_path, {"general": {"seed": seed}}))
+        assert "E037" in found
+
+    @pytest.mark.parametrize("seed", [None, 0, 2**32 - 1])
+    def test_seed_range_endpoints_are_valid(self, tmp_path, seed):
+        config = load_configs([write(tmp_path, {"general": {"seed": seed}})])[0]
+        assert config.general["seed"] == seed
+
     def test_E037_seed_must_be_an_integer(self, tmp_path):
         found, _ = codes(write(tmp_path, {"general": {"seed": "42"}}))
         assert "E037" in found

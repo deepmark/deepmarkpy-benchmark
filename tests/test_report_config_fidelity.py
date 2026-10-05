@@ -349,6 +349,38 @@ class TestDetailedReportFollowsTheConfig:
                 assert row[1:] == [stat_header(s) for s in statistics]
 
 
+@pytest.mark.parametrize("is_zero_bit", [False, True])
+@pytest.mark.parametrize("statistics", [["mean"], ["mean", "worst_case"]])
+def test_ber_requires_payload_bits(tmp_path, is_zero_bit, statistics):
+    """Binary detection results must not be presented as bit-error rates."""
+    config = write_config(tmp_path, statistics=statistics)
+    results = make_results(n_files=2)
+    for index, file_data in enumerate(results.values()):
+        for entry in file_data["attacks"].values():
+            entry["accuracy"] = 100.0 if index else 0.0
+
+    # Include BER in the input to exercise rendering of previously saved
+    # statistics as well as newly computed reports.
+    benchmark = Benchmark.__new__(Benchmark)
+    stats = benchmark.compute_mean_accuracy(results, resolver=config.resolver)
+    basic = BenchmarkReportGenerator(
+        str(tmp_path), resolver=config.resolver, is_zero_bit=is_zero_bit,
+    )
+    basic_tex = basic.generate_latex_table(stats, group_key="audio_distortion")
+
+    detailed = DetailedReportGenerator(str(tmp_path), resolver=config.resolver)
+    aggregate = detailed.aggregate_results(results, is_zero_bit=is_zero_bit)
+    detailed_tex = detailed._accuracy_table(
+        aggregate, list(ATTACKS), "audio_distortion", "Robustness", "tab:test",
+    )
+    for tex in (basic_tex, detailed_tex):
+        has_ber = "BER" in tex or "Bit error rate" in tex
+        assert has_ber is not is_zero_bit
+        assert "GaussianNoise" in tex
+    for entry in aggregate["attacks"].values():
+        assert ("ber" in entry["accuracy"]) is not is_zero_bit
+
+
 class TestNoAttacksReportFollowsTheConfig:
     @staticmethod
     def _results(n_files=3):

@@ -569,6 +569,14 @@ def main(argv=None):
     plans = []
     for config in configs:
         settings = _resolve_settings(args, config)
+        # CLI overrides do not pass through config validation. Reject an
+        # unusable NumPy seed before validation succeeds or output is cleared.
+        if settings.seed is not None and not 0 <= settings.seed < 2**32:
+            _report_config_error(
+                f"{config.source}: seed must be between 0 and 4294967295; "
+                f"got {settings.seed}."
+            )
+            return EXIT_CONFIG_ERROR
         if not settings.wav_files_dir:
             _report_config_error(
                 f"{config.source}: no audio directory.\n"
@@ -1259,6 +1267,8 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
     logger.info(f"Results saved to {results_path}")
 
     primary = config.comparison_primary_statistic
+    model_config = benchmark.models.get(model_name, {}).get("config") or {}
+    is_zero_bit = bool(model_config.get("is_zero_bit", False))
     stats_path = os.path.join(report_dir, "benchmark_stats.json")
     partitions = _duration_partitions(config, filepaths)
 
@@ -1270,7 +1280,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
                 continue
             all_group_stats[group_label] = {
                 "stats": benchmark.compute_mean_accuracy(
-                    group_results, resolver=config.resolver,
+                    group_results, resolver=config.resolver, is_zero_bit=is_zero_bit,
                 ),
                 "n_files": len(group_results),
             }
@@ -1287,10 +1297,12 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
             stats = all_group_stats["Overall"]["stats"]
         else:
             stats = benchmark.compute_mean_accuracy(
-                results, resolver=config.resolver,
+                results, resolver=config.resolver, is_zero_bit=is_zero_bit,
             )
     else:
-        stats = benchmark.compute_mean_accuracy(results, resolver=config.resolver)
+        stats = benchmark.compute_mean_accuracy(
+            results, resolver=config.resolver, is_zero_bit=is_zero_bit,
+        )
         with open(stats_path, "w") as fp:
             json.dump(to_json_safe(stats), fp, indent=4)
         logger.info(f"Statistics saved to {stats_path}")
@@ -1322,7 +1334,6 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
         },
     )
 
-    model_config = benchmark.models.get(model_name, {}).get("config") or {}
     containers = _container_rows(benchmark, config, config.models)
 
     _log_efficiency(config, stats)

@@ -183,6 +183,41 @@ def run_cli(*argv):
 
 
 class TestBenchmarkMode:
+    @pytest.mark.parametrize("grouped", [False, True])
+    def test_zero_bit_stats_do_not_contain_ber(
+        self, tmp_path, plugins_dir, audio_dir, grouped,
+    ):
+        directory = pathlib.Path(plugins_dir) / "dummy"
+        source = MODEL_SOURCE.replace(
+            "return detected", "return bool(np.array_equal(detected, self._last))",
+        )
+        (directory / "model.py").write_text(source)
+        (directory / "config.json").write_text(json.dumps({
+            **MODEL_CONFIG, "is_zero_bit": True,
+        }))
+        overrides = {}
+        if grouped:
+            overrides["duration_groups"] = {
+                "boundaries": [1.1], "include_overall": False,
+            }
+        config = write_config(tmp_path, "zero_bit.json", **overrides)
+        report_dir = tmp_path / "report"
+        assert run_cli(
+            "--config", config, "--wav_files_dir", audio_dir,
+            "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
+        ) == run_module.EXIT_OK
+
+        stats = json.loads((report_dir / "benchmark_stats.json").read_text())
+        groups = [group["stats"] for group in stats.values()] if grouped else [stats]
+        assert groups
+        for group in groups:
+            entry = group[ATTACK_NAME]
+            assert entry["accuracy_n"] > 0
+            assert not any(key.startswith("ber_") for key in entry)
+        for name in ("benchmark_report.tex", "detailed_report.tex"):
+            tex = (report_dir / name).read_text()
+            assert "BER" not in tex and "Bit error rate" not in tex
+
     def test_produces_results_stats_metadata_and_reports(
         self, tmp_path, plugins_dir, audio_dir,
     ):
@@ -526,6 +561,28 @@ class TestFailureModes:
 
 
 class TestCliOverridesConfig:
+    @pytest.mark.parametrize("seed", [-1, 2**32])
+    @pytest.mark.parametrize("from_cli", [False, True])
+    @pytest.mark.parametrize("validate_only", [False, True])
+    def test_invalid_seed_preserves_existing_reports(
+        self, tmp_path, plugins_dir, audio_dir, seed, from_cli, validate_only,
+    ):
+        config = write_config(
+            tmp_path, "benchmark.json", general={"seed": 7 if from_cli else seed},
+        )
+        report_dir = tmp_path / "report"
+        report_dir.mkdir()
+        existing = report_dir / "previous.json"
+        existing.write_text('{"completed": true}')
+        extra = ["--seed", str(seed)] if from_cli else []
+        if validate_only:
+            extra.append("--validate-only")
+        assert run_cli(
+            "--config", config, "--wav_files_dir", audio_dir,
+            "--report_dir", str(report_dir), "--plugins_dir", plugins_dir, *extra,
+        ) == run_module.EXIT_CONFIG_ERROR
+        assert existing.read_text() == '{"completed": true}'
+
     def test_cli_wins_for_the_keys_that_exist_in_both(
         self, tmp_path, plugins_dir, audio_dir,
     ):

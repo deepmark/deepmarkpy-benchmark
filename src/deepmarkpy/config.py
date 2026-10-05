@@ -766,10 +766,12 @@ class _Validator:
 
         seed = clean.get("seed")
         if seed is not None and (isinstance(seed, bool)
-                                 or not isinstance(seed, int)):
+                                 or not isinstance(seed, int)
+                                 or not 0 <= seed < 2**32):
             self.error(
                 "E037", "general.seed",
-                "must be an integer or null. null keeps a fresh watermark per "
+                "must be an integer between 0 and 4294967295 or null. "
+                "null keeps a fresh watermark per "
                 "file and fresh attack noise per run.",
                 value=seed,
             )
@@ -792,7 +794,7 @@ class _Validator:
                        "must list at least one model class name.", value=models)
             return []
 
-        known = sorted(self.models_registry) if self.models_registry else None
+        known = sorted(self.models_registry) if self.models_registry is not None else None
         clean = []
         for index, name in enumerate(models):
             if not isinstance(name, str):
@@ -879,7 +881,7 @@ class _Validator:
         return clean
 
     def _check_attack_list(self, attack_list, synthetic_versions) -> List[str]:
-        known = sorted(self.attacks_registry) if self.attacks_registry else None
+        known = sorted(self.attacks_registry) if self.attacks_registry is not None else None
         clean = []
         for index, spec in enumerate(attack_list):
             path = f"attacks.list[{index}]"
@@ -959,7 +961,7 @@ class _Validator:
 
         block = self._typed(self.raw, "attack_parameters",
                             "attack_parameters", dict, {})
-        known = sorted(self.attacks_registry) if self.attacks_registry else None
+        known = sorted(self.attacks_registry) if self.attacks_registry is not None else None
 
         overrides: Dict[Any, Dict[str, Any]] = {}
         synthetic: Dict[str, Dict[str, Dict[str, Any]]] = {}

@@ -857,7 +857,7 @@ class Benchmark:
             return None
         return compute_metrics(original, attacked, sr, metrics=relevant)
 
-    def compute_mean_accuracy(self, results, resolver=None):
+    def compute_mean_accuracy(self, results, resolver=None, is_zero_bit=False):
         """
         Compute per-attack statistics, with each attack's group deciding
         which metrics and which statistics it gets.
@@ -867,6 +867,8 @@ class Benchmark:
             resolver: ``MetricResolver`` from the config file. Defaults to
                 the built-in matrix with quality metrics off, which yields
                 accuracy plus the always-on trio.
+            is_zero_bit: Accuracy represents watermark detection rather than
+                payload bit agreement, so BER must not be computed.
 
         Returns:
             Dictionary mapping each attack name to computed statistics.
@@ -960,7 +962,7 @@ class Benchmark:
                     float(exact_recovery_count / len(arr)) if len(arr) else 0.0
                 )
 
-            if resolver.is_enabled(group_key, "ber"):
+            if not is_zero_bit and resolver.is_enabled(group_key, "ber"):
                 ber_arr = 1.0 - (arr / 100.0)
                 self._apply_statistics(
                     computed[attack_name], "ber", ber_arr,

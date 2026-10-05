@@ -260,8 +260,9 @@ class DetailedReportGenerator:
         statistics = self.resolver.statistics_for(group_key, "accuracy")
 
         ber_statistics = self.resolver.statistics_for(group_key, "ber")
+        show_ber = not is_zero_bit and self.resolver.is_enabled(group_key, "ber")
         inline_ber = (
-            self.resolver.is_enabled(group_key, "ber")
+            show_ber
             and len(ber_statistics) == 1
         )
         show_emr = self.resolver.is_enabled(group_key, "emr")
@@ -311,7 +312,7 @@ class DetailedReportGenerator:
             caption, label,
         )]
 
-        if self.resolver.is_enabled(group_key, "ber") and not inline_ber:
+        if show_ber and not inline_ber:
             # Its own subject, not the accuracy caption with a prefix, which
             # read "Bit error rate --- Watermark detection robustness --- X".
             tables.append(self._ber_table(
@@ -1105,7 +1106,7 @@ def _statistics(values, zero_bit=False, metric="accuracy"):
     if zero_bit:
         detected = int(sum(1 for v in arr if v))
         stats["count"] = f"{detected}/{len(arr)}"
-    if metric == "accuracy":
+    if metric == "accuracy" and not zero_bit:
         # From the BER samples themselves, exactly as ``compute_metrics``
         # does, and not by inverting accuracy's summary: BER's 10th
         # percentile is accuracy's 90th, which is not among the eight
