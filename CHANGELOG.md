@@ -1,9 +1,10 @@
 # Changelog
 
-## v2.1.0 — 2026-10-06
+## v3.0.0 — 2026-10-06
 
-- Removed `ReplacementAttack` and `Replacement2Attack`, and with them the
-  `tqdm` dependency.
+- Removed `ReplacementAttack` and `Replacement2Attack`. No other attack's
+  output changes.
+- `tqdm` is no longer a package dependency.
 
 ## v2.0.0 — 2026-08-01
 
@@ -79,8 +80,8 @@ bit-identical against the v1 fixtures. Services still accept the JSON list form.
 - `attack_snr_db` is recorded per file, making each attack's real strength
   visible — `additive_noise` sets an absolute amplitude, so its effective SNR
   moves with input level while its SNR-parameterized siblings hold constant.
-- `AdditiveNoise` and `VAE` were in no attack group and fell through group
-  resolution and report sectioning.
+- `AdditiveNoise`, `Replacement2` and `VAE` were in no attack group and fell
+  through group resolution and report sectioning.
 - NISQA's availability is recorded in `run_metadata.json`; its default weights
   path was broken by the src-layout move, so the documented setup produced
   nothing.

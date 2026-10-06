@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deepmarkpy"
-version = "2.1.0"
+version = "3.0.0"
 description = "DeepMark Benchmark: audio watermarking robustness evaluation against 40+ signal-processing, AI-based, and transmission attacks"
 readme = "README.md"
 license = { file = "LICENSE" }
