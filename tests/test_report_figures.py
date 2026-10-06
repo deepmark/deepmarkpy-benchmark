@@ -289,6 +289,49 @@ class TestStrengthLadder:
             other, write_config(tmp_path), results=single,
         )
 
+    @pytest.mark.parametrize("pink", [
+        # Differently named versions, the longer ladder second.
+        [("default", 98.0), ("light", 95.0), ("heavy", 80.0),
+         ("extreme", 55.0)],
+        # One naming scheme, but not every attack has every version.
+        [("default", 98.0), ("aggressive", 55.0)],
+    ])
+    def test_each_ladder_is_drawn_against_its_own_version_names(
+        self, tmp_path, monkeypatch, pink,
+    ):
+        """Two attacks in one group need not name their versions alike.
+
+        Every point sits above its own version's name. A shared 0..n-1
+        axis under one ladder's names would put the other ladder's points
+        on versions it does not have.
+        """
+        drawn = {}
+        save = report_charts._save
+
+        def read_back(fig, path):
+            ax = fig.axes[0]
+            ticks = [tick.get_text() for tick in ax.get_xticklabels()]
+            # The chance floor is an unlabelled line, so only the ladders
+            # carry a name of their own.
+            for line in ax.get_lines():
+                if not line.get_label().startswith("_"):
+                    drawn[line.get_label()] = [
+                        (ticks[int(x)], float(y))
+                        for x, y in zip(line.get_xdata(), line.get_ydata())
+                    ]
+            return save(fig, path)
+
+        monkeypatch.setattr(report_charts, "_save", read_back)
+        series = {
+            "GaussianNoise": [("default", 99.0), ("mild", 90.0),
+                              ("aggressive", 60.0)],
+            "PinkNoise": pink,
+        }
+        assert report_charts.attack_strength_curves(
+            series, str(tmp_path / "strength.png"), chance_floor=50.0,
+        )
+        assert drawn == series
+
 
 class TestChartsNeverBreakAReport:
     def test_a_failing_chart_returns_false_instead_of_raising(self, tmp_path):

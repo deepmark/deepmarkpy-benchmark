@@ -173,6 +173,9 @@ def implements_is_watermarked(model_instance) -> bool:
     """
     if not hasattr(model_instance, "is_watermarked"):
         return False
+    if isinstance(model_instance, type):
+        return (not issubclass(model_instance, BaseModel)
+                or model_instance.is_watermarked is not BaseModel.is_watermarked)
     if not isinstance(model_instance, BaseModel):
         return True
     return type(model_instance).is_watermarked is not BaseModel.is_watermarked

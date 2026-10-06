@@ -109,6 +109,8 @@ class ComparativeReportGenerator:
         """
         group_key = self.resolver.group_for_attack(attack_name)
         for statistic in self.resolver.statistics_for(group_key, "accuracy"):
+            if statistic == "std":
+                continue
             value = self._value(entry, statistic)
             if value is not None:
                 return float(value)
@@ -121,9 +123,9 @@ class ComparativeReportGenerator:
         one; groups configured differently have no single honest label.
         """
         statistics = {
-            (self.resolver.statistics_for(
+            next((s for s in self.resolver.statistics_for(
                 self.resolver.group_for_attack(attack), "accuracy",
-            ) or ["mean"])[0]
+            ) if s != "std"), "mean")
             for attack in self._attacks_in(all_stats)
         }
         if len(statistics) == 1:
@@ -250,7 +252,10 @@ class ComparativeReportGenerator:
             rankable = [v for v, zb in zip(values, zero_bit) if not zb]
             cells = []
             for value, zb in zip(values, zero_bit):
-                if zb:
+                # A spread has no better end -- the lowest std can be
+                # a model that fails every file alike -- so it is
+                # tabled like a zero-bit column: shown, never ranked.
+                if zb or statistic == "std":
                     cells.append("N/A" if value is None else f"{value:.2f}")
                 else:
                     cells.append(
@@ -486,7 +491,11 @@ class ComparativeReportGenerator:
                 "\n\n\\section{Accuracy Comparison --- Further Statistics}\n\n"
                 "\\noindent The main table above shows the "
                 f"{stat_header(statistics[0]).lower()}. Every other statistic "
-                "configured for accuracy is tabled below, ranked the same way.\n\n"
+                "configured for accuracy is tabled below, ranked the same way"
+                + (" -- except the standard deviation, a spread rather than "
+                   "a level, which is left uncoloured"
+                   if "std" in statistics else "")
+                + ".\n\n"
                 + "\n\n".join(blocks)
             )
 

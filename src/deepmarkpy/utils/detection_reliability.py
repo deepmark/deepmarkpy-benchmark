@@ -26,6 +26,7 @@ import numpy as np
 import soundfile as sf
 
 from deepmarkpy.benchmark import (
+    audio_filename_label,
     apply_attack,
     expand_attacks,
     instantiate_attack,
@@ -146,7 +147,7 @@ def _detect(model_instance, audio: np.ndarray, sampling_rate: int,
     else:
         with efficiency.measure(record, key):
             detect_output = model_instance.detect(audio, sampling_rate)
-    return model_instance.is_watermarked(detect_output)
+    return bool(model_instance.is_watermarked(detect_output))
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +387,7 @@ def run_detection_reliability(
             if save_audio and output_dir:
                 base = os.path.splitext(os.path.basename(filepath))[0]
                 sf.write(
-                    os.path.join(output_dir, f"{base}_{attack_name}_clean.wav"),
+                    os.path.join(output_dir, f"{base}_{audio_filename_label(attack_name)}_clean.wav"),
                     attacked_clean, sr,
                 )
 
@@ -410,7 +411,7 @@ def run_detection_reliability(
             if save_audio and output_dir:
                 base = os.path.splitext(os.path.basename(filepath))[0]
                 sf.write(
-                    os.path.join(output_dir, f"{base}_{attack_name}.wav"),
+                    os.path.join(output_dir, f"{base}_{audio_filename_label(attack_name)}.wav"),
                     attacked_wm, sr,
                 )
 

@@ -153,6 +153,9 @@ def _build_parser():
         "--config",
         type=str,
         nargs="+",
+        # Repeating the flag adds files rather than replacing the earlier
+        # ones, which silently skipped a requested mode.
+        action="extend",
         default=None,
         metavar="PATH",
         help=(
@@ -365,7 +368,9 @@ def _legacy_flags_used(args):
     used = []
     for name in _LEGACY_FLAGS:
         value = getattr(args, name, None)
-        if value not in (None, False):
+        # Identity, not equality: --crop_before_attack 0 is a flag that was
+        # set, and 0.0 == False.
+        if value is not None and value is not False:
             used.append(f"--{name}")
     return used
 
@@ -487,14 +492,11 @@ def _configs_from_flags(args, leftovers, benchmark, parser):
             data["attack_parameters"] = {
                 name: dict(values) for name, values in parameters.items()
             }
+        # A crop of 0% crops nothing, which the old CLI accepted; the
+        # config file spells that null, so the flag's 0 means the same.
         if "crop_before_attack" in MODE_KEYS[mode] \
-                and args.crop_before_attack is not None:
+                and args.crop_before_attack not in (None, 0):
             data["crop_before_attack"] = args.crop_before_attack
-        if mode == "detection_reliability" and len(models) > 1 \
-                and args.no_attacks:
-            # The old combined run measured reliability for the first
-            # model only; listing several here is E012 instead.
-            data["models"] = models[:1]
         built.append(load_config_data(
             data, source="<command line>",
             attacks_registry=benchmark.attacks,
@@ -577,7 +579,7 @@ def main(argv=None):
                 f"got {settings.seed}."
             )
             return EXIT_CONFIG_ERROR
-        if not settings.wav_files_dir:
+        if not settings.wav_files_dir and not args.validate_only:
             _report_config_error(
                 f"{config.source}: no audio directory.\n"
                 f"    Set general.wav_files_dir in the config file, or pass "
@@ -634,6 +636,7 @@ def main(argv=None):
     for report_dir in dict.fromkeys(s.report_dir for _, s in plans):
         _clean_report_dir(report_dir)
 
+    exit_code = EXIT_OK
     for config, settings in plans:
         filepaths = filepaths_by_dir[settings.wav_files_dir]
         if settings.verbose:
@@ -652,9 +655,11 @@ def main(argv=None):
             f"on {len(filepaths)} file(s)\n{'=' * 60}"
         )
         _log_attack_parameters(benchmark, config, only_configured=True)
-        _MODE_RUNNERS[config.mode](benchmark, filepaths, config, settings)
+        if _MODE_RUNNERS[config.mode](benchmark, filepaths, config,
+                                      settings) != EXIT_OK:
+            exit_code = EXIT_RUNTIME_ERROR
 
-    return EXIT_OK
+    return exit_code
 
 
 def _describe_attack_selection(config):
@@ -1026,9 +1031,9 @@ def run_no_attacks_mode(benchmark, filepaths, config, settings):
         audio_dir = None
         if settings.save_audio:
             audio_dir = (
-                os.path.join(report_dir, model_name, "audio")
+                os.path.join(report_dir, model_name, "audio", config.mode)
                 if multi_model
-                else os.path.join(report_dir, "audio")
+                else os.path.join(report_dir, "audio", config.mode)
             )
         try:
             results = benchmark.run_no_attacks(
@@ -1067,6 +1072,8 @@ def run_no_attacks_mode(benchmark, filepaths, config, settings):
 
     if not all_results:
         logger.error("No models completed successfully.")
+        return EXIT_RUNTIME_ERROR
+    return EXIT_OK
 
 
 # ---------------------------------------------------------------------------
@@ -1094,7 +1101,8 @@ def run_detection_reliability_mode(benchmark, filepaths, config, settings):
     # expand to "all".
     attack_types = config.selected_attack_specs() or []
 
-    audio_dir = os.path.join(report_dir, "audio") if settings.save_audio else None
+    audio_dir = (os.path.join(report_dir, "audio", config.mode)
+                 if settings.save_audio else None)
 
     logger.info(
         f"Running detection-reliability for {model_name} on "
@@ -1117,7 +1125,7 @@ def run_detection_reliability_mode(benchmark, filepaths, config, settings):
         )
     except ValueError as e:
         logger.error(f"Detection reliability run failed: {e}")
-        return
+        return EXIT_RUNTIME_ERROR
 
     # Persist raw result so later runs can inspect/regenerate the PDF.
     result_path = os.path.join(report_dir, "detection_reliability.json")
@@ -1135,6 +1143,7 @@ def run_detection_reliability_mode(benchmark, filepaths, config, settings):
         logger.info(f"Detection reliability report generated: {tex_path}")
     except Exception as e:
         logger.error(f"Failed to generate detection reliability report: {e}")
+    return EXIT_OK
 
 
 # ---------------------------------------------------------------------------
@@ -1144,13 +1153,14 @@ def run_detection_reliability_mode(benchmark, filepaths, config, settings):
 def run_benchmark_mode(benchmark, filepaths, config, settings):
     """Run the attack benchmark for one model, or several with a comparison."""
     if len(config.models) > 1:
-        run_multiple_models(benchmark, filepaths, config.models, config, settings)
-        return
+        return run_multiple_models(
+            benchmark, filepaths, config.models, config, settings)
 
     run_single_model(
         benchmark, filepaths, config.models[0], config, settings,
         output_dir=settings.report_dir,
     )
+    return EXIT_OK
 
 
 def write_run_metadata(report_dir, args, benchmark, model_names, extra=None):
@@ -1240,7 +1250,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
     # Keep audio files in a dedicated subfolder so they don't clutter
     # the report directory next to .tex/.pdf/.json outputs.
     if settings.save_audio:
-        run_kwargs["output_dir"] = os.path.join(report_dir, "audio")
+        run_kwargs["output_dir"] = os.path.join(report_dir, "audio", config.mode)
 
     results_path = os.path.join(report_dir, "benchmark_results.json")
 
@@ -1334,7 +1344,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
         },
     )
 
-    containers = _container_rows(benchmark, config, config.models)
+    containers = _container_rows(benchmark, config, [model_name])
 
     _log_efficiency(config, stats)
 
@@ -1429,7 +1439,7 @@ def run_multiple_models(benchmark, filepaths, model_names, config, settings):
         )
     if not all_results:
         logger.error("No models completed successfully. Skipping comparative report.")
-        return
+        return EXIT_RUNTIME_ERROR
     if len(all_results) < 2:
         # Comparative report needs at least two models to compare.
         only = next(iter(all_results))
@@ -1438,7 +1448,7 @@ def run_multiple_models(benchmark, filepaths, model_names, config, settings):
             f"report (single-model outputs are already in "
             f"{os.path.join(report_base, only)}/)."
         )
-        return
+        return EXIT_OK
 
     # Generate comparative report
     try:
@@ -1458,6 +1468,7 @@ def run_multiple_models(benchmark, filepaths, model_names, config, settings):
         logger.info(f"Comparative report saved to: {comp_dir}")
     except Exception as e:
         logger.error(f"Failed to generate comparative report: {e}")
+    return EXIT_OK
 
 
 _MODE_RUNNERS = {

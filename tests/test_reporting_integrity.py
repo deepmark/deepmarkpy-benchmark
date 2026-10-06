@@ -81,6 +81,21 @@ class TestExpandAttacks:
         expanded = expand_attacks(["Codec2VocoderAttack"], registry)
         assert [d for _, d, _, _ in expanded] == ["Codec2VocoderAttack_700"]
 
+    def test_a_bare_bitrate_attack_also_runs_a_config_defined_version(self):
+        """A bare name runs every version at each of its bitrates. The one
+        the config defines loads the plugin's default preset and takes its
+        bitrates from the config."""
+        registry = {"Codec2VocoderAttack": {"config": {"bitrate_codec2": [700, 2400]}}}
+        expanded = expand_attacks(
+            ["Codec2VocoderAttack"], registry,
+            extra_versions={"Codec2VocoderAttack": {"hi": {"bitrate_codec2": [3200]}}},
+        )
+        assert [(d, o, v) for _, d, o, v in expanded] == [
+            ("Codec2VocoderAttack_700 (default)", {"bitrate_codec2": 700}, "default"),
+            ("Codec2VocoderAttack_2400 (default)", {"bitrate_codec2": 2400}, "default"),
+            ("Codec2VocoderAttack_3200 (hi)", {"bitrate_codec2": 3200}, None),
+        ]
+
     def test_plain_attack_passes_through(self):
         registry = {"GaussianNoiseAttack": {"config": {"snr_db_gaussian_noise": 35}}}
         assert expand_attacks(["GaussianNoiseAttack"], registry) == [
@@ -109,6 +124,21 @@ class TestExpandAttacks:
         assert cls == "GaussianNoiseAttack"
         assert version == "v:2"
         assert display == "GaussianNoiseAttack (v:2)"
+
+    def test_a_saved_audio_filename_replaces_what_a_path_cannot_hold(self):
+        """A version name may hold a path separator or a character Windows
+        reserves; in the saved-audio filename each becomes an underscore."""
+        from deepmarkpy.benchmark import audio_filename_label
+
+        assert audio_filename_label("GaussianNoiseAttack (v:2)") == "GaussianNoiseAttack (v_2)"
+        assert audio_filename_label("PresetNoiseAttack (lo/hi)") == "PresetNoiseAttack (lo_hi)"
+
+    def test_a_safe_name_is_its_own_filename(self):
+        """Spaces and parentheses are kept, so a safe name is unchanged."""
+        from deepmarkpy.benchmark import audio_filename_label
+
+        for name in ("Codec2VocoderAttack_700", "GaussianNoiseAttack (mild)"):
+            assert audio_filename_label(name) == name
 
 
 class TestAggregationTransparency:
@@ -225,6 +255,15 @@ class TestBasicReportSurfacesCoverage:
 
 
 class TestComparativeTableComparability:
+    # Steady keeps ~98% on every file; Erratic averages 82% and swings
+    # widely, so the larger spread belongs to the worse model.
+    STEADY_VS_ERRATIC = {
+        "SteadyModel": {"GaussianNoiseAttack": {
+            "accuracy_mean": 98.0, "accuracy_std": 2.74}},
+        "ErraticModel": {"GaussianNoiseAttack": {
+            "accuracy_mean": 82.0, "accuracy_std": 24.90}},
+    }
+
     @staticmethod
     def _gen(meta, statistics=("mean",)):
         from deepmarkpy.utils.metric_resolver import MetricResolver
@@ -236,6 +275,7 @@ class TestComparativeTableComparability:
                                    "statistics": list(statistics)}},
         )
         gen.primary_statistic = statistics[0]
+        gen._has_deepmark_cls = False
         return gen
 
     @staticmethod
@@ -321,6 +361,32 @@ class TestComparativeTableComparability:
         gen = self._gen({})
         table = gen.generate_accuracy_table({"M1": {"A": 1.0}, "M2": {"A": 2.0}})
         assert "A" in table
+
+    def test_a_std_table_ranks_no_model(self):
+        """A spread has no better end, so its cells are shown uncoloured.
+
+        The same row at the mean is ranked, so the data itself ranks.
+        """
+        gen = self._gen({}, ("mean", "std"))
+        std_row = self._data_row(gen.generate_accuracy_table(
+            self.STEADY_VS_ERRATIC, "std", with_note=False), "Gaussian")
+        mean_row = self._data_row(gen.generate_accuracy_table(
+            self.STEADY_VS_ERRATIC, "mean", with_note=False), "Gaussian")
+
+        assert "textcolor" not in std_row, std_row
+        assert "24.90" in std_row
+        steady_mean_cell = mean_row.split("&")[1]
+        assert RANK_COLORS[0][0] in steady_mean_cell, mean_row
+
+    def test_the_further_statistics_say_std_is_left_unranked(self):
+        """The sentence over the secondary tables names std as the exception."""
+        gen = self._gen({}, ("mean", "std"))
+        tex = gen.generate_latex_report(self.STEADY_VS_ERRATIC, include_radar=False)
+        further = tex.split("Further Statistics", 1)[1]
+        sentence = further[further.index("Every other statistic"):].split("\n\n", 1)[0]
+
+        assert "standard deviation" in sentence, sentence
+        assert "uncoloured" in sentence, sentence
 
 
 class TestMultiModelPath:
@@ -444,6 +510,31 @@ class TestExpansionIsDeduplicated:
             )
         ]
         assert names == ["GaussianNoiseAttack (mild)"]
+
+    def test_default_and_bare_bitrate_attack_is_one_row_per_bitrate(self):
+        """On a single-version plugin ':default' names the bare attack, so
+        together they give each bitrate one row, not two."""
+        names = [
+            display for _, display, _, _ in expand_attacks(
+                ["Codec2VocoderAttack:default", "Codec2VocoderAttack"],
+                {"Codec2VocoderAttack": {"config": {"bitrate_codec2": [700, 2400]}}},
+            )
+        ]
+        assert names == ["Codec2VocoderAttack_700", "Codec2VocoderAttack_2400"], names
+
+    def test_a_bitrate_version_named_and_reached_bare_is_one_row(self):
+        """The named config-defined version runs at its own bitrate, and
+        the bare name adds only the rows it does not already have."""
+        names = [
+            display for _, display, _, _ in expand_attacks(
+                ["Codec2VocoderAttack:hi", "Codec2VocoderAttack"],
+                {"Codec2VocoderAttack": {"config": {"bitrate_codec2": [700]}}},
+                extra_versions={"Codec2VocoderAttack": {"hi": {"bitrate_codec2": [3200]}}},
+            )
+        ]
+        assert names == [
+            "Codec2VocoderAttack_3200 (hi)", "Codec2VocoderAttack_700 (default)",
+        ], names
 
 
 class TestTheCropCaveatSurvivesDurationGrouping:

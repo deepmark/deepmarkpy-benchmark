@@ -30,6 +30,7 @@ from deepmarkpy.utils.attack_groups import (
     ATTACK_GROUPS,
     CONFIG_GROUP_KEYS,
     get_attacks_for_groups,
+    group_parent,
 )
 from deepmarkpy.utils.metric_resolver import (
     ALL_STATISTICS,
@@ -582,6 +583,8 @@ class _Validator:
         )
 
         comparison = self._check_comparison(resolver)
+        self._check_primary_coverage(comparison, resolver, models, groups,
+                                     attack_list)
         self._check_group_coverage(per_group, groups, attack_list)
         self._check_parameter_coverage(
             parameter_overrides, synthetic_versions, groups, attack_list,
@@ -633,6 +636,18 @@ class _Validator:
                 "E002", f"line {exc.lineno}, column {exc.colno}",
                 f"file is not valid JSON: {exc.msg}."
                 + _json_syntax_help(text, exc),
+            )
+            return False
+        except UnicodeDecodeError as exc:
+            # A ValueError, so neither clause around it caught it, and the
+            # user got a traceback instead of a coded error.
+            self.error(
+                "E002", "--config",
+                f"file is not UTF-8 text ({exc.reason} at byte {exc.start}). "
+                f"Save it as UTF-8; Windows PowerShell 5.1's '>' writes "
+                f"UTF-16, so redirect --init through "
+                f"'| Out-File -Encoding utf8' there.",
+                value=self.path,
             )
             return False
         except OSError as exc:
@@ -813,6 +828,27 @@ class _Validator:
                 self.error("E016", f"models[{index}]",
                            "listed more than once.", value=name)
                 continue
+            entry = (self.models_registry or {}).get(name)
+            model_cls = entry.get("class") if isinstance(entry, dict) else None
+            if self.mode == "detection_reliability" and isinstance(model_cls, type):
+                # Only a registry of real classes is judged, so the pre-flight
+                # pass and name-only registries are unaffected. Imported here:
+                # such a registry means base_model is loaded already.
+                from deepmarkpy.core.base_model import implements_is_watermarked
+                if not implements_is_watermarked(model_cls):
+                    capable = sorted(
+                        other for other, other_entry in self.models_registry.items()
+                        if isinstance(other_entry, dict)
+                        and isinstance(other_entry.get("class"), type)
+                        and implements_is_watermarked(other_entry["class"])
+                    )
+                    self.error(
+                        "E044", f"models[{index}]",
+                        f"mode 'detection_reliability' needs a model that "
+                        f"implements is_watermarked(), and this one does not. "
+                        f"Models that do: {', '.join(capable) or 'none discovered'}.",
+                        value=name,
+                    )
             clean.append(name)
 
         if self.mode == "detection_reliability" and len(clean) > 1:
@@ -877,6 +913,21 @@ class _Validator:
             if name in clean:
                 self.error("E016", path, "listed more than once.", value=name)
                 continue
+            if self.attacks_registry is not None:
+                missing = [
+                    attack for attack in get_attacks_for_groups(name)
+                    if attack not in self.attacks_registry
+                ]
+                if missing:
+                    self.error(
+                        "E014", path,
+                        f"group '{name}' includes attacks that were not "
+                        f"discovered: {', '.join(missing)}. Install what their "
+                        f"plugins need (the import errors are logged above), "
+                        f"or name the attacks you want under attacks.list.",
+                        value=name,
+                    )
+                    continue
             clean.append(name)
         return clean
 
@@ -965,6 +1016,9 @@ class _Validator:
 
         overrides: Dict[Any, Dict[str, Any]] = {}
         synthetic: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        # The key that set each target, so a second key for the same one
+        # is reported rather than one of them dropped without a word.
+        targets: Dict[Any, str] = {}
 
         for spec in _real_keys(block):
             path = f"attack_parameters.{spec}"
@@ -993,6 +1047,19 @@ class _Validator:
                                                     params, defaults)
             if not resolved:
                 continue
+
+            target = (attack_name, version or "default")
+            if target in targets:
+                self.error(
+                    "E016", path,
+                    f"sets the same target as 'attack_parameters."
+                    f"{targets[target]}': a bare attack name and ':default' "
+                    f"both mean its default version. Merge them into one "
+                    f"entry.",
+                    value=spec,
+                )
+                continue
+            targets[target] = spec
 
             if self.attacks_registry is None:
                 overrides[(attack_name, version)] = resolved
@@ -1050,6 +1117,11 @@ class _Validator:
                 continue
             if defaults is not None and not _compatible_type(
                 params[key], defaults[key]
+            ) and not (
+                # expand_attacks runs a single bitrate as a one-element
+                # list, which is how the README and the plugin document it.
+                key == "bitrate_codec2" and isinstance(params[key], int)
+                and not isinstance(params[key], bool)
             ):
                 self.error(
                     "E019", key_path,
@@ -1057,6 +1129,32 @@ class _Validator:
                     f"plugin default ({json.dumps(defaults[key], default=str)}), "
                     f"but is {_type_name(params[key])}.",
                     value=params[key],
+                )
+                continue
+            if key == "bitrate_codec2" and defaults is not None:
+                from deepmarkpy.benchmark import _CODEC2_SUPPORTED
+                bitrates = (params[key] if isinstance(params[key], list)
+                            else [params[key]])
+                if not bitrates or not all(
+                    isinstance(value, int) and not isinstance(value, bool)
+                    and value in _CODEC2_SUPPORTED for value in bitrates
+                ):
+                    self.error(
+                        "E045", key_path,
+                        f"must list at least one Codec2 bitrate, each one of "
+                        f"{', '.join(map(str, sorted(_CODEC2_SUPPORTED)))}.",
+                        value=params[key],
+                    )
+                    continue
+            if key == "different_model_name_cross_model" \
+                    and defaults is not None \
+                    and self.models_registry is not None \
+                    and params[key] not in self.models_registry:
+                known = sorted(self.models_registry)
+                self.error(
+                    "E011", key_path,
+                    f"unknown model. Discovered models: {', '.join(known)}.",
+                    value=params[key], suggestion=_suggest(params[key], known),
                 )
                 continue
             resolved[key] = params[key]
@@ -1199,6 +1297,20 @@ class _Validator:
             if entry is None:
                 continue
             resolved = self._check_metric_map(entry, path)
+            parent = group_parent(group_key)
+            for metric in ("accuracy", "ber", "emr"):
+                if parent is not None and metric in resolved:
+                    # Subsections only split the signal-metric tables; these
+                    # three are computed and tabled once per parent group.
+                    self.warn(
+                        "W016", f"{path}.{metric}",
+                        f"is not used by any table: '{group_key}' is a report "
+                        f"subsection of '{parent}', and accuracy, BER and EMR "
+                        f"are computed and tabled for '{parent}' as a whole "
+                        f"(a subsection's accuracy statistics only choose what "
+                        f"its quality scatter plot draws). Set it under "
+                        f"metrics.per_group.{parent} instead.",
+                    )
             if resolved:
                 clean[group_key] = resolved
         return clean
@@ -1466,7 +1578,7 @@ class _Validator:
         # Unset means "whichever statistic accuracy leads with", not a hard
         # "mean" -- a config that drops the mean has not made a mistake.
         if "primary_statistic" not in block:
-            return configured[0] if configured else "mean"
+            return next((s for s in configured if s != "std"), "mean")
 
         primary = block["primary_statistic"]
         if not isinstance(primary, str) or primary not in ALL_STATISTICS:
@@ -1494,6 +1606,37 @@ class _Validator:
         return primary
 
     # -- cross-cutting warnings ----------------------------------------
+
+    def _check_primary_coverage(self, primary, resolver, models, groups,
+                                attack_list):
+        """Name the groups the main comparison table cannot rank.
+
+        Each attack's accuracy is computed with its own group's statistics,
+        so a group that leaves the primary out reads N/A in the main table
+        and is ranked only in its own statistics' tables below it. Not an
+        error: every number is still reported.
+        """
+        if "comparison" not in MODE_KEYS[self.mode] or len(models) < 2:
+            return
+        from deepmarkpy.utils.attack_groups import OTHER_GROUP_KEY
+
+        reachable = self._groups_in_run(groups, attack_list)
+        candidates = [g for g in ATTACK_GROUPS
+                      if reachable is None or g in reachable]
+        if reachable is not None and OTHER_GROUP_KEY in reachable:
+            candidates.append(OTHER_GROUP_KEY)
+        for group_key in candidates:
+            statistics = resolver.statistics_for(group_key, "accuracy")
+            if primary not in statistics:
+                self.warn(
+                    "W015", f"metrics.per_group.{group_key}.accuracy.statistics",
+                    f"leaves out '{primary}', the statistic the main "
+                    f"comparison table ranks, so this group's rows read N/A "
+                    f"there and are ranked only in the "
+                    f"{', '.join(statistics)} table(s) below it. Add "
+                    f"'{primary}' to this list if they should be ranked in "
+                    f"the main table.",
+                )
 
     def _check_group_coverage(self, per_group, groups, attack_list):
         """Note per_group entries for groups this run will not reach.
@@ -1525,8 +1668,10 @@ class _Validator:
         """
         if not overrides and not synthetic:
             return
-        if not groups and not attack_list:
-            # Everything runs, so every entry is reachable.
+        if not groups and not attack_list and self.mode == "benchmark":
+            # Everything runs, so every entry is reachable. Only benchmark
+            # mode expands an empty selection; detection_reliability then
+            # measures the no-attack baseline alone.
             return
 
         selected = {spec.partition(":")[0] for spec in attack_list}

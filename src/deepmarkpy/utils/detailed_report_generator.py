@@ -661,7 +661,7 @@ class DetailedReportGenerator:
     def _accuracy_of(self, aggregated, attack, group_key):
         """An attack's headline accuracy, in the statistic its group configured."""
         statistics = self.resolver.statistics_for(group_key, "accuracy")
-        statistic = statistics[0] if statistics else "mean"
+        statistic = next((s for s in statistics if s != "std"), "mean")
         value = (aggregated["attacks"][attack].get("accuracy") or {}).get(statistic)
         return None if value is None else float(value)
 
@@ -686,7 +686,7 @@ class DetailedReportGenerator:
             return ""
 
         statistics = self.resolver.statistics_for(group_key, "accuracy")
-        statistic = statistics[0] if statistics else "mean"
+        statistic = next((s for s in statistics if s != "std"), "mean")
         filename = f"ranking_{label_key}.png"
         drawn = report_charts.accuracy_ranking(
             values, os.path.join(self.report_dir, filename),
@@ -717,7 +717,7 @@ class DetailedReportGenerator:
             return ""
 
         statistics = self.resolver.statistics_for(group_key, "accuracy")
-        statistic = statistics[0] if statistics else "mean"
+        statistic = next((s for s in statistics if s != "std"), "mean")
         filename = f"strength_{label_key}.png"
         drawn = report_charts.attack_strength_curves(
             series, os.path.join(self.report_dir, filename),

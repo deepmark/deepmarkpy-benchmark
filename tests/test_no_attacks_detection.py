@@ -117,6 +117,11 @@ class TestSupportPredicate:
     def test_overriding_it_is(self):
         assert implements_is_watermarked(ConfidenceModel()) is True
 
+    def test_a_class_is_judged_as_its_instances_are(self):
+        """Config validation asks before any model is constructed."""
+        assert implements_is_watermarked(SilentModel) is False
+        assert implements_is_watermarked(ConfidenceModel) is True
+
 
 class BrokenModel(_StubModel):
     """Its decision raises -- a contract mismatch, not a measurement."""

@@ -119,7 +119,9 @@ class BenchmarkReportGenerator:
         group_key = (self.resolver.group_for_attack(attack_name)
                      if attack_name else None)
         configured = self.resolver.statistics_for(group_key, "accuracy")
-        return configured[0] if configured else "mean"
+        # The first *level* statistic: a std is a spread, and read as
+        # a score it names the steadiest attack the most damaging.
+        return next((s for s in configured if s != "std"), "mean")
 
     def _accuracy_label_for(self, stats) -> str:
         """Axis label for a chart drawn over ``stats``.

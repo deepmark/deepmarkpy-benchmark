@@ -390,14 +390,22 @@ def _line_series(series, output_path, xlabel, ylabel, title,
     if not usable:
         return False
 
-    width = max(8.0, 1.5 * max(len(v) for v in usable.values()) + 3.0)
+    # Every label any series uses, in first-seen order; each point is
+    # drawn at its own label.
+    tick_labels = []
+    for entries in usable.values():
+        for label, _ in entries:
+            if label not in tick_labels:
+                tick_labels.append(label)
+    position = {label: index for index, label in enumerate(tick_labels)}
+
+    width = max(8.0, 1.5 * len(tick_labels) + 3.0)
     fig, ax = plt.subplots(figsize=(min(width, 13), 4.6))
     fig.patch.set_facecolor("white")
 
-    tick_labels = []
     annotate = len(usable) <= 4
     for index, (base, entries) in enumerate(usable.items()):
-        xs = np.arange(len(entries))
+        xs = [position[label] for label, _ in entries]
         ys = [value for _, value in entries]
         color = MODEL_COLORS[index % len(MODEL_COLORS)]
         ax.plot(xs, ys, marker="o", markersize=7, linewidth=2.2,
@@ -407,11 +415,10 @@ def _line_series(series, output_path, xlabel, ylabel, title,
                 ax.annotate(f"{y:.1f}", (x, y), textcoords="offset points",
                             xytext=(0, 9), fontsize=8.5, color=color,
                             ha="center")
-        if len(entries) > len(tick_labels):
-            tick_labels = [plain(label) for label, _ in entries]
 
     ax.set_xticks(np.arange(len(tick_labels)))
-    ax.set_xticklabels(tick_labels, fontsize=10, color="#555555")
+    ax.set_xticklabels([plain(label) for label in tick_labels],
+                       fontsize=10, color="#555555")
     ax.set_ylim(-5, 112)
     handles = None
     if chance_floor is not None:

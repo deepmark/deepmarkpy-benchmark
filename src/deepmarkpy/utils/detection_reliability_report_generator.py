@@ -146,7 +146,7 @@ def _no_attack_quality_tables(result: Dict[str, Any],
     silent = []
     for section_key, section_title, family in _METRIC_SECTIONS:
         enabled = [
-            m for m in resolver.signal_metrics_for_group(None) if m in family
+            m for m in resolver.all_signal_metrics() if m in family
         ]
         with_data = [
             m for m in enabled
@@ -458,7 +458,7 @@ def _accuracy_figure(attacks, attack_names, group_key, resolver, label_text,
         return ""
 
     statistics = resolver.statistics_for(group_key, "accuracy")
-    statistic = statistics[0] if statistics else "mean"
+    statistic = next((s for s in statistics if s != "std"), "mean")
     values = {}
     for name in attack_names:
         value = attacks[name].get(f"accuracy_{statistic}")

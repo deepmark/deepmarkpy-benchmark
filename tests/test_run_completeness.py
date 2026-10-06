@@ -216,6 +216,51 @@ class TestCrossModelReceivesItsSecondModel:
             f"the plugin default {default!r} is not a discovered model"
         )
 
+    def test_an_unknown_second_model_stops_the_run_before_any_audio(
+        self, tmp_path, monkeypatch,
+    ):
+        """The name is checked before the first file is embedded, so an
+        unknown one -- here the plugin's own config.json default -- stops
+        the run before any audio is processed or any attack listed ahead
+        of this one runs."""
+        import numpy as np
+        import soundfile as sf
+
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+
+        embedded = []
+
+        class _Model:
+            def generate_watermark(self):
+                return np.ones(16, dtype=np.int32)
+
+            def embed(self, audio, watermark_data, sampling_rate):
+                embedded.append(sampling_rate)
+                return audio
+
+            def detect(self, audio, sampling_rate):
+                return np.ones(16, dtype=np.int32)
+
+        path = tmp_path / "a.wav"
+        sf.write(str(path), np.zeros(16000, dtype=np.float32), 16000)
+
+        benchmark = Benchmark()
+        monkeypatch.setitem(
+            benchmark.attacks["CrossModelAttack"], "config",
+            {"different_model_name_cross_model": "NotAModel"},
+        )
+        monkeypatch.setitem(benchmark.models, "StubModel", {
+            "class": _Model, "config": {"sampling_rate": 16000},
+        })
+
+        with pytest.raises(ValueError, match="different_model_name_cross_model"):
+            benchmark.run(
+                filepaths=[str(path)], wm_model="StubModel",
+                attack_types=["GaussianNoiseAttack", "CrossModelAttack"],
+                metric_resolver=MetricResolver(),
+            )
+        assert embedded == [], "audio was embedded before the name was checked"
+
 
 class TestAVersionIsNeverSilentlyDropped:
     """An attack either takes the requested version or says it cannot.

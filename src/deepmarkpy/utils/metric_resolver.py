@@ -202,8 +202,13 @@ class MetricResolver:
 
         per_group = {}
         for key in list(ATTACK_GROUPS) + list(ATTACK_SUBGROUPS):
+            enabled = cls._declared_metrics(key)
+            if key in ATTACK_GROUPS:
+                # The trio has always been computed for every attack, so
+                # turning quality metrics on must not take it away.
+                enabled |= frozenset(ALWAYS_ON_METRICS)
             per_group[key] = {
-                metric: {"enabled": metric in cls._declared_metrics(key)}
+                metric: {"enabled": metric in enabled}
                 for metric in SIGNAL_METRICS
             }
         # Attacks outside every declared group have no metric opinion

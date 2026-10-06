@@ -10,6 +10,11 @@ anything in the run saying so.
 
 The tables were always right: they ask the resolver per section. These
 pin the figures and the prose to the same answer.
+
+Nor may a spread stand in for a level. A config may list ``std`` before
+``mean``, and read as the accuracy, a std makes the steadiest attack look
+the most damaging. Every single-number view therefore reads the first
+configured statistic that is not ``std``.
 """
 
 import numpy as np
@@ -18,6 +23,8 @@ import pytest
 from deepmarkpy.benchmark import Benchmark
 from deepmarkpy.config import load_config_data
 from deepmarkpy.utils.comparative_report_generator import ComparativeReportGenerator
+from deepmarkpy.utils.detailed_report_generator import DetailedReportGenerator
+from deepmarkpy.utils.detection_reliability_report_generator import _accuracy_figure
 from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
 
 # GaussianNoise is audio_distortion, Lowpass is audio_editing, so one
@@ -27,6 +34,17 @@ LOWPASS = "LowpassFilterAttack"
 
 NOISE_ACCURACY = 90.0
 LOWPASS_ACCURACY = 70.0
+
+PINK_NOISE = "PinkNoiseAttack"
+SIGN_INVERSION = "SignInversionAttack"
+
+# One audio_distortion section whose spreads rank the attacks in the
+# opposite order to their means.
+SPREAD_STATS = {
+    NOISE: {"accuracy_n": 5, "accuracy_mean": 100.0, "accuracy_std": 0.0},
+    PINK_NOISE: {"accuracy_n": 5, "accuracy_mean": 82.0, "accuracy_std": 24.9},
+    SIGN_INVERSION: {"accuracy_n": 5, "accuracy_mean": 70.0, "accuracy_std": 27.39},
+}
 
 
 def split_statistics_config(default_statistic, overridden_statistic):
@@ -49,6 +67,30 @@ def split_statistics_config(default_statistic, overridden_statistic):
             },
         },
     }, quiet=True)
+
+
+def std_first_config():
+    """A config that lists the accuracy std before the mean."""
+    return load_config_data({
+        "mode": "benchmark",
+        "models": ["AudioSealModel"],
+        "metrics": {
+            "defaults": {
+                "accuracy": {"enabled": True, "statistics": ["std", "mean"]},
+            },
+        },
+    }, quiet=True)
+
+
+@pytest.fixture
+def ranking_calls(monkeypatch):
+    """Every accuracy ranking requested, as ``(values, kwargs)``; none is drawn."""
+    calls = []
+    monkeypatch.setattr(
+        "deepmarkpy.utils.report_charts.accuracy_ranking",
+        lambda values, path, **kwargs: calls.append((values, kwargs)) or True,
+    )
+    return calls
 
 
 @pytest.fixture
@@ -119,6 +161,26 @@ class TestBasicReportFigures:
 
         assert generator._accuracy_of({"accuracy_p95": 88.0}, NOISE) == 88.0
 
+    def test_a_std_listed_first_is_not_the_headline_accuracy(self, tmp_path):
+        """The headline and the most damaging attack are read at the mean."""
+        generator = BenchmarkReportGenerator(
+            str(tmp_path), resolver=std_first_config().resolver,
+        )
+
+        tex = generator.generate_latex_report(SPREAD_STATS, "TestModel")
+        assert "Accuracy (Mean) across the 3 attacks run:} 84.00" in tex
+        assert "Most damaging:} SignInversion (70.0" in tex
+
+    def test_a_steady_attack_is_not_read_as_a_failed_watermark(self, tmp_path):
+        """Every mean here is 70 or more, so no attack is poor or at chance."""
+        generator = BenchmarkReportGenerator(
+            str(tmp_path), resolver=std_first_config().resolver,
+        )
+
+        tex = generator.generate_latex_report(SPREAD_STATS, "TestModel")
+        assert "Poor Performance" not in tex
+        assert "no better than guessing" not in tex
+
 
 class TestComparativeReportFigures:
     """The radar and the heatmap draw one number per attack."""
@@ -154,3 +216,50 @@ class TestComparativeReportFigures:
 
         assert generator._value(computed[NOISE], "median") is None
         assert generator._value(computed[NOISE], "mean") == NOISE_ACCURACY
+
+    def test_a_std_listed_first_is_not_what_the_figures_draw(self, tmp_path):
+        """The radar and the heatmap draw the mean, and are labelled so."""
+        generator = ComparativeReportGenerator(
+            str(tmp_path), resolver=std_first_config().resolver,
+        )
+
+        assert generator._primary_value(SPREAD_STATS[PINK_NOISE], PINK_NOISE) == 82.0
+        assert generator._primary_label({"AudioSealModel": SPREAD_STATS}) == "Mean"
+
+
+class TestDetailedReportFigures:
+    """Each section's ranking figure draws one number per attack."""
+
+    def test_a_std_listed_first_is_not_what_a_section_ranks(
+            self, ranking_calls, tmp_path):
+        generator = DetailedReportGenerator(
+            str(tmp_path), resolver=std_first_config().resolver,
+        )
+        aggregated = {"attacks": {
+            name: {"accuracy": {"mean": entry["accuracy_mean"],
+                                "std": entry["accuracy_std"]}}
+            for name, entry in SPREAD_STATS.items()
+        }}
+
+        generator._ranking_figure(
+            aggregated, list(SPREAD_STATS), "audio_distortion",
+            "Audio distortion", "audio_distortion",
+        )
+        (values, kwargs), = ranking_calls
+        assert values["SignInversion"] == 70.0
+        assert kwargs["statistic_label"] == "Mean"
+
+
+class TestDetectionReliabilityFigures:
+    """Each group's accuracy figure draws one number per attack."""
+
+    def test_a_std_listed_first_is_not_what_a_section_ranks(
+            self, ranking_calls, tmp_path):
+        _accuracy_figure(
+            SPREAD_STATS, list(SPREAD_STATS), "audio_distortion",
+            std_first_config().resolver, "Audio distortion",
+            "audio_distortion", str(tmp_path),
+        )
+        (values, kwargs), = ranking_calls
+        assert values["SignInversion"] == 70.0
+        assert kwargs["statistic_label"] == "Mean"

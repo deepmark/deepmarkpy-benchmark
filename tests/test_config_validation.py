@@ -12,6 +12,7 @@ import re
 
 import pytest
 
+from deepmarkpy.benchmark import expand_attacks
 from deepmarkpy.config import (
     ConfigError,
     MODE_KEYS,
@@ -20,7 +21,9 @@ from deepmarkpy.config import (
     load_config_data,
     load_configs,
 )
+from deepmarkpy.core.base_model import BaseModel
 from deepmarkpy.plugin_manager import PluginManager
+from deepmarkpy.utils.attack_groups import ATTACK_GROUPS
 
 
 # A minimal file that validates, used as the base every case perturbs.
@@ -47,6 +50,29 @@ ATTACKS = {
     "LowpassFilterAttack": {"config": {"cutoff_lowpass": 4000}},
 }
 MODELS = {"AudioSealModel": {}, "PerthModel": {}}
+# A group is only selectable when every attack it declares was discovered.
+DISTORTION = {
+    **{name: {} for name in ATTACK_GROUPS["audio_distortion"]["attacks"]},
+    **ATTACKS,
+}
+
+
+class _DecidingModel(BaseModel):
+    """Overrides is_watermarked(). Validation inspects it, never builds it."""
+
+    def is_watermarked(self, detect_output):
+        return bool(detect_output)
+
+
+class _UndecidedModel(BaseModel):
+    """Inherits the base is_watermarked(), which raises."""
+
+
+# Entries that carry the model class, as discovery registers them.
+CLASS_MODELS = {
+    "PerthModel": {"class": _DecidingModel, "config": {}},
+    "WavMarkModel": {"class": _UndecidedModel, "config": {}},
+}
 
 
 def write(tmp_path, overrides, name="config.json", base=BASE):
@@ -89,6 +115,14 @@ class TestFileLevelCodes:
         assert "E002" in found
         # Names the actual mistake, not just the parser's state.
         assert "trailing comma" in issue_for(error, "E002").message
+
+    def test_E002_a_utf16_file_is_a_config_error(self, tmp_path):
+        """What Windows PowerShell 5.1's '>' writes when --init is redirected."""
+        path = tmp_path / "utf16.json"
+        path.write_bytes(json.dumps(BASE).encode("utf-16"))
+        found, error = codes(str(path))
+        assert "E002" in found
+        assert "UTF-8" in issue_for(error, "E002").message
 
     def test_E003_root_not_an_object(self, tmp_path):
         path = tmp_path / "list.json"
@@ -172,6 +206,50 @@ class TestModelCodes:
             tmp_path, {"models": ["AudioSealModel", "AudioSealModel"]}))
         assert "E016" in found
 
+    def test_E044_detection_reliability_model_must_implement_is_watermarked(
+            self, tmp_path):
+        found, error = codes(write(tmp_path, {
+            "mode": "detection_reliability", "models": ["WavMarkModel"],
+        }), models_registry=CLASS_MODELS)
+        assert "E044" in found
+        issue = issue_for(error, "E044")
+        assert issue.path == "models[0]"
+        assert issue.value == "WavMarkModel"
+        # Names the discovered models that do qualify.
+        assert "PerthModel" in issue.message
+
+    def test_E044_is_reported_alongside_E012(self, tmp_path):
+        """The refused model still counts towards the one-model limit."""
+        found, _ = codes(write(tmp_path, {
+            "mode": "detection_reliability",
+            "models": ["WavMarkModel", "PerthModel"],
+        }), models_registry=CLASS_MODELS)
+        assert {"E012", "E044"} <= found
+
+    @pytest.mark.parametrize("mode", ["benchmark", "no_attacks"])
+    def test_other_modes_do_not_need_is_watermarked(self, tmp_path, mode):
+        config = load_configs([write(tmp_path, {
+            "mode": mode, "models": ["WavMarkModel"],
+        })], ATTACKS, CLASS_MODELS)[0]
+        assert config.models == ["WavMarkModel"]
+
+    def test_a_model_that_implements_is_watermarked_is_accepted(self, tmp_path):
+        config = load_configs([write(tmp_path, {
+            "mode": "detection_reliability", "models": ["PerthModel"],
+        })], ATTACKS, CLASS_MODELS)[0]
+        assert config.models == ["PerthModel"]
+
+    def test_no_E044_without_a_model_class(self, tmp_path):
+        """No registry (the pass before plugins load) or a name-only one
+        has no class to ask, so the model is not refused there."""
+        path = write(tmp_path, {
+            "mode": "detection_reliability", "models": ["WavMarkModel"],
+        })
+        for registry in (None, {"WavMarkModel": {}}):
+            config = load_configs([path], models_registry=registry,
+                                  quiet=True)[0]
+            assert config.models == ["WavMarkModel"]
+
 
 class TestAttackCodes:
     @pytest.mark.parametrize("spec", ["EchoAttack", "EchoAttack:mild"])
@@ -205,6 +283,17 @@ class TestAttackCodes:
         assert "E014" in found
         assert issue_for(error, "E014").suggestion == "GaussianNoiseAttack"
 
+    def test_E014_group_member_that_was_not_discovered(self, tmp_path):
+        """A group runs every attack it declares, and the run refuses one
+        whose plugin did not load."""
+        found, error = codes(write(
+            tmp_path, {"attacks": {"groups": ["audio_distortion"]}}))
+        assert "E014" in found
+        issue = issue_for(error, "E014")
+        assert issue.path == "attacks.groups[0]"
+        assert "PinkNoiseAttack" in issue.message
+        assert "GaussianNoiseAttack" not in issue.message
+
     def test_E015_unknown_attack_version(self, tmp_path):
         found, error = codes(write(
             tmp_path, {"attacks": {"list": ["GaussianNoiseAttack:milde"]}}))
@@ -225,6 +314,13 @@ class TestAttackCodes:
 
 
 class TestAttackParameterCodes:
+    # One Codec2 run per listed bitrate; an override replaces the list.
+    CODEC2 = {**ATTACKS, "Codec2VocoderAttack": {
+        "config": {"bitrate_codec2": [700, 1200, 2400]}}}
+    # CrossModelAttack detects with a second, named model.
+    CROSS_MODEL = {"CrossModelAttack": {
+        "config": {"different_model_name_cross_model": "AudioSealModel"}}}
+
     def test_E017_unknown_attack_key(self, tmp_path):
         found, error = codes(write(
             tmp_path, {"attack_parameters": {"EchoAttackk": {"delay_echo": 1}}}))
@@ -358,6 +454,100 @@ class TestAttackParameterCodes:
             "EchoAttack": {"delay_echo": 1}}})], ATTACKS, MODELS)[0]
         assert config.parameters_for("EchoAttack", None)["delay_echo"] == 1
 
+    def test_a_single_codec2_bitrate_is_accepted(self, tmp_path):
+        """Stored as written, and run as a one-element list would be."""
+        config = load_configs([write(tmp_path, {
+            "attacks": {"list": ["Codec2VocoderAttack"]},
+            "attack_parameters": {
+                "Codec2VocoderAttack": {"bitrate_codec2": 1200}},
+        })], self.CODEC2, MODELS)[0]
+
+        assert config.parameters_for("Codec2VocoderAttack", None) == \
+            {"bitrate_codec2": 1200}
+        expanded = expand_attacks(["Codec2VocoderAttack"], self.CODEC2,
+                                  parameters=config.parameters_for)
+        assert [display for _, display, _, _ in expanded] == \
+            ["Codec2VocoderAttack_1200"]
+
+    @pytest.mark.parametrize("value", ["1200", True])
+    def test_E019_a_single_codec2_bitrate_must_be_an_integer(self, tmp_path,
+                                                            value):
+        found, _ = codes(write(tmp_path, {"attack_parameters": {
+            "Codec2VocoderAttack": {"bitrate_codec2": value}}}),
+            attacks_registry=self.CODEC2)
+        assert "E019" in found
+
+    def test_E019_no_other_list_parameter_takes_a_single_value(self, tmp_path):
+        """A range or per-band list given as one number would reach the
+        attack unchanged and fail inside apply()."""
+        registry = {"BandstopFilterAttack": {
+            "config": {"freq_range_bandstop": [350, 500]}}}
+        found, _ = codes(write(tmp_path, {"attack_parameters": {
+            "BandstopFilterAttack": {"freq_range_bandstop": 400}}}),
+            attacks_registry=registry)
+        assert "E019" in found
+
+    @pytest.mark.parametrize("value", [
+        [1000], [], ["1300"], [700, 1000], [[700]], [True], 1000,
+    ], ids=["unsupported", "empty", "string", "one_of_two_unsupported",
+            "nested", "bool", "single_unsupported"])
+    def test_E045_unsupported_codec2_bitrate(self, tmp_path, value):
+        """At least one bitrate, and each an integer Codec2 supports."""
+        found, error = codes(write(tmp_path, {
+            "attacks": {"list": ["Codec2VocoderAttack"]},
+            "attack_parameters": {
+                "Codec2VocoderAttack": {"bitrate_codec2": value}},
+        }), attacks_registry=self.CODEC2)
+        assert "E045" in found
+        issue = issue_for(error, "E045")
+        assert issue.path == \
+            "attack_parameters.Codec2VocoderAttack.bitrate_codec2"
+        # Lists what Codec2 supports, not just the plugin's own default list.
+        assert "1300" in issue.message
+
+    def test_E045_applies_to_a_version_the_config_defines(self, tmp_path):
+        found, error = codes(write(tmp_path, {
+            "attacks": {"list": ["Codec2VocoderAttack:tiny"]},
+            "attack_parameters": {
+                "Codec2VocoderAttack:tiny": {"bitrate_codec2": [1000]}},
+        }), attacks_registry=self.CODEC2)
+        assert "E045" in found
+        assert issue_for(error, "E045").path == \
+            "attack_parameters.Codec2VocoderAttack:tiny.bitrate_codec2"
+
+    def test_any_supported_codec2_bitrate_is_accepted(self, tmp_path):
+        """Supported by Codec2, though absent from the plugin's own list."""
+        config = load_configs([write(tmp_path, {
+            "attacks": {"list": ["Codec2VocoderAttack"]},
+            "attack_parameters": {
+                "Codec2VocoderAttack": {"bitrate_codec2": [1300, 3200]}},
+        })], self.CODEC2, MODELS)[0]
+        assert config.parameters_for("Codec2VocoderAttack", None) == \
+            {"bitrate_codec2": [1300, 3200]}
+
+    def test_E011_unknown_cross_model_second_model(self, tmp_path):
+        """The second model is checked against the discovered models, as
+        each name under 'models' is."""
+        found, error = codes(write(tmp_path, {
+            "attacks": {"list": ["CrossModelAttack"]},
+            "attack_parameters": {"CrossModelAttack": {
+                "different_model_name_cross_model": "AudioSealMode"}},
+        }), attacks_registry=self.CROSS_MODEL)
+        assert "E011" in found
+        issue = issue_for(error, "E011")
+        assert issue.path == ("attack_parameters.CrossModelAttack."
+                              "different_model_name_cross_model")
+        assert issue.suggestion == "AudioSealModel"
+
+    def test_a_discovered_cross_model_second_model_is_accepted(self, tmp_path):
+        config = load_configs([write(tmp_path, {
+            "attacks": {"list": ["CrossModelAttack"]},
+            "attack_parameters": {"CrossModelAttack": {
+                "different_model_name_cross_model": "PerthModel"}},
+        })], self.CROSS_MODEL, MODELS)[0]
+        assert config.parameters_for("CrossModelAttack", None) == \
+            {"different_model_name_cross_model": "PerthModel"}
+
 
 class TestStatisticCodes:
     def test_E021_unknown_statistic_suggests_closest(self, tmp_path):
@@ -465,6 +655,19 @@ class TestCropAndDurationCodes:
 
 
 class TestComparisonCodes:
+    # Two models compared over two selected groups, one of which computes
+    # accuracy's median but not its mean.
+    NARROWED = {
+        "models": ["AudioSealModel", "PerthModel"],
+        "attacks": {"list": ["GaussianNoiseAttack", "LowpassFilterAttack"]},
+        "metrics": {
+            "defaults": {"accuracy": {"statistics": ["mean", "median"]}},
+            "per_group": {
+                "audio_editing": {"accuracy": {"statistics": ["median"]}},
+            },
+        },
+    }
+
     def test_E035_unknown_primary_statistic(self, tmp_path):
         found, error = codes(write(tmp_path, {"comparison": {
             "primary_statistic": "medain"}}))
@@ -485,6 +688,58 @@ class TestComparisonCodes:
             "comparison": {"primary_statistic": "worst_case"},
         })], ATTACKS, MODELS)[0]
         assert config.comparison_primary_statistic == "worst_case"
+
+    def test_the_derived_primary_is_a_level_not_a_spread(self, tmp_path):
+        """Unset, it is the first configured statistic other than std."""
+        config = load_configs([write(tmp_path, {
+            "models": ["AudioSealModel", "PerthModel"],
+            "metrics": {"defaults": {
+                "accuracy": {"statistics": ["std", "mean"]}}},
+        })], ATTACKS, MODELS)[0]
+        assert config.comparison_primary_statistic == "mean"
+
+    def test_W015_a_selected_group_leaves_the_primary_out(self, tmp_path):
+        """Its rows read N/A in the main table, but every number is still
+        reported, so the run goes ahead."""
+        config = load_configs([write(tmp_path, {
+            **self.NARROWED, "comparison": {"primary_statistic": "mean"},
+        })], ATTACKS, MODELS)[0]
+
+        note = next(w for w in config.warnings if w.code == "W015")
+        assert note.path == "metrics.per_group.audio_editing.accuracy.statistics"
+        assert config.comparison_primary_statistic == "mean"
+
+    def test_W015_covers_the_derived_primary_too(self, tmp_path):
+        config = load_configs([write(tmp_path, self.NARROWED)],
+                              ATTACKS, MODELS)[0]
+        assert [w.path for w in config.warnings if w.code == "W015"] == \
+            ["metrics.per_group.audio_editing.accuracy.statistics"]
+
+    def test_no_W015_without_a_comparison(self, tmp_path):
+        """A single model has no comparison table to leave rows out of."""
+        config = load_configs([write(tmp_path, {
+            **self.NARROWED, "models": ["AudioSealModel"],
+            "comparison": {"primary_statistic": "mean"},
+        })], ATTACKS, MODELS)[0]
+        assert not [w for w in config.warnings if w.code == "W015"]
+
+    def test_no_W015_for_unselected_groups_or_subsections(self, tmp_path):
+        """A group this run does not reach has no rows, and a subsection's
+        accuracy statistics never reach the comparison."""
+        config = load_configs([write(tmp_path, {
+            **self.NARROWED,
+            "attacks": {"list": ["LowpassFilterAttack"]},
+            "metrics": {
+                "defaults": {"accuracy": {"statistics": ["mean", "median"]}},
+                "per_group": {
+                    "audio_distortion": {"accuracy": {"statistics": ["median"]}},
+                    "frequency_filtering": {
+                        "accuracy": {"statistics": ["median"]}},
+                },
+            },
+            "comparison": {"primary_statistic": "mean"},
+        })], ATTACKS, MODELS)[0]
+        assert not [w for w in config.warnings if w.code == "W015"]
 
 
 class TestSeedAndLegacyCodes:
@@ -556,7 +811,7 @@ class TestWarningsDoNotBlockTheRun:
         config = load_configs([write(tmp_path, {
             "attacks": {"groups": ["audio_distortion"]},
             "metrics": {"per_group": {"transmission": {"mcd": {"enabled": False}}}},
-        })], ATTACKS, MODELS)[0]
+        })], DISTORTION, MODELS)[0]
 
         warned = [w for w in config.warnings if w.code == "W001"]
         assert warned and warned[0].severity == "info"
@@ -584,6 +839,30 @@ class TestWarningsDoNotBlockTheRun:
         config = load_configs([write(tmp_path, {"duration_groups": {
             "boundaries": [], "include_overall": True}})], ATTACKS, MODELS)[0]
         assert any(w.code == "W005" for w in config.warnings)
+
+    def test_W016_robustness_metric_under_a_subsection(self, tmp_path):
+        """Accuracy, BER and EMR are tabled per top-level group; a
+        subsection splits only the signal-metric tables."""
+        config = load_configs([write(tmp_path, {"metrics": {
+            "defaults": {"accuracy": {"enabled": True}},
+            "per_group": {"temporal_editing": {
+                "accuracy": {"statistics": ["worst_case"]},
+                "ber": {"enabled": False},
+                "pesq": {"enabled": False},
+            }},
+        }})], ATTACKS, MODELS)[0]
+
+        warned = sorted(w.path for w in config.warnings if w.code == "W016")
+        assert warned == ["metrics.per_group.temporal_editing.accuracy",
+                          "metrics.per_group.temporal_editing.ber"]
+
+    def test_no_W016_on_a_top_level_group(self, tmp_path):
+        config = load_configs([write(tmp_path, {"metrics": {
+            "defaults": {"accuracy": {"enabled": True}},
+            "per_group": {"audio_editing": {
+                "accuracy": {"statistics": ["worst_case"]}}},
+        }})], ATTACKS, MODELS)[0]
+        assert not [w for w in config.warnings if w.code == "W016"]
 
 
 class TestDocumentationKeysAreIgnored:
@@ -709,7 +988,7 @@ class TestSelectionCoverage:
             "attack_parameters": {
                 "GaussianNoiseAttack": {"snr_db_gaussian_noise": 20},
             },
-        })], ATTACKS, MODELS)[0]
+        })], DISTORTION, MODELS)[0]
         assert not [w for w in config.warnings if w.code == "W011"]
 
     def test_no_warning_when_everything_runs(self, tmp_path):
@@ -718,6 +997,20 @@ class TestSelectionCoverage:
             "attack_parameters": {"EchoAttack": {"delay_echo": 0.2}},
         })], ATTACKS, MODELS)[0]
         assert not [w for w in config.warnings if w.code == "W011"]
+
+    def test_W011_detection_reliability_empty_selection_runs_no_attacks(
+            self, tmp_path):
+        """In this mode an empty selection measures the no-attack baseline
+        alone, so no attack's parameters are applied."""
+        config = load_configs([write(tmp_path, {
+            "mode": "detection_reliability",
+            "attacks": {"groups": [], "list": []},
+            "attack_parameters": {"EchoAttack": {"delay_echo": 0.2}},
+        })], ATTACKS, MODELS)[0]
+
+        note = next(w for w in config.warnings if w.code == "W011")
+        assert "EchoAttack" in note.path
+        assert note.severity == "info"
 
 
 class TestParkedEntries:
@@ -1001,6 +1294,40 @@ class TestABareAttackNameAndItsDefaultVersionAreOneTarget:
         assert config.parameters_for("GaussianNoiseAttack", "default") == \
             {"snr_db_gaussian_noise": 33}
         assert config.parameters_for("GaussianNoiseAttack", "mild") == {}
+
+    @pytest.mark.parametrize("listed", ["LowpassFilterAttack",
+                                        "LowpassFilterAttack:default"])
+    def test_E016_both_spellings_set_for_a_single_version_attack(
+            self, tmp_path, listed):
+        """Two entries for one target: neither may quietly win, whichever
+        spelling attacks.list uses."""
+        found, error = codes(write(tmp_path, {
+            "attacks": {"list": [listed]},
+            "attack_parameters": {
+                "LowpassFilterAttack": {"cutoff_lowpass": 2500},
+                "LowpassFilterAttack:default": {"cutoff_lowpass": 3000},
+            },
+        }), attacks_registry=self.SINGLE_VERSION)
+        assert "E016" in found
+        assert issue_for(error, "E016").path == \
+            "attack_parameters.LowpassFilterAttack:default"
+
+    def test_E016_both_spellings_set_for_a_multi_version_attack(self, tmp_path):
+        found, error = codes(write(tmp_path, {"attack_parameters": {
+            "GaussianNoiseAttack": {"snr_db_gaussian_noise": 20},
+            "GaussianNoiseAttack:default": {"snr_db_gaussian_noise": 5},
+        }}))
+        assert "E016" in found
+        assert issue_for(error, "E016").path == \
+            "attack_parameters.GaussianNoiseAttack:default"
+
+    def test_E016_needs_no_plugin_registry(self, tmp_path):
+        """The pass before plugins are imported reports it already."""
+        found, _ = codes(write(tmp_path, {"attack_parameters": {
+            "EchoAttack": {"delay_echo": 0.2},
+            "EchoAttack:default": {"delay_echo": 0.3},
+        }}), attacks_registry=None, models_registry=None)
+        assert "E016" in found
 
 
 class TestDefiningAVersionIgnoresDocumentationKeys:

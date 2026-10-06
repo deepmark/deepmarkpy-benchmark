@@ -1,6 +1,7 @@
 import inspect
 import logging
 import os
+import re
 
 import numpy as np
 import soundfile as sf
@@ -212,24 +213,43 @@ def expand_attacks(attack_types, attacks_registry, parameters=None,
             None,
         )
         if bitrate_key:
-            overrides = parameters(atk_name, version)
-            # An override may replace the bitrate list itself, in which case
-            # it decides how many runs there are.
-            bitrates = overrides.get(bitrate_key, config[bitrate_key])
-            if not isinstance(bitrates, list):
-                bitrates = [bitrates]
-            for val in bitrates:
-                if val not in _CODEC2_SUPPORTED:
-                    logger.warning(
-                        f"Skipping unsupported Codec2 bitrate: {val}. "
-                        f"Supported: {sorted(_CODEC2_SUPPORTED)}"
-                    )
-                    continue
-                display = f"{atk_name}_{val}"
-                if version:
-                    display += f" ({version})"
-                entry_kwargs = {**overrides, bitrate_key: val}
-                add((atk_name, display, entry_kwargs, version))
+            # Versions first, exactly as below, then one row per bitrate of
+            # each: a bare name runs every version here too.
+            is_multi = is_multi_version(atk_name, attacks_registry)
+            if version:
+                versions = [version]
+            elif is_multi or added:
+                versions = declared_versions(atk_name, attacks_registry) + list(added)
+            else:
+                versions = [None]
+            for name in versions:
+                # As in _version_entry: a config-defined version loads the
+                # plugin's default and takes every parameter from the config.
+                overrides = (
+                    dict(added[name]) if name in added
+                    else parameters(atk_name, name)
+                )
+                # An override may replace the bitrate list itself, in which case
+                # it decides how many runs there are.
+                bitrates = overrides.get(bitrate_key, config[bitrate_key])
+                if not isinstance(bitrates, list):
+                    bitrates = [bitrates]
+                for val in bitrates:
+                    if val not in _CODEC2_SUPPORTED:
+                        logger.warning(
+                            f"Skipping unsupported Codec2 bitrate: {val}. "
+                            f"Supported: {sorted(_CODEC2_SUPPORTED)}"
+                        )
+                        continue
+                    display = f"{atk_name}_{val}"
+                    # Labelled as _version_entry labels: only when there is
+                    # more than one version, so ':default' and a bare name
+                    # on a single-version plugin merge into one row.
+                    if name and (is_multi or added):
+                        display += f" ({name})"
+                    entry_kwargs = {**overrides, bitrate_key: val}
+                    add((atk_name, display, entry_kwargs,
+                         None if name in added else name))
             continue
 
         is_multi = is_multi_version(atk_name, attacks_registry)
@@ -284,6 +304,16 @@ def instantiate_attack(attack_cls, class_name, version):
             f"the attack without a version."
         )
     return attack_cls()
+
+
+# Characters a filename cannot hold on some platform: the path separators,
+# and the ones Windows reserves. A version name may contain any of them.
+_UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def audio_filename_label(display_name):
+    """``display_name`` as it may appear in a saved-audio filename; results and reports keep it verbatim."""
+    return _UNSAFE_FILENAME_CHARS.sub("_", display_name)
 
 
 def _version_entry(atk_name, version, label_version, added, parameters):
@@ -606,6 +636,13 @@ class Benchmark:
             parameters=attack_parameters,
             extra_versions=extra_attack_versions,
         )
+        # Before any audio, as detection reliability does: an unknown
+        # second model otherwise surfaced partway through the first file.
+        for class_name, _display, overrides, _version in expanded_attacks:
+            if class_name == "CrossModelAttack":
+                resolve_cross_model_name(
+                    {**kwargs, **overrides}, self.attacks, self.models,
+                )
 
         results = {}
 
@@ -767,7 +804,7 @@ class Benchmark:
                         if attacked_audio.ndim == 1
                         else attacked_audio
                     )
-                    attacked_filename = f"{base_filename}_{attack_name}.wav"
+                    attacked_filename = f"{base_filename}_{audio_filename_label(attack_name)}.wav"
                     attacked_path = os.path.join(output_dir, attacked_filename)
                     sf.write(attacked_path, attacked_to_save, sampling_rate)
                     if verbose:

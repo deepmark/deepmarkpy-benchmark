@@ -91,7 +91,8 @@
 
       "_desynchronization": "The time axis moves, so only mcd, visqol and the reference-free NISQA survive; the sample-aligned ones would report the shift as damage.",
       "desynchronization": {
-        "mcd": { "enabled": true }, "visqol": { "enabled": true },
+        "pesq": { "enabled": true }, "mcd": { "enabled": true }, "visqol": { "enabled": true },
+        "stoi": { "enabled": true },
         "nisqa_mos": { "enabled": true }, "nisqa_noi": { "enabled": true },
         "nisqa_dis": { "enabled": true }, "nisqa_col": { "enabled": true },
         "nisqa_loud": { "enabled": true }

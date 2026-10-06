@@ -1,11 +1,14 @@
 """Tests for the detection_reliability module."""
 
+import json
 import time
 
 import numpy as np
 import pytest
 
+from deepmarkpy.config import init_template, load_config_data
 from deepmarkpy.utils.detection_reliability import (
+    _compute_metric_stats,
     _detect,
     run_detection_reliability,
 )
@@ -49,6 +52,13 @@ class TestDetect:
             _wm, conf = detect_output
             return float(conf) >= self._threshold
 
+    class _NumpyConfidenceModel(_ConfidenceModel):
+        """Compares a numpy confidence, so its decision is a numpy.bool_."""
+
+        def is_watermarked(self, detect_output):
+            _wm, conf = detect_output
+            return np.float32(conf) >= self._threshold
+
     def test_zero_bit_positive(self):
         model = self._ZeroBitModel(np.array(1))
         assert _detect(model, np.zeros(100), 16000) is True
@@ -68,6 +78,16 @@ class TestDetect:
     def test_confidence_at_threshold(self):
         model = self._ConfidenceModel(np.array([1, 0, 1]), 0.5, threshold=0.5)
         assert _detect(model, np.zeros(100), 16000) is True
+
+    def test_numpy_confidence_above_threshold(self):
+        """A numpy.bool_ decision comes back as a Python bool, which the
+        result's JSON file can hold."""
+        model = self._NumpyConfidenceModel(np.array([1, 0, 1]), 0.8, threshold=0.5)
+        assert _detect(model, np.zeros(100), 16000) is True
+
+    def test_numpy_confidence_below_threshold(self):
+        model = self._NumpyConfidenceModel(np.array([1, 0, 1]), 0.3, threshold=0.5)
+        assert _detect(model, np.zeros(100), 16000) is False
 
 
 class TestFormatHelpers:
@@ -145,6 +165,20 @@ class TestRunDetectionReliability:
             _wm, confidence = detect_output
             return float(confidence) >= 0.5
 
+    class _MockNumpyConfidenceModel(_MockConfidenceModel):
+        """Compares a numpy confidence, so its decision is a numpy.bool_."""
+
+        def is_watermarked(self, detect_output):
+            _wm, confidence = detect_output
+            return np.float32(confidence) >= 0.5
+
+    class _MockAttack:
+        def __init__(self, version=None):
+            self.config = {}
+
+        def apply(self, audio, **kwargs):
+            return np.array(audio, copy=True)
+
     class _MockUnsupportedModel:
         def generate_watermark(self):
             return np.array([1, 0, 1, 0])
@@ -211,6 +245,35 @@ class TestRunDetectionReliability:
         assert result["no_attack"]["false_positive_count"] == 1
         assert result["no_attack"]["false_negative_count"] == 0
 
+    def test_numpy_decisions_are_stored_as_python_bools(self, tmp_path):
+        """The mode writes its result with json.dump, which cannot hold the
+        numpy.bool_ a model deciding by a numpy comparison returns."""
+        import soundfile as sf
+        from deepmarkpy.run import to_json_safe
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+
+        audio_file = tmp_path / "test.wav"
+        sr = 16000
+        audio = np.sin(np.linspace(0, 1, sr)).astype(np.float32)
+        sf.write(str(audio_file), audio, sr)
+
+        benchmark = self._MockBenchmark(
+            model_cls=self._MockNumpyConfidenceModel,
+            is_zero_bit=False, detection_threshold=0.5,
+        )
+        benchmark.attacks = {
+            "GaussianNoiseAttack": {"class": self._MockAttack, "config": {}},
+        }
+        result = run_detection_reliability(
+            benchmark, [str(audio_file)], "TestModel",
+            attack_types=["GaussianNoiseAttack"], metric_resolver=MetricResolver(),
+        )
+
+        json.dumps(to_json_safe(dict(result)))
+        record = result["per_file"][str(audio_file)]
+        assert record["no_attack_fp"] is True
+        assert record["attacks"]["GaussianNoiseAttack"]["fp"] is True
+
     def test_rejects_unsupported_model(self, tmp_path):
         audio_file = tmp_path / "test.wav"
         import soundfile as sf
@@ -234,6 +297,10 @@ class TestRunDetectionReliability:
 
 
 class TestReportGeneration:
+    BASELINE_QUALITY_CAPTION = (
+        "Audio quality of the watermarked audio compared to the original"
+    )
+
     def test_generates_tex_file(self, tmp_path):
         result = {
             "model_name": "PerthModel",
@@ -310,6 +377,74 @@ class TestReportGeneration:
             content = f.read()
         assert "Audio quality" in content
         assert "4.10" in content
+
+    @staticmethod
+    def _shipped_template_resolver():
+        raw = json.loads(init_template("detection_reliability"))
+        return load_config_data(raw, quiet=True).resolver
+
+    @staticmethod
+    def _baseline_report(tmp_path, resolver, **kwargs):
+        """The .tex for three files whose no-attack baseline was measured
+        over every signal metric any group enables, as the run measures it."""
+        measured = resolver.all_signal_metrics()
+        per_file = {
+            f"clip{index}.wav": {
+                "no_attack_fp": False,
+                "no_attack_fn": False,
+                "no_attack_metrics": {m: 4.0 + 0.1 * index for m in measured},
+                "attacks": {},
+            }
+            for index in range(3)
+        }
+        result = {
+            "model_name": "PerthModel",
+            "is_zero_bit": True,
+            "detection_threshold": None,
+            "n_files": 3,
+            "no_attack": {
+                "false_positive_count": 0,
+                "false_negative_count": 0,
+                "metrics": {
+                    m: _compute_metric_stats(
+                        [record["no_attack_metrics"][m]
+                         for record in per_file.values()],
+                        resolver.statistics_for(None, m), m,
+                    )
+                    for m in measured
+                },
+            },
+            "attacks": {},
+            "per_file": per_file,
+        }
+        tex_path = generate_detection_reliability_report(
+            result, report_dir=str(tmp_path), resolver=resolver, **kwargs,
+        )
+        with open(tex_path) as f:
+            return f.read()
+
+    def test_the_shipped_template_reports_the_baseline_quality(self, tmp_path):
+        """The template enables its signal metrics per group and none under
+        metrics.defaults; the baseline tables print what the groups enable."""
+        resolver = self._shipped_template_resolver()
+        assert resolver.signal_metrics_for_group(None) == []
+        content = self._baseline_report(tmp_path, resolver)
+        assert self.BASELINE_QUALITY_CAPTION in content
+        assert "Speech intelligibility of the watermarked audio" in content
+        assert _metric_label("pesq") in content
+        assert _metric_label("stoi") in content
+
+    def test_every_duration_part_reports_the_baseline_quality(self, tmp_path):
+        content = self._baseline_report(
+            tmp_path, self._shipped_template_resolver(),
+            duration_partitions=[
+                ("< 5s", ["clip0.wav"]),
+                ("> 5s", ["clip1.wav", "clip2.wav"]),
+                ("Overall", ["clip0.wav", "clip1.wav", "clip2.wav"]),
+            ],
+        )
+        assert content.count("\\section{No-Attack Baseline}") == 3
+        assert content.count(self.BASELINE_QUALITY_CAPTION) == 3
 
 
 class TestTimingsMeanTheSameThingHere:

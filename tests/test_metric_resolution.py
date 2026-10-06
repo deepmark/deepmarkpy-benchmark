@@ -22,6 +22,7 @@ from deepmarkpy.utils.attack_groups import (
     CONFIG_GROUP_KEYS,
 )
 from deepmarkpy.utils.metric_resolver import (
+    ALWAYS_ON_METRICS,
     ALL_STATISTICS,
     CANONICAL_METRIC_ORDER,
     EFFICIENCY_METRICS,
@@ -204,7 +205,8 @@ class TestRequirement4DefaultsReproduceTheTaxonomy:
                 + definition["nisqa_metrics"]
             )
             enabled = set(resolver.signal_metrics_for_group(group_key))
-            assert enabled == declared, f"{group_key} drifted from ATTACK_GROUPS"
+            assert enabled == declared | set(ALWAYS_ON_METRICS), \
+                f"{group_key} drifted from ATTACK_GROUPS"
 
     def test_builtin_matrix_matches_attack_subgroups_exactly(self):
         resolver = MetricResolver.from_attack_groups()
@@ -326,6 +328,23 @@ class TestCalculateQualityMetricsSwitch:
         resolver = load_configs([str(path)])[0].resolver
         assert resolver.is_enabled("audio_distortion", "mcd") is False
         assert resolver.is_enabled("audio_distortion", "pesq") is True
+
+    def test_turning_it_on_never_drops_the_always_on_trio(self, tmp_path):
+        """Without a ``metrics`` block, on only adds to what off computes.
+
+        That is what the ``--calculate_quality_metrics`` flag produces: the
+        built-in matrix decides, and it has to keep PESQ and STOI for the
+        desynchronization attacks, whose taxonomy entry names neither.
+        """
+        on = build(tmp_path, calculate_quality_metrics=True)
+        off = build(tmp_path, calculate_quality_metrics=False)
+        dropped = {
+            attack: sorted(set(off.metrics_for_attack(attack))
+                           - set(on.metrics_for_attack(attack)))
+            for definition in ATTACK_GROUPS.values()
+            for attack in definition["attacks"]
+        }
+        assert {a: m for a, m in dropped.items() if m} == {}
 
     def test_derived_metrics_still_honour_their_flags_when_off(self, tmp_path):
         """ber and emr come from the accuracy array, so they cost nothing."""
