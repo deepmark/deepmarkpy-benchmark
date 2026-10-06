@@ -8,6 +8,7 @@ be reworded but a code cannot silently stop firing.
 """
 
 import json
+import re
 
 import pytest
 
@@ -19,6 +20,7 @@ from deepmarkpy.config import (
     load_config_data,
     load_configs,
 )
+from deepmarkpy.plugin_manager import PluginManager
 
 
 # A minimal file that validates, used as the base every case perturbs.
@@ -629,6 +631,16 @@ class TestTemplates:
         """
         config = load_configs([f"configs/{mode}.json"])[0]
         assert config.mode == mode
+
+    @pytest.mark.parametrize("mode", ["benchmark", "detection_reliability"])
+    def test_template_attack_list_is_the_discovered_set(self, mode):
+        """The names and counts a template documents are what discovery finds."""
+        text = init_template(mode)
+        discovered = sorted(PluginManager().get_attacks())
+        listed = json.loads(text)["_attacks_available"].split(": ", 1)[1]
+        assert listed.rstrip(".").split(", ") == discovered
+        for count in re.findall(r"all (\d+)", text):
+            assert int(count) == len(discovered)
 
     def test_init_rejects_an_unknown_mode(self):
         with pytest.raises(ConfigError) as excinfo:

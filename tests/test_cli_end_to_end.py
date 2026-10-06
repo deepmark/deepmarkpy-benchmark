@@ -779,17 +779,17 @@ class TestParameterProvenance:
         benchmark = Benchmark(external_plugins_dir=plugins_dir)
         config = load_configs(
             [write_config(tmp_path, "partial.json",
-                          attacks={"list": ["ReplacementAttack"]},
+                          attacks={"list": ["FlipSamplesAttack"]},
                           attack_parameters={
-                              "ReplacementAttack": {"block_size_replacement": 512},
+                              "FlipSamplesAttack": {"num_flip_samples": 50},
                           })],
             benchmark.attacks, benchmark.models,
         )[0]
 
         resolved = run_module.resolved_attack_parameters(benchmark, config)
-        entry = resolved["ReplacementAttack"]
-        assert entry["block_size_replacement"] == 512, "override not applied"
-        assert "overlap_factor_replacement" in entry, (
+        entry = resolved["FlipSamplesAttack"]
+        assert entry["num_flip_samples"] == 50, "override not applied"
+        assert "duration_flip_samples" in entry, (
             "untouched plugin parameters are missing, so the record is "
             "not what apply() will see"
         )
@@ -803,7 +803,7 @@ class TestParameterReportingPerMode:
     """
 
     def test_no_attacks_mode_reports_no_attack_parameters(self, tmp_path, plugins_dir):
-        """This mode applies none, so listing all 47 would be nonsense."""
+        """This mode applies none, so listing every attack would be nonsense."""
         from deepmarkpy.benchmark import Benchmark
         from deepmarkpy.config import load_configs
 

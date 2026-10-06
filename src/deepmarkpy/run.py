@@ -722,8 +722,8 @@ def _log_attack_parameters(benchmark, config, only_configured):
 
     Args:
         only_configured: log just the rows the config file changed. A full
-            attack set is 47 rows, which is noise when nothing was
-            overridden; --validate-only passes False to show everything
+            attack set is one row per attack, which is noise when nothing
+            was overridden; --validate-only passes False to show everything
             it selected.
     """
     try:
