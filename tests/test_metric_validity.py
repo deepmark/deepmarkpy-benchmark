@@ -52,7 +52,6 @@ class TestEveryAttackIsGrouped:
 
     @pytest.mark.parametrize("attack,group", [
         ("AdditiveNoiseAttack", "audio_distortion"),
-        ("Replacement2Attack", "desynchronization"),
         ("VAEAttack", "ai_attacks"),
     ])
     def test_previously_orphaned_attacks_sit_with_their_family(self, attack, group):
@@ -65,7 +64,7 @@ class TestEveryAttackIsGrouped:
         )
 
         resolver = MetricResolver.from_attack_groups()
-        assert len(resolver.metrics_for_attack("Replacement2Attack")) < len(SIGNAL_METRICS)
+        assert len(resolver.metrics_for_attack("ZeroCrossInsertsAttack")) < len(SIGNAL_METRICS)
         assert set(resolver.metrics_for_attack("UnknownAttack")) == set(SIGNAL_METRICS)
 
 

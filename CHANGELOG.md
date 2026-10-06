@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0.0 — 2026-10-06
+
+- Removed `ReplacementAttack` and `Replacement2Attack`. No other attack's
+  output changes.
+- `tqdm` is no longer a package dependency.
+
 ## v2.0.0 — 2026-08-01
 
 **Attack outputs change. Results are not comparable with v1.x.** v1.x preserved

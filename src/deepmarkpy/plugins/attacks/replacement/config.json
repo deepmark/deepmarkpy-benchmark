@@ -1,7 +1,0 @@
-{
-    "block_size_replacement": 1024,
-    "overlap_factor_replacement": 0.75,
-    "lower_bound_replacement": 0,
-    "upper_bound_replacement": 10,
-    "use_masking_replacement": false
-}

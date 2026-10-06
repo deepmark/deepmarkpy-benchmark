@@ -5,7 +5,7 @@ plugin's engine class in its own serving layer and images. It never imports this
 repo's `app.py` and never depends on the HTTP layer.
 
 ```bash
-pip install "deepmarkpy @ git+https://github.com/deepmark/deepmarkpy-benchmark@v2.0.0"
+pip install "deepmarkpy @ git+https://github.com/deepmark/deepmarkpy-benchmark@v3.0.0"
 ```
 
 ```python

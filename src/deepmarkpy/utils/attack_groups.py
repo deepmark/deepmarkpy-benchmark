@@ -85,8 +85,6 @@ ATTACK_GROUPS = {
             "InvertedTimeStretchAttack",
             "ZeroCrossInsertsAttack",
             "FlipSamplesAttack",
-            "ReplacementAttack",
-            "Replacement2Attack",
         ],
         "quality_metrics": ["mcd", "visqol"],
         "intelligibility_metrics": [],
