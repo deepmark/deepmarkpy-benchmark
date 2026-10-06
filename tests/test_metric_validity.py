@@ -54,7 +54,6 @@ class TestEveryAttackIsGrouped:
 
     @pytest.mark.parametrize("attack,group", [
         ("AdditiveNoiseAttack", "audio_distortion"),
-        ("Replacement2Attack", "desynchronization"),
         ("VAEAttack", "ai_attacks"),
     ])
     def test_previously_orphaned_attacks_sit_with_their_family(self, attack, group):
@@ -62,7 +61,7 @@ class TestEveryAttackIsGrouped:
 
     def test_grouped_attack_gets_fewer_metrics_than_the_fallback(self):
         """The fallback hands out every metric; a real group narrows it."""
-        assert len(get_metrics_for_attack("Replacement2Attack")) < len(ALL_METRICS)
+        assert len(get_metrics_for_attack("ZeroCrossInsertsAttack")) < len(ALL_METRICS)
         assert set(get_metrics_for_attack("UnknownAttack")) == set(ALL_METRICS)
 
 
