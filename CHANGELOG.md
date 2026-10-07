@@ -2,8 +2,37 @@
 
 ## v3.0.0 — 2026-10-06
 
+**Measurement settings move from flags into one JSON config file per mode.**
+`--config` runs one or more of them, `--init <mode>` prints a commented
+template, and `--validate-only` checks a file against the discovered plugins
+without running anything. The validator reports every problem together, each
+with a stable code and its JSON path. Without `--config` the 2.x flags still
+run: they are assembled into a config and validated the same way.
+
+### Added
+
+- Per-group metrics and statistics: each attack group enables its own metrics
+  and the statistics they are reported at.
+- Per-version attack parameters (`AttackName:version`), including versions a
+  config defines itself.
+- Duration groups: a report part per audio-length bin.
+- An `efficiency` section, off by default: embed, detect and attack latency,
+  and the memory of the containers a run used.
+- Attack-strength curves in the benchmark report: accuracy across an attack's
+  versions.
+
+### Breaking
+
 - Removed `ReplacementAttack` and `Replacement2Attack`. No other attack's
   output changes.
+- Each `metrics.<metric>` in `detection_reliability.json` is now an object of
+  statistics rather than the mean.
+- Attack parameter flags (`--snr_db_gaussian_noise`) must be spelled in full;
+  2.x accepted an unambiguous prefix.
+- The CLI now exits `1` when a run fails, and `2` when the configuration is
+  invalid or a model service is unreachable, in which case nothing runs.
+- Internal Python APIs of `deepmarkpy.run` and the report generators changed.
+  The engine API in `docs/CONSUMING.md` did not.
 - `tqdm` is no longer a package dependency.
 
 ## v2.0.0 — 2026-08-01
