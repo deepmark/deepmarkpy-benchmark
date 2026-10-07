@@ -1,25 +1,9 @@
-"""The basic benchmark report: accuracy per attack, plus a chart.
+"""The basic benchmark report: accuracy per attack, plus charts.
 
-Every table's columns come from the ``MetricResolver`` the config file
-built. Nothing here decides which metric or which statistic to show, so
-adding ``std`` to a metric in the config makes a ``Std`` column appear,
-and removing a metric removes its table. There is no fallback column set
-to override the config.
-
-Attacks are grouped into sections by attack family, because two families
-can enable different metrics and a single flat table would be mostly
-holes.
-
-Within a section:
-
-* one accuracy table -- a column per configured accuracy statistic, plus
-  BER and EMR when enabled and reduced to a single number;
-* one table per metric configured with two or more statistics;
-* one compact table collecting every remaining metric, one column each.
-
-That last rule keeps the common case (one statistic per metric) to a
-single readable table without ever dropping something the config asked
-for.
+One section per attack family, with columns from the config's
+``MetricResolver``: an accuracy table (BER and EMR join it when each takes
+one column), a table per metric configured with several statistics, one
+compact table for the remaining metrics, then the timing tables.
 """
 
 import json
@@ -36,13 +20,17 @@ from deepmarkpy.utils.attack_groups import (
 )
 from deepmarkpy.utils.latex_helpers import (
     MetricCaveats,
-    build_longtable,
+    compact_header,
     container_section,
+    crop_note,
     display_attack_name,
     duration_label_tex,
+    efficiency_tables,
+    embedding_cost_line,
     figure_block,
     format_emr_cell,
     format_metric_cell,
+    grid_table,
     make_preamble,
     part_heading,
     slugify,
@@ -67,15 +55,11 @@ class BenchmarkReportGenerator:
                  is_zero_bit: bool = False):
         """
         Args:
-            report_dir: where the ``.tex``, ``.pdf`` and chart are written.
-            resolver: decides every table's metrics and statistic columns.
-                Defaults to the built-in matrix declared by
-                ``ATTACK_GROUPS`` -- the same one ``--init`` ships -- so
-                the generator stays usable as a library.
-            is_zero_bit: whether the model reports detection rather than
-                bit agreement. It only moves the reference line the charts
-                draw: a failed multi-bit detection lands at chance (50\\%),
-                a failed zero-bit detection lands at 0.
+            report_dir: where the ``.tex``, ``.pdf`` and charts are written.
+            resolver: decides every table's metrics and statistic columns;
+                defaults to the built-in ``ATTACK_GROUPS`` matrix.
+            is_zero_bit: the model reports detection rather than bit
+                agreement, which moves the charts' chance line from 50 to 0.
         """
         self.report_dir = report_dir
         self.resolver = resolver or MetricResolver.from_attack_groups()
@@ -99,36 +83,22 @@ class BenchmarkReportGenerator:
 
     @property
     def _accuracy_statistic(self) -> str:
-        """The accuracy statistic the chart and the headline mean use.
-
-        The first one the config lists for accuracy, so a config that
-        drops ``mean`` still produces a chart rather than an empty one.
-        """
+        """The accuracy statistic read outside any group."""
         return self._accuracy_statistic_for(None)
 
     def _accuracy_statistic_for(self, attack_name=None) -> str:
         """The accuracy statistic to read for one attack.
 
-        A per-group override means two attacks in the same report can
-        carry different accuracy statistics, and ``compute_mean_accuracy``
-        writes each attack under the statistic *its own group* asked for.
-        Reading the report-wide default off an attack whose group dropped
-        it finds nothing, so the attack's group decides the key here.
+        The first its group configures that is a level rather than the
+        ``std`` spread, else ``mean``.
         """
         group_key = (self.resolver.group_for_attack(attack_name)
                      if attack_name else None)
         configured = self.resolver.statistics_for(group_key, "accuracy")
-        # The first *level* statistic: a std is a spread, and read as
-        # a score it names the steadiest attack the most damaging.
         return next((s for s in configured if s != "std"), "mean")
 
     def _accuracy_label_for(self, stats) -> str:
-        """Axis label for a chart drawn over ``stats``.
-
-        Names the statistic only when every attack in the figure shares
-        one. Groups configured differently have no single honest label,
-        and printing one group's would mislabel the rest.
-        """
+        """Axis label for a chart over ``stats``: their shared statistic, if any."""
         statistics = {
             self._accuracy_statistic_for(name)
             for name in (stats or {})
@@ -142,11 +112,9 @@ class BenchmarkReportGenerator:
     def _accuracy_of(self, value: StatsValue, attack_name=None) -> float:
         """Headline accuracy for an attack, in its group's statistic.
 
-        Stats entries are either a bare float (a caller passing accuracy
-        directly) or the per-attack dict ``compute_mean_accuracy`` writes.
-        The fallbacks matter: an entry that carries accuracy under some
-        other statistic must not be read as zero, because a zero here is
-        indistinguishable from a watermark that did not survive.
+        A bare float is the accuracy itself. A stats dict without that
+        statistic falls back to the mean, then to any accuracy statistic,
+        and only then to 0.
         """
         if not isinstance(value, Mapping):
             return float(value or 0.0)
@@ -180,12 +148,7 @@ class BenchmarkReportGenerator:
 
     def create_gradient_bar_chart(self, stats: Dict[str, StatsValue],
                                   output_path: str) -> bool:
-        """Attacks ranked worst-first by the configured accuracy statistic.
-
-        Ranked, not alphabetical: the question a reader brings to this
-        figure is which attack does the most damage, and an alphabetical
-        axis answers a different one.
-        """
+        """Draw the attacks ranked worst-first by their accuracy statistic."""
         values = {
             display_attack_name(name): self._accuracy_of(value, name)
             for name, value in stats.items()
@@ -234,8 +197,7 @@ class BenchmarkReportGenerator:
             stats: ``{attack_name: per-attack stats dict}`` for the attacks
                 in this group.
             group_key: which group's configuration to apply. ``None`` uses
-                ``metrics.defaults`` alone, which is what a caller with an
-                ungrouped stats dict gets.
+                ``metrics.defaults`` alone.
             label_suffix: appended to every ``\\label`` so the same group
                 can appear once per duration bin without clashing.
         """
@@ -248,17 +210,21 @@ class BenchmarkReportGenerator:
             else "different attack types"
         )
         suffix = f"_{label_suffix}" if label_suffix else ""
-        group_name = group_key or "all"
+        name_key = f"{group_key or 'all'}{suffix}"
 
-        name_key = f"{group_name}{suffix}"
+        def per_metric_table(metric, statistics):
+            return self._metric_table(
+                sorted_attacks, [(metric, s) for s in statistics],
+                [stat_header(s) for s in statistics],
+                f"{metric_label(metric)} statistics for {caption_word}.",
+                f"tab:benchmark_{metric}_{name_key}",
+            )
 
-        # The strength curves read the accuracy column, so they follow the
-        # accuracy table rather than the foot of the document, where the
-        # reader would have to carry the section's numbers to them.
+        # The strength curves read the accuracy column, so they follow its table.
         tables = [
             self._accuracy_table(
                 sorted_attacks, group_key, caption_word,
-                f"tab:benchmark_accuracy_{group_name}{suffix}",
+                f"tab:benchmark_accuracy_{name_key}",
             ) + self._strength_figure(stats, name_key)
         ]
 
@@ -266,127 +232,61 @@ class BenchmarkReportGenerator:
         compact = []
         silent = []
         for metric in enabled:
-            if metric in ("accuracy", "ber", "emr"):
-                continue
-            # Timings have their own tables below, built by
-            # _efficiency_table; without this they would be built twice.
-            if metric in EFFICIENCY_METRICS:
+            # Accuracy, BER and EMR are in the accuracy table; timings below.
+            if metric in ("accuracy", "ber", "emr") or metric in EFFICIENCY_METRICS:
                 continue
             if not self._has_data(sorted_attacks, metric):
-                # Configured but nothing came back -- usually a metric whose
-                # service or optional package is missing. A table of N/A
-                # rows says the same thing in far more space, and dropping
-                # it without a word would hide that the config asked for it.
                 silent.append(metric)
                 continue
             statistics = self.resolver.statistics_for(group_key, metric)
             if len(statistics) > 1:
-                tables.append(self._metric_table(
-                    sorted_attacks, metric, statistics, caption_word,
-                    f"tab:benchmark_{metric}_{group_name}{suffix}",
-                ))
+                tables.append(per_metric_table(metric, statistics))
             elif statistics:
                 compact.append((metric, statistics[0]))
 
-        # BER is a metric like any other, but with a single statistic it
-        # reads better beside the accuracy it is derived from, so it is
-        # already in the accuracy table; with several it gets its own.
+        # BER with one statistic is a column of the accuracy table.
         if "ber" in enabled and not self.is_zero_bit:
             ber_statistics = self.resolver.statistics_for(group_key, "ber")
             if len(ber_statistics) > 1:
-                tables.append(self._metric_table(
-                    sorted_attacks, "ber", ber_statistics,
-                    caption_word, f"tab:benchmark_ber_{group_name}{suffix}",
-                ))
+                tables.append(per_metric_table("ber", ber_statistics))
 
         if compact:
-            tables.append(self._compact_metric_table(
-                sorted_attacks, compact, caption_word,
-                f"tab:benchmark_metrics_{group_name}{suffix}",
+            tables.append(self._metric_table(
+                sorted_attacks, compact,
+                [compact_header(m, s) for m, s in compact],
+                f"Audio quality and intelligibility for {caption_word}.",
+                f"tab:benchmark_metrics_{name_key}",
             ))
 
-        efficiency = self._efficiency_table(
+        tables.append(self._efficiency_table(
             sorted_attacks, group_key, caption_word,
-            f"tab:benchmark_efficiency_{group_name}{suffix}",
-        )
-        if efficiency:
-            tables.append(efficiency)
+            f"tab:benchmark_efficiency_{name_key}",
+        ))
 
         body = "\n\n".join(t for t in tables if t)
         return body + self._footnotes(sorted_attacks, silent)
 
     def _efficiency_table(self, sorted_attacks, group_key, caption_word, label):
-        """Timings, in their own tables below the quality ones.
-
-        Never a column beside PESQ or accuracy: those reproduce from a
-        seed and these do not. Split the same way the quality tables are
-        -- a metric with two or more statistics gets its own table, and
-        the single-statistic ones share one -- because three metrics times
-        four statistics is thirteen columns on one page.
-        """
+        """Timing tables, one row per attack; embedding time is in the summary."""
         metrics = [
             m for m in self.resolver.metrics_for_group(group_key,
                                                        bucket="efficiency")
-            if self._has_data(sorted_attacks, m)
-            # Embedding does not depend on the attack, so it is not a
-            # column in a table whose rows are attacks.
             if m not in PER_FILE_EFFICIENCY_METRICS
+            and self._has_data(sorted_attacks, m)
         ]
-        if not metrics:
-            return ""
-
-        note = (
-            f" These depend on the machine and on whether the plugin ran "
-            f"natively or over HTTP, so they do not reproduce across runs "
-            f"the way the measurements above do."
-        )
-
-        tables = []
-        compact = []
-        for metric in metrics:
-            statistics = self.resolver.statistics_for(group_key, metric)
-            if len(statistics) > 1:
-                tables.append(self._timing_table(
-                    sorted_attacks, [(metric, s) for s in statistics],
-                    [stat_header(s) for s in statistics],
-                    f"{metric_label(metric)} for {caption_word}.{note}",
-                    f"{label}_{metric}",
-                ))
-            elif statistics:
-                compact.append((metric, statistics[0]))
-
-        if compact:
-            tables.append(self._timing_table(
-                sorted_attacks, compact,
-                [metric_label(m) for m, _ in compact],
-                f"Processing time for {caption_word}.{note}", label,
-            ))
-
-        return "\n\n".join(t for t in tables if t)
-
-    def _timing_table(self, sorted_attacks, columns, headers, caption, label):
-        """One timing table: a row per attack, a column per (metric, statistic)."""
-        rows = []
-        for attack_name, value in sorted_attacks:
-            cells = [display_attack_name(attack_name)]
-            for metric, statistic in columns:
-                raw = self._stat_of(value, f"{metric}_{statistic}")
-                cells.append("--" if raw is None else f"{float(raw):.4f}")
-            rows.append("    " + " & ".join(cells) + " \\\\")
-
-        return build_longtable(
-            "l" + "c" * len(columns), " & ".join(["Attack Type"] + headers),
-            rows, caption, label,
+        return efficiency_tables(
+            "Attack Type",
+            [(display_attack_name(name), value) for name, value in sorted_attacks],
+            metrics,
+            lambda metric: self.resolver.statistics_for(group_key, metric),
+            f"for {caption_word}", label,
+            value_of=lambda value, metric, statistic: self._stat_of(
+                value, f"{metric}_{statistic}"),
         )
 
     @staticmethod
     def _has_data(sorted_attacks, metric):
-        """Whether any attack produced any value for ``metric``.
-
-        Looks for any ``<metric>_<statistic>`` key rather than the
-        configured ones, so a stats file written under a different config
-        is still recognised as carrying data.
-        """
+        """Whether any attack has a value under any ``<metric>_<statistic>`` key."""
         prefix = f"{metric}_"
         return any(
             key.startswith(prefix) and key != f"{metric}_n" and value is not None
@@ -398,7 +298,7 @@ class BenchmarkReportGenerator:
     def _accuracy_table(self, sorted_attacks, group_key, caption_word, label):
         """Accuracy statistics, plus single-valued BER and EMR."""
         statistics = self.resolver.statistics_for(group_key, "accuracy")
-        headers = ["Attack Type"] + [stat_header(s) for s in statistics]
+        headers = [stat_header(s) for s in statistics]
 
         ber_statistics = self.resolver.statistics_for(group_key, "ber")
         inline_ber = (
@@ -415,7 +315,7 @@ class BenchmarkReportGenerator:
 
         rows = []
         for attack_name, value in sorted_attacks:
-            cells = [display_attack_name(attack_name)]
+            cells = []
             n_files = self._stat_of(value, "accuracy_n")
             failures = self._stat_of(value, "detection_failures", 0) or 0
 
@@ -423,17 +323,17 @@ class BenchmarkReportGenerator:
                 raw = self._stat_of(value, f"accuracy_{statistic}")
                 if raw is None and not isinstance(value, Mapping):
                     raw = float(value) if statistic == "mean" else None
-                cell = "--" if raw is None else format_metric_cell("accuracy", raw)
-                # Mark only the headline column: repeating the count on
-                # every percentile would say the same thing eight times.
+                cell = format_metric_cell("accuracy", raw, "--")
+                # Only the headline column carries the scored-file count.
                 if (statistic == statistics[0] and failures and raw is not None
                         and n_files is not None):
                     cell += f"\\textsuperscript{{({int(n_files) - int(failures)})}}"
                 cells.append(cell)
 
             if inline_ber:
-                raw = self._stat_of(value, f"ber_{ber_statistics[0]}")
-                cells.append("--" if raw is None else format_metric_cell("ber", raw))
+                cells.append(format_metric_cell(
+                    "ber", self._stat_of(value, f"ber_{ber_statistics[0]}"), "--",
+                ))
 
             if show_emr:
                 cells.append(format_emr_cell(
@@ -442,88 +342,43 @@ class BenchmarkReportGenerator:
                     self._stat_of(value, "emr_rate"),
                 ))
 
-            rows.append("    " + " & ".join(cells) + " \\\\")
+            rows.append((display_attack_name(attack_name), cells))
 
-        return build_longtable(
-            "l" + "c" * (len(headers) - 1),
-            " & ".join(headers),
-            rows,
-            f"Watermark detection accuracy for {caption_word}.",
-            label,
+        return grid_table(
+            "Attack Type", headers, rows,
+            f"Watermark detection accuracy for {caption_word}.", label,
         )
 
-    def _metric_table(self, sorted_attacks, metric, statistics,
-                      caption_word, label):
-        """One metric, one column per configured statistic."""
-        headers = ["Attack Type"] + [stat_header(s) for s in statistics]
+    def _metric_table(self, sorted_attacks, columns, headers, caption, label):
+        """One row per attack, one column per ``(metric, statistic)``.
 
+        A metric's first statistic carries the caveat mark and, when the
+        metric scored fewer files than the accuracy, its ``$n$``.
+        """
         rows = []
         caveats = MetricCaveats()
         for attack_name, value in sorted_attacks:
-            cells = [display_attack_name(attack_name)]
             n_files = self._stat_of(value, "accuracy_n")
-            metric_n = self._stat_of(value, f"{metric}_n")
-            for statistic in statistics:
+            first = {}
+            cells = []
+            for metric, statistic in columns:
+                first.setdefault(metric, statistic)
                 raw = self._stat_of(value, f"{metric}_{statistic}")
                 if raw is None:
                     cells.append("N/A")
                     continue
                 cell = format_metric_cell(metric, raw)
-                # Say once per row, not once per column, that the attack
-                # makes this metric unreadable, or that it scored fewer
-                # files than the accuracy beside it.
-                if statistic == statistics[0]:
+                if statistic == first[metric]:
                     cell += caveats.mark(attack_name, metric)
-                if (statistic == statistics[0] and metric_n is not None
-                        and n_files is not None and metric_n < n_files):
-                    cell += f" ($n$={int(metric_n)})"
+                    metric_n = self._stat_of(value, f"{metric}_n")
+                    if (metric_n is not None and n_files is not None
+                            and metric_n < n_files):
+                        cell += f" ($n$={int(metric_n)})"
                 cells.append(cell)
-            rows.append("    " + " & ".join(cells) + " \\\\")
+            rows.append((display_attack_name(attack_name), cells))
 
-        return build_longtable(
-            "l" + "c" * (len(headers) - 1),
-            " & ".join(headers),
-            rows,
-            f"{metric_label(metric)} statistics for {caption_word}.",
-            label,
-        ) + caveats.footnote()
-
-    def _compact_metric_table(self, sorted_attacks, metric_statistics,
-                              caption_word, label):
-        """Metrics reduced to a single statistic, one column each."""
-        headers = ["Attack Type"]
-        for metric, statistic in metric_statistics:
-            header = metric_label(metric)
-            # Say which statistic this is unless it is the mean, which is
-            # what an unlabelled quality column has always meant.
-            if statistic != "mean":
-                header += f" [{stat_header(statistic)}]"
-            headers.append(header)
-
-        rows = []
-        caveats = MetricCaveats()
-        for attack_name, value in sorted_attacks:
-            cells = [display_attack_name(attack_name)]
-            n_files = self._stat_of(value, "accuracy_n")
-            for metric, statistic in metric_statistics:
-                raw = self._stat_of(value, f"{metric}_{statistic}")
-                if raw is None:
-                    cells.append("N/A")
-                    continue
-                cell = format_metric_cell(metric, raw)
-                cell += caveats.mark(attack_name, metric)
-                metric_n = self._stat_of(value, f"{metric}_n")
-                if metric_n is not None and n_files is not None and metric_n < n_files:
-                    cell += f" ($n$={int(metric_n)})"
-                cells.append(cell)
-            rows.append("    " + " & ".join(cells) + " \\\\")
-
-        return build_longtable(
-            "l" + "c" * (len(headers) - 1),
-            " & ".join(headers),
-            rows,
-            f"Audio quality and intelligibility for {caption_word}.",
-            label,
+        return grid_table(
+            "Attack Type", headers, rows, caption, label,
         ) + caveats.footnote()
 
     def _footnotes(self, sorted_attacks, silent_metrics=()):
@@ -633,9 +488,9 @@ class BenchmarkReportGenerator:
             else f"{attack_count} {attack_word}"
         )
 
-        crop_note = self._crop_note(crop_before_attack)
-        if crop_note:
-            crop_note = " " + crop_note
+        crop = crop_note(crop_before_attack)
+        if crop:
+            crop = " " + crop
 
         statistic = self._accuracy_label_for(stats)
         chart_block = figure_block(
@@ -670,73 +525,31 @@ class BenchmarkReportGenerator:
             f"watermarking model across various attack scenarios. The evaluation "
             f"covers {coverage_phrase}, measuring the robustness of watermark "
             f"detection under adversarial conditions using the DeepMark benchmark "
-            f"framework.{crop_note}\n"
+            f"framework.{crop}\n"
             "\\end{abstract}\n\n"
             f"{summary}\n\n"
             f"{sections}\n\n"
             "\\end{document}"
         )
 
-    @staticmethod
-    def _crop_note(crop_before_attack) -> str:
-        """The caveat that every attack ran on cropped audio.
-
-        A reader who does not see it takes the numbers for the whole
-        signal, so it belongs in every shape of the report rather than
-        only in the one that happens to carry an abstract.
-        """
-        if crop_before_attack is None:
-            return ""
-        return (
-            f"\\textcolor{{red}}{{A crop of {crop_before_attack:.1f}\\% was applied to the beginning of "
-            f"the watermarked audio prior to each attack. The original (reference) "
-            f"audio was cropped identically, so quality metrics compare cropped "
-            f"original vs.\\ cropped attacked audio, and BER is measured by detecting "
-            f"the watermark from the cropped attacked signal.}}"
-        )
-
     def _embedding_cost_line(self, stats):
-        """Embedding time, stated once for the run rather than per attack.
-
-        It is measured once per file and does not depend on which attack
-        follows, so it belongs in a sentence about the run, not in a
-        column of a table whose rows are attacks.
-        """
+        """The per-file embedding time, stated once for the run, or ''."""
         metric = "embed_latency"
         if not self.resolver.is_enabled(None, metric):
             return ""
 
-        # Identical on every attack entry, because both are run-level costs
-        # copied onto each of them; any row carries the same values.
+        # A run-level cost, copied onto every attack entry alike.
         row = next(iter(stats.values()), None)
         if not isinstance(row, Mapping):
             return ""
 
-        parts = []
-        for statistic in self.resolver.statistics_for(None, metric):
-            value = row.get(f"{metric}_{statistic}")
-            if value is not None:
-                parts.append(
-                    f"{float(value):.4f}\\,s ({stat_header(statistic).lower()})"
-                )
-        if not parts:
-            return ""
-
-        return (
-            f"\\noindent\\textbf{{Embedding cost per file:}} "
-            f"{', '.join(parts)}\n"
-            "\\\\{\\footnotesize Measured once per file, before any attack, so it "
-            "does not vary by attack. Like every timing it depends on this "
-            "machine and does not reproduce across runs.}\n\n"
+        statistics = self.resolver.statistics_for(None, metric)
+        return embedding_cost_line(
+            {s: row.get(f"{metric}_{s}") for s in statistics}, statistics,
         )
 
     def _key_findings(self, stats):
-        """Name the attacks a reader would otherwise have to find by hand.
-
-        The tier list below counts attacks per band; this says which ones.
-        Everything here is read off the same statistics the tables print,
-        so the prose cannot drift from the numbers under it.
-        """
+        """Name the most and least damaging attacks, those at chance, and the spread."""
         accuracy_by_attack = {
             display_attack_name(name): self._accuracy_of(value, name)
             for name, value in stats.items()
@@ -895,9 +708,7 @@ class BenchmarkReportGenerator:
             suffix = slugify(group_label_text)
             sections = self._grouped_sections(group_stats, label_suffix=suffix)
 
-            # Each bin gets its own ranking chart. Drawing only the first
-            # one left every other part of the report without a figure and
-            # captioned as if it described that part's numbers.
+            # Each bin gets its own ranking chart.
             filename = f"benchmark_chart_{slugify(group_label_text)}.png"
             figure = ""
             if self.create_gradient_bar_chart(
@@ -919,14 +730,13 @@ class BenchmarkReportGenerator:
                 + "\n\n".join(sections)
             )
 
-        # The crop applies to every bin, so it is stated once above them
-        # rather than repeated in each part.
-        crop_note = self._crop_note(crop_before_attack)
-        if crop_note:
-            crop_note = f"\\noindent {crop_note}\n\n"
+        # The crop applies to every bin, so it is stated once above them.
+        crop = crop_note(crop_before_attack)
+        if crop:
+            crop = f"\\noindent {crop}\n\n"
 
         latex_content = (
-            f"{preamble}\n\n" + crop_note + "\n\n".join(parts)
+            f"{preamble}\n\n" + crop + "\n\n".join(parts)
             + "\n\n" + container_section(containers or [])
             + "\n\n\\end{document}"
         )
@@ -936,8 +746,7 @@ class BenchmarkReportGenerator:
             f.write(latex_content)
         logger.info(f"LaTeX report saved to {latex_path}")
 
-        # The unsuffixed chart names the report as a whole, so it shows the
-        # combined bin when the configuration asked for one.
+        # The unsuffixed chart shows the "Overall" bin, else the first one.
         chart_path = os.path.join(self.report_dir, "benchmark_chart.png")
         overall = grouped_stats.get("Overall", {}).get("stats") or first_group_stats
         if overall:

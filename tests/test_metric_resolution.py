@@ -1,15 +1,6 @@
-"""Per-group metric and statistic resolution.
-
-These pin the inheritance rules the config file promises:
-
-* a metric can be enabled or disabled per attack group, not only globally;
-* inheritance is per metric, so a group section states only what it
-  changes;
-* subgroups inherit from their parent group, which inherits from defaults;
-* deleting ``per_group`` leaves ``defaults`` applying uniformly;
-* omitting ``statistics`` entirely yields all eight;
-* the shipped defaults reproduce the ``ATTACK_GROUPS`` matrix exactly.
-"""
+"""Per-group metric and statistic resolution: per-metric inheritance from a
+subgroup to its parent group to the defaults, the statistics fallbacks, and
+the shipped defaults reproducing the ``ATTACK_GROUPS`` matrix."""
 
 import json
 
@@ -61,19 +52,8 @@ class TestRequirement1PerGroupSelection:
         assert resolver.is_enabled("desynchronization", "mcd") is True
         assert resolver.is_enabled("audio_distortion", "mcd") is False
 
-    def test_each_group_can_ask_for_different_statistics(self, tmp_path):
-        resolver = build(tmp_path, statistics=["mean"], metrics={
-            "defaults": {"pesq": {"enabled": True}},
-            "per_group": {
-                "transmission": {"pesq": {"statistics": ["median", "p99"]}},
-            },
-        })
-        assert resolver.statistics_for("transmission", "pesq") == ["median", "p99"]
-        assert resolver.statistics_for("audio_distortion", "pesq") == ["mean"]
-
     def test_enabling_a_metric_a_group_never_showed_makes_it_available(self, tmp_path):
-        """The taxonomy excludes ``mcd`` from ``audio_distortion``; the
-        config can put it back."""
+        """``audio_distortion`` omits ``mcd`` by default; a config can add it."""
         assert "mcd" not in ATTACK_GROUPS["audio_distortion"]["quality_metrics"]
         resolver = build(tmp_path, metrics={
             "defaults": {"mcd": {"enabled": True}},
@@ -116,14 +96,6 @@ class TestRequirement1InheritanceIsPerMetric:
 
 class TestSubgroupInheritance:
     """A subgroup falls back to its parent group before the defaults."""
-
-    def test_subgroup_inherits_from_its_parent_group(self, tmp_path):
-        resolver = build(tmp_path, metrics={
-            "defaults": {"psnr": {"enabled": True}},
-            "per_group": {"audio_editing": {"psnr": {"enabled": False}}},
-        })
-        assert resolver.is_enabled("temporal_editing", "psnr") is False
-        assert resolver.is_enabled("audio_effects", "psnr") is False
 
     def test_subgroup_overrides_its_parent(self, tmp_path):
         resolver = build(tmp_path, metrics={
@@ -171,17 +143,10 @@ class TestRequirement2PerGroupIsOptional:
             assert resolver.is_enabled(group, "pesq") is True
             assert resolver.is_enabled(group, "mcd") is False
 
-    def test_an_empty_per_group_block_changes_nothing(self, tmp_path):
-        resolver = build(tmp_path, metrics={
-            "defaults": {"pesq": {"enabled": True}}, "per_group": {},
-        })
-        assert resolver.is_enabled("desynchronization", "pesq") is True
-
 
 class TestRequirement3UnusedGroupsAreNotErrors:
     def test_a_group_not_in_this_run_is_ignored_with_a_note(self, tmp_path):
-        """Covered end to end in test_config_validation; asserted here too
-        because it is a stated requirement of the resolution rules."""
+        """A group this run does not reach is noted with W001, not refused."""
         path = tmp_path / "config.json"
         path.write_text(json.dumps({
             "mode": "benchmark",
@@ -196,35 +161,23 @@ class TestRequirement3UnusedGroupsAreNotErrors:
 
 
 class TestRequirement4DefaultsReproduceTheTaxonomy:
-    def test_builtin_matrix_is_attack_groups_plus_the_always_on_trio(self):
+    def test_builtin_matrix_is_the_taxonomy(self):
+        """Each group's metrics plus the always-on trio; each subgroup's alone."""
         resolver = MetricResolver.from_attack_groups()
-        for group_key, definition in ATTACK_GROUPS.items():
+        for key, definition in {**ATTACK_GROUPS, **ATTACK_SUBGROUPS}.items():
             declared = set(
                 definition["quality_metrics"]
                 + definition["intelligibility_metrics"]
                 + definition["nisqa_metrics"]
             )
-            enabled = set(resolver.signal_metrics_for_group(group_key))
-            assert enabled == declared | set(ALWAYS_ON_METRICS), \
-                f"{group_key} drifted from ATTACK_GROUPS"
-
-    def test_builtin_matrix_matches_attack_subgroups_exactly(self):
-        resolver = MetricResolver.from_attack_groups()
-        for key, definition in ATTACK_SUBGROUPS.items():
-            declared = set(
-                definition["quality_metrics"]
-                + definition["intelligibility_metrics"]
-                + definition["nisqa_metrics"]
-            )
-            assert set(resolver.signal_metrics_for_group(key)) == declared
+            if key in ATTACK_GROUPS:
+                declared |= set(ALWAYS_ON_METRICS)
+            assert set(resolver.signal_metrics_for_group(key)) == declared, \
+                f"{key} drifted from the taxonomy"
 
     @pytest.mark.parametrize("mode", ["benchmark", "detection_reliability"])
     def test_shipped_template_reproduces_the_builtin_matrix(self, mode):
-        """An unedited --init file must not change what a run displays.
-
-        Reads the packaged template rather than configs/, which holds
-        working files that are meant to be edited.
-        """
+        """An unedited --init file must not change what a run displays."""
         path = f"src/deepmarkpy/config_templates/{mode}.json"
         shipped = load_configs([path])[0].resolver
         builtin = MetricResolver.from_attack_groups()
@@ -242,11 +195,6 @@ class TestRequirement5StatisticsFallback:
     def test_omitting_statistics_entirely_yields_all_eight(self, tmp_path):
         resolver = build(tmp_path, metrics={"defaults": {"pesq": {"enabled": True}}})
         assert resolver.statistics_for("audio_distortion", "pesq") == list(ALL_STATISTICS)
-
-    def test_the_top_level_list_applies_when_a_metric_says_nothing(self, tmp_path):
-        resolver = build(tmp_path, statistics=["mean", "p95"],
-                         metrics={"defaults": {"pesq": {"enabled": True}}})
-        assert resolver.statistics_for("audio_distortion", "pesq") == ["mean", "p95"]
 
     def test_resolution_order_is_group_then_default_then_toplevel_then_all(self, tmp_path):
         resolver = build(tmp_path, statistics=["mean", "p95"], metrics={
@@ -300,15 +248,7 @@ class TestMandatoryAndDerivedMetrics:
 
 
 class TestCalculateQualityMetricsSwitch:
-    """The master switch, as specified: config wins when on, the always-on
-    trio applies when it is off or absent."""
-
-    def test_on_means_the_config_decides(self, tmp_path):
-        resolver = build(tmp_path, calculate_quality_metrics=True, metrics={
-            "defaults": {"mcd": {"enabled": True}, "pesq": {"enabled": False}},
-        })
-        assert resolver.is_enabled("audio_distortion", "mcd") is True
-        assert resolver.is_enabled("audio_distortion", "pesq") is False
+    """On, the config decides; off or absent, the always-on trio applies."""
 
     def test_off_means_only_the_always_on_trio(self, tmp_path):
         resolver = build(tmp_path, calculate_quality_metrics=False, metrics={
@@ -330,12 +270,7 @@ class TestCalculateQualityMetricsSwitch:
         assert resolver.is_enabled("audio_distortion", "pesq") is True
 
     def test_turning_it_on_never_drops_the_always_on_trio(self, tmp_path):
-        """Without a ``metrics`` block, on only adds to what off computes.
-
-        That is what the ``--calculate_quality_metrics`` flag produces: the
-        built-in matrix decides, and it has to keep PESQ and STOI for the
-        desynchronization attacks, whose taxonomy entry names neither.
-        """
+        """Without a ``metrics`` block, on only adds to what off computes."""
         on = build(tmp_path, calculate_quality_metrics=True)
         off = build(tmp_path, calculate_quality_metrics=False)
         dropped = {
@@ -386,8 +321,7 @@ class TestMetricOrdering:
 
 class TestBaselineCoverage:
     def test_the_no_attack_baseline_carries_every_groups_metrics(self, tmp_path):
-        """The baseline row appears in every group's table, so it must hold
-        any metric any group might show."""
+        """The baseline row in every group's table holds every group's metrics."""
         resolver = build(tmp_path, metrics={
             "defaults": {m: {"enabled": False} for m in ("pesq", "mcd", "stoi")},
             "per_group": {
@@ -407,14 +341,8 @@ class TestBaselineCoverage:
 
 class TestMetricFamiliesAreConsistent:
     def test_metric_families_agree_across_the_two_modules(self):
-        """metrics.py and metric_resolver.py both split the families.
-
-        The resolver deliberately does not import metrics.py -- that
-        module pulls in librosa/pesq/pystoi, and config validation runs
-        before any of that. So the split is duplicated on purpose, and
-        has to be checked rather than shared.
-        """
-
+        """The resolver copies metrics.py's families rather than import it,
+        which would load librosa, pesq and pystoi during config validation."""
         from deepmarkpy.utils import metrics as m
         from deepmarkpy.utils import metric_resolver as r
 

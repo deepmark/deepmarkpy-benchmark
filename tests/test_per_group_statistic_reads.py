@@ -1,21 +1,6 @@
-"""A per-group statistic override must not silently read as zero.
-
-``compute_mean_accuracy`` writes each attack's accuracy under the
-statistic *that attack's group* configured. Anything reading a single
-report-wide statistic off every attack therefore finds nothing on an
-attack whose group overrode it -- and a missing accuracy read as 0.0 is
-indistinguishable from a watermark that did not survive, so the charts,
-the headline mean and the "most damaging" ranking were all wrong without
-anything in the run saying so.
-
-The tables were always right: they ask the resolver per section. These
-pin the figures and the prose to the same answer.
-
-Nor may a spread stand in for a level. A config may list ``std`` before
-``mean``, and read as the accuracy, a std makes the steadiest attack look
-the most damaging. Every single-number view therefore reads the first
-configured statistic that is not ``std``.
-"""
+"""Every single-number view of accuracy reads each attack at its own group's
+statistic, so a per-group override never reads as zero, and at the first
+configured statistic other than ``std``, so a spread never stands in for it."""
 
 import numpy as np
 import pytest

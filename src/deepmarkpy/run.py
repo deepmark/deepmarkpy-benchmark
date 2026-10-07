@@ -1,14 +1,8 @@
 """DeepMark Benchmark command-line entry point.
 
-The command line carries operational settings only -- which config files
-to run, where the audio is, where reports go, seeding, verbosity, audio
-dumping, and the plugin directory. Every measurement decision (mode,
-models, attacks, attack parameters, metrics, statistics, duration groups,
-crop) lives in a config file, so a run is reproducible from its config
-plus an audio directory.
-
-Pass one ``--config`` file per mode. Several may be given and run in the
-order listed; each must declare a different mode.
+Measurement settings come from ``--config`` files, one per mode, run in the
+order given, or else from the 2.x flags, which are validated as a config
+file and run the same way. The remaining flags are operational.
 """
 
 import argparse
@@ -113,13 +107,7 @@ class RunSettings:
 
 
 def _resolve_settings(args, config) -> RunSettings:
-    """Merge command line, config ``general`` block, and built-in defaults.
-
-    The command line wins wherever it says anything, because it is the
-    per-invocation override; the config file is the stored intent. Only
-    these six keys exist in both places -- everything measurement-related
-    lives in the config file alone, so there is nothing else to reconcile.
-    """
+    """Each setting from the command line, else config ``general``, else default."""
     general = config.general
 
     def pick(cli_value, key, default=None):
@@ -147,7 +135,7 @@ def _build_parser():
         ),
         epilog=(
             "Start from a template:  deepmark-benchmark --init benchmark > "
-            "configs/benchmark.json"
+            "my_config.json"
         ),
     )
 
@@ -255,8 +243,8 @@ def _build_parser():
     return parser
 
 
-# The pre-2.0 flags. They are assembled into a config mapping and handed
-# to the same validator and the same run loop, so there is no second code
+# The 2.x flags. They are assembled into a config mapping and handed to
+# the same validator and the same run loop, so there is no second code
 # path below this point -- a flag run and the config file it corresponds
 # to produce the same reports.
 _LEGACY_FLAGS = (
@@ -267,19 +255,17 @@ _LEGACY_FLAGS = (
 
 
 def _add_legacy_arguments(parser):
-    """Restore the flag interface that predates the config file.
+    """Add the 2.x flags, which cover exactly what a 2.x script can express.
 
-    Everything the config file added -- per-group metrics and statistics,
-    the efficiency section, duration groups, per-version attack
-    parameters -- has no flag, and never had one. These cover exactly
-    what was expressible before, so an existing script keeps working.
+    Per-group metrics and statistics, the efficiency section, duration
+    groups and per-version attack parameters have no flag.
     """
     group = parser.add_argument_group(
         "compatibility",
-        "The pre-2.0 flags, for scripts written against the previous "
-        "release. Ignored when --config is given, which is the fuller "
-        "interface: these cannot express per-group metrics, statistics, "
-        "efficiency or duration groups.",
+        "The 2.x flags, for scripts written against 2.x. Ignored when "
+        "--config is given, which is the fuller interface: these cannot "
+        "express per-group metrics, statistics, efficiency or duration "
+        "groups.",
     )
     models = group.add_mutually_exclusive_group()
     models.add_argument(
@@ -320,13 +306,7 @@ def _add_legacy_arguments(parser):
 
 
 def _report_config_error(problem):
-    """Print a config problem as a block, and say nothing ran.
-
-    Straight to stderr rather than through the logger: a timestamp and a
-    module name on every line is exactly the noise that makes the actual
-    message hard to pick out, and this is the last thing the user sees
-    before the process exits.
-    """
+    """Print a config problem to stderr as a plain block, saying nothing ran."""
     rule = "=" * 72
     print(f"\n{rule}\n CONFIGURATION ERROR - the benchmark did not start\n{rule}",
           file=sys.stderr)
@@ -368,7 +348,7 @@ def _peek_plugins_dir(paths):
 
 
 def _legacy_flags_used(args):
-    """The pre-2.0 flags this invocation actually set."""
+    """The 2.x flags this invocation actually set."""
     used = []
     for name in _LEGACY_FLAGS:
         value = getattr(args, name, None)
@@ -453,11 +433,12 @@ def _coerce_like(raw, default, key, parser):
 
 
 def _configs_from_flags(args, leftovers, benchmark, parser):
-    """Validate the pre-2.0 flags as though they were a config file.
+    """Validate the 2.x flags as though they were a config file.
 
     Returns one ``ModeConfig`` per mode asked for -- two when
-    ``--no_attacks`` and ``--detection_reliability`` are combined, which
-    the old CLI ran as a pair.
+    ``--no_attacks`` and ``--detection_reliability`` are combined.
+    Detection reliability takes one model, so with several models the
+    combination raises ``ConfigError`` with E012, as that flag alone does.
     """
     models = list(args.wm_models or ([args.wm_model] if args.wm_model else []))
     parameters = _legacy_attack_parameters(leftovers, benchmark, parser)
@@ -534,7 +515,7 @@ def main(argv=None):
             parser.error(
                 "--config is required: pass one config file per mode. "
                 "Create one with 'deepmark-benchmark --init benchmark > "
-                "configs/benchmark.json'."
+                "my_config.json'."
             )
         benchmark = Benchmark(external_plugins_dir=args.plugins_dir)
         try:
@@ -550,10 +531,7 @@ def main(argv=None):
                 f"--config to use the flags instead."
             )
 
-        # Pre-flight: everything that does not need the plugin registry --
-        # JSON syntax, structure, types, metrics, statistics. Importing the
-        # plugins logs dozens of lines, and burying a misplaced comma under
-        # them is exactly what makes a broken config hard to find.
+        # Pre-flight: the checks that need no plugins, before plugin imports log.
         try:
             load_configs(args.config, quiet=True)
         except ConfigError as exc:
@@ -575,8 +553,7 @@ def main(argv=None):
     for config in configs:
         settings = _resolve_settings(args, config)
         settings.several_modes = len(configs) > 1
-        # CLI overrides do not pass through config validation. Reject an
-        # unusable NumPy seed before validation succeeds or output is cleared.
+        # A --seed skips config validation, so its range is checked here.
         if settings.seed is not None and not 0 <= settings.seed < 2**32:
             _report_config_error(
                 f"{config.source}: seed must be between 0 and 4294967295; "
@@ -597,9 +574,7 @@ def main(argv=None):
     )
 
     if args.validate_only:
-        # A stopped container is not a broken config file. Report it, but
-        # let the check pass -- validating a config before starting Docker
-        # is exactly when this flag is most useful.
+        # An unreachable service is reported but does not fail validation.
         for config, settings in plans:
             logger.info(
                 f"{config.source}: valid. mode={config.mode}, "
@@ -634,10 +609,8 @@ def main(argv=None):
                 return EXIT_RUNTIME_ERROR
             filepaths_by_dir[settings.wav_files_dir] = found
 
-    # One shared report directory, cleared once. Each mode writes distinct
-    # filenames into it, so running several in one invocation does not make
-    # them overwrite each other -- but a *previous* run's output still goes.
-    # Saved audio goes in audio/, or in audio/<mode>/ when several modes run.
+    # Each report directory is cleared once. Modes write distinct filenames,
+    # and saved audio goes in audio/<mode>/ when several modes run.
     for report_dir in dict.fromkeys(s.report_dir for _, s in plans):
         _clean_report_dir(report_dir)
 
@@ -648,8 +621,7 @@ def main(argv=None):
             logging.getLogger().setLevel(logging.DEBUG)
             logger.debug("Verbose logging enabled.")
 
-        # Re-seeded per mode so each starts from the same draw, which keeps a
-        # mode's results identical whether it runs alone or after another.
+        # Re-seeded per mode, so a mode's results do not depend on what ran first.
         if settings.seed is not None:
             random.seed(settings.seed)
             np.random.seed(settings.seed)
@@ -673,8 +645,7 @@ def _describe_attack_selection(config):
         return "none (this mode applies no attacks)"
     specs = config.selected_attack_specs()
     if specs is None:
-        # Only benchmark mode expands an empty selection to everything;
-        # detection reliability adds attacks to a baseline it always measures.
+        # Only benchmark mode expands an empty selection to every attack.
         if config.mode == "detection_reliability":
             return "none (no-attack baseline only)"
         return "all discovered attacks"
@@ -683,30 +654,19 @@ def _describe_attack_selection(config):
     )
 
 
-def resolved_attack_parameters(benchmark, config):
-    """Effective parameters per report row, worked out before anything runs.
-
-    The plugin's preset for that version with the config's override
-    applied on top -- which is exactly what ``apply()`` will see. Keyed by
-    the name the row carries in the report, so a number in a table can be
-    traced back to the version that produced it without inferring it from
-    the results.
-
-    An empty selection means different things per mode, and this has to
-    agree with the run loop: everything in ``benchmark`` mode, the
-    no-attack baseline alone in ``detection_reliability``, and nothing at
-    all in ``no_attacks``.
-    """
-    if "attacks" not in MODE_KEYS[config.mode]:
-        return {}
-
+def _attacks_to_run(benchmark, config):
+    """Specs to run; no selection is every attack in benchmark mode, else none."""
     specs = config.selected_attack_specs()
     if specs is None:
-        specs = sorted(benchmark.attacks) if config.mode == "benchmark" else []
+        return sorted(benchmark.attacks) if config.mode == "benchmark" else []
+    return specs
 
+
+def resolved_attack_parameters(benchmark, config):
+    """Per report row, the version's preset with the config's overrides applied."""
     rows = {}
     for class_name, display, overrides, load_version in expand_attacks(
-        specs, benchmark.attacks,
+        _attacks_to_run(benchmark, config), benchmark.attacks,
         parameters=config.parameters_for,
         extra_versions=config.synthetic_versions,
     ):
@@ -716,8 +676,7 @@ def resolved_attack_parameters(benchmark, config):
             base = raw.get(load_version or "default") or {}
         else:
             base = entry.get("config") or {}
-        # A plugin's config.json may carry "_"-prefixed notes of its own;
-        # they are documentation, not parameters.
+        # "_"-prefixed keys in a plugin's config.json are notes, not parameters.
         merged = {
             key: value for key, value in {**base, **overrides}.items()
             if not key.startswith("_")
@@ -728,24 +687,15 @@ def resolved_attack_parameters(benchmark, config):
 
 
 def _log_attack_parameters(benchmark, config, only_configured):
-    """Print which version runs with which values.
-
-    Args:
-        only_configured: log just the rows the config file changed. A full
-            attack set is one row per attack, which is noise when nothing
-            was overridden; --validate-only passes False to show everything
-            it selected.
-    """
+    """Log each row's parameters; only_configured keeps the rows the config sets."""
     try:
         rows = resolved_attack_parameters(benchmark, config)
     except Exception as exc:
         logger.debug(f"Could not resolve attack parameters: {exc}")
         return
 
-    touched = set()
-    for (attack, _version) in config.parameter_overrides:
-        touched.add(attack)
-    touched.update(config.synthetic_versions)
+    touched = ({attack for attack, _version in config.parameter_overrides}
+               | set(config.synthetic_versions))
     if only_configured:
         rows = {
             name: params for name, params in rows.items()
@@ -783,27 +733,17 @@ def _collect_audio_files(wav_files_dir):
     return filepaths
 
 
-# A model container that has just started may load its checkpoint lazily,
-# on the first request. WavMark takes over ten seconds to answer when cold,
-# so a single short probe reports a service that is starting as one that is
-# down, and aborts a run that would have worked seconds later.
+# A cold container loads its checkpoint on the first request, which takes
+# WavMark over ten seconds, so a waiting probe retries for up to the budget.
 _SERVICE_PROBE_TIMEOUT_S = 10
 _SERVICE_PROBE_BUDGET_S = 60
 
 
 def _unreachable_model_services(benchmark, configs, wait=True):
-    """Check every selected model's Docker service before anything runs.
+    """Messages for selected models whose service gives no HTTP response.
 
-    A model whose container is down otherwise fails midway through the
-    first file, after the attack set has already been applied.
-
-    Any HTTP response counts as reachable, including a 404: the root path
-    is not part of the plugin contract, so only the connection matters.
-
-    Args:
-        wait: keep retrying a silent service until the probe budget runs
-            out, which is what makes running straight after
-            ``docker compose up -d`` work. Pass False to probe once.
+    Any response, even a 404, counts. ``wait`` retries until the probe
+    budget runs out; False probes once.
     """
     import time
 
@@ -843,12 +783,7 @@ def _unreachable_model_services(benchmark, configs, wait=True):
 
 
 def _warn_about_metric_services(configs):
-    """Warn when a configured metric's backing service cannot answer.
-
-    Not an error: the run still produces every other metric. But an N/A
-    column from an unreachable service is indistinguishable from one the
-    metric genuinely could not score, so it has to be said up front.
-    """
+    """Warn when an enabled metric's service or package is unavailable."""
     wanted = set()
     for config in configs:
         wanted.update(config.resolver.all_signal_metrics())
@@ -907,13 +842,7 @@ def _copy_deepmark_assets(src_dir, dst_dir):
 
 
 def _log_efficiency(config, stats):
-    """Print the timings this run measured, under the efficiency tag.
-
-    Its own tag so a run's timing output can be read, or filtered out, on
-    its own -- the numbers describe the machine rather than the
-    watermarking method, and are the one part of a run that does not
-    reproduce.
-    """
+    """Log the timings this run measured, under the efficiency tag."""
     from deepmarkpy.utils import efficiency
     from deepmarkpy.utils.latex_helpers import metric_label
 
@@ -934,14 +863,7 @@ def _log_efficiency(config, stats):
 
 
 def _container_rows(benchmark, config, model_names):
-    """Memory held by the services this run used, when the config asks.
-
-    Gated on ``efficiency.metrics.container_footprint.enabled``, which is
-    off by default: reading it shells out to the docker CLI, and a run
-    that does not care should not pay for that or depend on docker being
-    there at all. Covers the models, the dockerized attacks and the
-    metric services -- everything the run actually touched.
-    """
+    """Memory of the services this run used, when container_footprint is on."""
     if not config.resolver.is_enabled(None, "container_footprint"):
         return []
 
@@ -959,13 +881,7 @@ def _container_rows(benchmark, config, model_names):
         if url:
             entries.append(("Model", name, url))
 
-    # No selection means "every attack" in benchmark mode only. no_attacks
-    # runs none, and detection_reliability without attacks measures the
-    # baseline alone, so their footprint must not include attack services.
-    specs = config.selected_attack_specs()
-    if specs is None:
-        specs = list(benchmark.attacks) if config.mode == "benchmark" else []
-    for spec in specs:
+    for spec in _attacks_to_run(benchmark, config):
         name = spec.split(":")[0]
         entry = benchmark.attacks.get(name)
         if not entry:
@@ -980,9 +896,7 @@ def _container_rows(benchmark, config, model_names):
         if url and not any(e[1] == name for e in entries):
             entries.append(("Attack", name, url))
 
-    # Enabled *anywhere*, not just in metrics.defaults: a config that
-    # switches NISQA on per attack group still calls the service, and the
-    # defaults-only check missed exactly that shape.
+    # Enabled anywhere counts, per attack group included, not just the defaults.
     if any(m in config.resolver.all_signal_metrics() for m in NISQA_METRICS):
         port = os.environ.get("NISQA_PORT", "10030")
         entries.append(("Metric", "NISQA", f"http://localhost:{port}"))
@@ -1003,11 +917,7 @@ def _duration_partitions(config, filepaths):
     partitions = partition_files_by_duration(
         filepaths, config.duration_boundaries,
     )
-    # "Overall" is the combined view of the bins, so it only says anything
-    # when there is more than one. With every file in the same bin it
-    # repeats that bin verbatim, under a second heading -- the report then
-    # carries two identical sections and invites the reader to look for a
-    # difference between them.
+    # With a single bin, "Overall" would repeat it verbatim, so it is left out.
     if config.duration_include_overall and len(partitions) > 1:
         partitions.append(("Overall", list(filepaths)))
     return partitions
@@ -1111,10 +1021,7 @@ def run_detection_reliability_mode(benchmark, filepaths, config, settings):
     os.makedirs(report_dir, exist_ok=True)
 
     model_name = config.models[0]
-    # An empty selection means "no attacks" here: the no-attack baseline is
-    # always measured and attacks are added to it, so there is nothing to
-    # expand to "all".
-    attack_types = config.selected_attack_specs() or []
+    attack_types = _attacks_to_run(benchmark, config)
 
     audio_dir = _saved_audio_dir(report_dir, config, settings)
 
@@ -1229,21 +1136,7 @@ def _git_revision():
 
 def run_single_model(benchmark, filepaths, model_name, config, settings,
                      output_dir=None):
-    """Run benchmark for a single model, save results and generate reports.
-
-    Args:
-        benchmark: Benchmark instance
-        filepaths: List of audio file paths
-        model_name: Name of the watermarking model
-        config: the validated ``ModeConfig`` driving this run
-        settings: resolved operational settings
-        output_dir: Optional directory for outputs (default: the report dir)
-
-    Returns:
-        Tuple of (results, flattened_stats, stats): raw per-file results,
-        the attack->primary-statistic mapping the comparative report ranks,
-        and the full per-attack stats.
-    """
+    """Benchmark one model and write its results, stats, metadata and reports."""
     report_dir = output_dir or settings.report_dir
     os.makedirs(report_dir, exist_ok=True)
 
@@ -1256,8 +1149,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
         calculate_quality_metrics=config.calculate_quality_metrics,
         crop_before_attack=config.crop_before_attack,
         metric_resolver=config.resolver,
-        # Routed per expanded attack entry rather than as one flat mapping,
-        # so an override on one version cannot reach another.
+        # Per expanded entry, so one version's override cannot reach another.
         attack_parameters=config.parameters_for,
         extra_attack_versions=config.synthetic_versions,
     )
@@ -1295,40 +1187,25 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
     stats_path = os.path.join(report_dir, "benchmark_stats.json")
     partitions = _duration_partitions(config, filepaths)
 
+    def mean_accuracy(subset):
+        return benchmark.compute_mean_accuracy(
+            subset, resolver=config.resolver, is_zero_bit=is_zero_bit,
+        )
+
+    # stats spans every file; with duration groups the JSON holds per-bin stats.
+    stats = saved = mean_accuracy(results)
     if partitions:
-        all_group_stats = {}
+        saved = {}
         for group_label, group_files in partitions:
             group_results = {fp: results[fp] for fp in group_files if fp in results}
-            if not group_results:
-                continue
-            all_group_stats[group_label] = {
-                "stats": benchmark.compute_mean_accuracy(
-                    group_results, resolver=config.resolver, is_zero_bit=is_zero_bit,
-                ),
-                "n_files": len(group_results),
-            }
-
-        with open(stats_path, "w") as fp:
-            json.dump(to_json_safe(all_group_stats), fp, indent=4)
-        logger.info(f"Duration-grouped statistics saved to {stats_path}")
-
-        # The comparative report needs one flat table over every file.
-        # "Overall" is exactly that when the config asked for it; otherwise
-        # it is computed here, because any one bin leaves out the files of
-        # the others.
-        if "Overall" in all_group_stats:
-            stats = all_group_stats["Overall"]["stats"]
-        else:
-            stats = benchmark.compute_mean_accuracy(
-                results, resolver=config.resolver, is_zero_bit=is_zero_bit,
-            )
-    else:
-        stats = benchmark.compute_mean_accuracy(
-            results, resolver=config.resolver, is_zero_bit=is_zero_bit,
-        )
-        with open(stats_path, "w") as fp:
-            json.dump(to_json_safe(stats), fp, indent=4)
-        logger.info(f"Statistics saved to {stats_path}")
+            if group_results:
+                saved[group_label] = {
+                    "stats": mean_accuracy(group_results),
+                    "n_files": len(group_results),
+                }
+    with open(stats_path, "w") as fp:
+        json.dump(to_json_safe(saved), fp, indent=4)
+    logger.info(f"Statistics saved to {stats_path}")
 
     flattened_stats = {
         attack: metrics.get(f"accuracy_{primary}")
@@ -1348,8 +1225,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
             "attacks_run": sorted(stats),
             "n_files": len(filepaths),
             "config_file": config.source,
-            # Which version ran with which values, so a table can be read
-            # back months later without re-deriving it from the config.
+            # Which version ran with which values.
             "attack_parameters_resolved": resolved_attack_parameters(
                 benchmark, config,
             ),
@@ -1367,7 +1243,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
             report_dir=report_dir,
             resolver=config.resolver,
             crop_before_attack=config.crop_before_attack,
-            is_zero_bit=model_config.get("is_zero_bit", False),
+            is_zero_bit=is_zero_bit,
             containers=containers,
         )
         logger.info(f"Benchmark report generated: {latex_path}")
@@ -1382,7 +1258,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
             )
             latex_path = detailed_generator.generate_full_report(
                 results, model_name=model_name,
-                is_zero_bit=model_config.get("is_zero_bit", False),
+                is_zero_bit=is_zero_bit,
                 crop_before_attack=config.crop_before_attack,
                 duration_partitions=partitions,
                 containers=containers,

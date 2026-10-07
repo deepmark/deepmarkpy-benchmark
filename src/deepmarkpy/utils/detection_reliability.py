@@ -36,11 +36,10 @@ from deepmarkpy.benchmark import (
 )
 from deepmarkpy.utils.metrics import compute_metrics
 from deepmarkpy.utils.metric_resolver import (
-    ALL_STATISTICS,
     EFFICIENCY_METRICS,
     PER_FILE_EFFICIENCY_METRICS,
     MetricResolver,
-    worst_case_of,
+    compute_statistics,
 )
 from deepmarkpy.utils import efficiency
 from deepmarkpy.utils.utils import load_audio
@@ -48,83 +47,15 @@ from deepmarkpy.utils.utils import load_audio
 logger = logging.getLogger(__name__)
 
 
-def _compute_metric_stats(vals, statistics=None, metric="accuracy"):
-    """Statistics for a list of metric values, limited to ``statistics``.
-
-    ``metric`` decides which end of the range "worst case" means: the
-    worst latency is the slowest, the worst accuracy the lowest.
-
-    Only the configured statistics are computed, so the persisted JSON
-    carries exactly what the report displays rather than a superset the
-    reader has to guess at.
-    """
-    if not vals:
-        return None
-    wanted = set(ALL_STATISTICS if statistics is None else statistics)
-    arr = np.array(vals)
-    available = {
-        "mean": lambda: float(np.mean(arr)),
-        "std": lambda: float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0,
-        "median": lambda: float(np.median(arr)),
-        "p5": lambda: float(np.percentile(arr, 5)),
-        "p10": lambda: float(np.percentile(arr, 10)),
-        "p95": lambda: float(np.percentile(arr, 95)),
-        "p99": lambda: float(np.percentile(arr, 99)),
-        "worst_case": lambda: worst_case_of(arr, metric),
-    }
-    return {
-        name: compute() for name, compute in available.items()
-        if name in wanted
-    }
-
-
 # ---------------------------------------------------------------------------
 # Public types
 # ---------------------------------------------------------------------------
 
 class DetectionReliabilityResult(dict):
-    """Plain dict subclass; documents the expected shape.
+    """The dict ``run_detection_reliability`` returns.
 
-    Structure::
-
-        {
-            "model_name": str,
-            "is_zero_bit": bool,
-            "detection_threshold": float | None,
-            "n_files": int,
-            "no_attack": {
-                "false_positive_count": int,
-                "false_negative_count": int,
-                "metrics": {...} | absent,
-            },
-            "attacks": {
-                attack_name: {
-                    "accuracy_mean": float | None,
-                    "metrics": {metric_name: float | None, ...},
-                    "false_positive_count": int,
-                    "false_positive_attempts": int,
-                    "false_negative_count": int,
-                    "false_negative_attempts": int,
-                },
-                ...
-            },
-            "per_file": {
-                filepath: {
-                    "no_attack_fp": bool,
-                    "no_attack_fn": bool,
-                    "no_attack_metrics": {...} | absent,
-                    "attacks": {
-                        attack_name: {
-                            "fp": bool, "fn": bool,
-                            "accuracy": float,
-                            "metrics": {...},
-                        },
-                        ...
-                    },
-                },
-                ...
-            },
-        }
+    Keys: ``model_name``, ``is_zero_bit``, ``detection_threshold``,
+    ``n_files``, ``no_attack``, ``attacks`` and ``per_file``.
     """
 
 
@@ -133,19 +64,16 @@ class DetectionReliabilityResult(dict):
 # ---------------------------------------------------------------------------
 
 def _detect(model_instance, audio: np.ndarray, sampling_rate: int,
-            record=None, key="detect_latency") -> bool:
-    """Run detect() and delegate the decision to the model's is_watermarked().
+            record=None) -> bool:
+    """Run detect() and return the model's is_watermarked() decision.
 
-    ``record`` opts into timing. This mode calls detect twice per file and
-    twice per attack -- on clean audio for the false-positive rate and on
-    watermarked audio for the false-negative one -- so only the calls that
-    match what the other modes time are recorded, and the metric means the
-    same thing in all three.
+    Times detect() into ``record`` when given; callers pass it only for
+    watermarked audio, the call the other modes time.
     """
     if record is None:
         detect_output = model_instance.detect(audio, sampling_rate)
     else:
-        with efficiency.measure(record, key):
+        with efficiency.measure(record, "detect_latency"):
             detect_output = model_instance.detect(audio, sampling_rate)
     return bool(model_instance.is_watermarked(detect_output))
 
@@ -194,7 +122,7 @@ def run_detection_reliability(
 
     Returns:
         ``DetectionReliabilityResult`` with no-attack and per-attack
-        FP/FN counts plus accuracy and quality metric means.
+        FP/FN counts and the configured statistics of each metric.
 
     Raises:
         ValueError: if ``wm_model`` does not implement ``is_watermarked()``.
@@ -248,10 +176,8 @@ def run_detection_reliability(
         parameters=attack_parameters,
         extra_versions=extra_attack_versions,
     )
-    # CrossModelAttack has no config.json fallback of its own, so without
-    # this every file raised inside the per-attack try below and the row
-    # came out with zero attempts. Resolved once, before any audio, so an
-    # unknown model stops the run the same way benchmark.run does.
+    # CrossModelAttack's second model, resolved once before any audio as
+    # benchmark.run does: the attack has no config.json fallback for it.
     expanded_attacks = [
         (cls, name, {**overrides, "different_model_name_cross_model":
                      resolve_cross_model_name(
@@ -278,8 +204,7 @@ def run_detection_reliability(
     # whatever any group asks for -- not just what metrics.defaults enables,
     # which a config that states its metrics per group leaves empty.
     baseline_metrics = resolver.all_signal_metrics()
-    # Timings the config asked for. Anything else is not measured at all,
-    # so the per-file records carry none of it.
+    # Only the timings the config enables are measured.
     timed = {m: resolver.is_enabled(None, m) for m in EFFICIENCY_METRICS}
     no_attack_metrics: Dict[str, List[float]] = {
         m: [] for m in baseline_metrics
@@ -431,11 +356,9 @@ def run_detection_reliability(
             if not wm_detected:
                 attack_state[attack_name]["fn_count"] += 1
 
-            # After the detect above, not before it: that call is what
-            # fills detect_latency, and copying first left the column out
-            # of every attack's table. Only the per-file metrics come from
-            # file_timings -- its detect_latency times the un-attacked
-            # signal, which is the baseline's number, not this attack's.
+            # After the detect above, which fills detect_latency. Only the
+            # per-file metrics come from file_timings: its detect_latency
+            # times the un-attacked signal, the baseline's, not this attack's.
             for m, value in attack_timings.items():
                 attack_state[attack_name]["timings"].setdefault(m, []).append(value)
             for m in PER_FILE_EFFICIENCY_METRICS:
@@ -465,10 +388,9 @@ def run_detection_reliability(
                 "fn": not wm_detected,
                 "accuracy": 100.0 if wm_detected else 0.0,
                 "metrics": quality,
-                # Embedding happens once per file whatever attacks follow;
-                # carried here so the per-attack aggregate can reach it.
-                # Only the per-file keys: spreading all of file_timings
-                # let its baseline detect_latency overwrite this attack's.
+                # Embedding happens once per file; carried here so the
+                # per-attack aggregate can reach it. Only the per-file keys:
+                # file_timings' detect_latency belongs to the baseline.
                 **{m: file_timings[m] for m in PER_FILE_EFFICIENCY_METRICS
                    if m in file_timings},
                 **attack_timings,
@@ -477,14 +399,14 @@ def run_detection_reliability(
         per_file_records[filepath] = file_record
 
     # ------------------------------------------------------------------
-    # Aggregate per-attack means
+    # Aggregate: each value reduced to the statistics its group configures
     # ------------------------------------------------------------------
     attacks_summary: Dict[str, Dict[str, Any]] = {}
     for attack_name, state in attack_state.items():
         group_key = resolver.group_for_attack(attack_name)
         accuracies = state["accuracy"]
 
-        accuracy_stats = _compute_metric_stats(
+        accuracy_stats = compute_statistics(
             accuracies, resolver.statistics_for(group_key, "accuracy"),
         ) or {}
         entry = {
@@ -501,7 +423,7 @@ def run_detection_reliability(
             )
 
         entry["metrics"] = {
-            m: _compute_metric_stats(
+            m: compute_statistics(
                 vals, resolver.statistics_for(group_key, m), m,
             )
             for m, vals in state["metrics"].items()
@@ -509,7 +431,7 @@ def run_detection_reliability(
         # Timings are measured rather than computed from two signals, so
         # they are kept apart from the quality metrics all the way through.
         entry["timings"] = {
-            m: _compute_metric_stats(
+            m: compute_statistics(
                 vals, resolver.statistics_for(group_key, m), m,
             )
             for m, vals in state.get("timings", {}).items()
@@ -537,12 +459,12 @@ def run_detection_reliability(
     }
     if baseline_metrics:
         no_attack_result["metrics"] = {
-            m: _compute_metric_stats(vals, resolver.statistics_for(None, m), m)
+            m: compute_statistics(vals, resolver.statistics_for(None, m), m)
             for m, vals in no_attack_metrics.items()
         }
     if baseline_timings:
         no_attack_result["timings"] = {
-            m: _compute_metric_stats(vals, resolver.statistics_for(None, m), m)
+            m: compute_statistics(vals, resolver.statistics_for(None, m), m)
             for m, vals in baseline_timings.items()
         }
 

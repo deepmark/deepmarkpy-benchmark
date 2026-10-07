@@ -10,9 +10,7 @@ from deepmarkpy.utils.report_generator import BenchmarkReportGenerator, generate
 
 
 class TestVersionNamesAreEscaped:
-    """A version name is the config author's own text, printed in every
-    table. Only the base name was escaped, so ``very_aggressive`` reached
-    LaTeX as a subscript and broke the compile."""
+    """A version name is LaTeX-escaped like the base name it follows."""
 
     def test_an_underscore_in_the_version_is_escaped(self):
         assert display_attack_name("GaussianNoiseAttack (very_aggressive)") \

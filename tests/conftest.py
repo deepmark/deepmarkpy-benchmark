@@ -3,6 +3,22 @@
 import numpy as np
 import pytest
 
+_GENERATORS = (
+    "report_generator", "detailed_report_generator",
+    "no_attacks_report_generator", "detection_reliability_report_generator",
+    "comparative_report_generator",
+)
+
+
+@pytest.fixture
+def no_pdflatex(monkeypatch):
+    """Stub out pdflatex, for tests that assert on the .tex alone."""
+    monkeypatch.setattr("deepmarkpy.utils.latex_helpers.compile_latex",
+                        lambda *a, **k: None)
+    for module in _GENERATORS:
+        monkeypatch.setattr(f"deepmarkpy.utils.{module}.compile_latex",
+                            lambda *a, **k: None, raising=False)
+
 
 @pytest.fixture
 def sample_audio():

@@ -1,15 +1,7 @@
-"""The efficiency metric family: what the run cost in time, not in quality.
+"""The efficiency metric family: what the run cost in time and memory.
 
-Robustness and quality describe the *watermarking method*: the same seed
-over the same files reproduces them, which is why goldens can pin them.
-Efficiency describes the *machine and the deployment*. It does not
-reproduce -- it moves with CPU load, with whether a container is warm,
-with what else is running. The two are reported side by side but never
-in the same table, and nothing here may be asserted on by a golden.
-
-Latency is the first member. Memory and any later efficiency measure
-join this same family, so the config section, the resolver bucket and
-the terminal tag below are written for a group, not for one metric.
+These describe the machine and the deployment, not the watermarking
+method, so they do not reproduce across runs.
 
 Every line this module logs carries ``TERMINAL_TAG`` so a run's timing
 output can be read, or filtered out, on its own:
@@ -45,13 +37,10 @@ def measure(record, key, enabled=True):
             result entry, so the number travels with what it describes.
         key: the metric name, e.g. ``"embed_latency"``.
         enabled: whether the config asked for this metric. When it did
-            not, the block runs untimed and nothing is written, so the raw
-            results carry no timing the run was told not to take.
+            not, the block runs untimed and nothing is written.
 
-    Wall clock, not CPU time: the work being timed usually happens in
-    another process behind HTTP, where this process's CPU time says
-    nothing. That also means the number includes transport, which is why
-    the reports say whether an attack ran natively or over HTTP.
+    Wall-clock time, so it includes the HTTP round trip of a dockerized
+    plugin.
     """
     if not enabled:
         yield
@@ -87,19 +76,6 @@ def _run_docker(args):
     return result.stdout
 
 
-def _container_for_port(port):
-    """Name of the container publishing ``port``, or None."""
-    output = _run_docker(["ps", "--format", "{{.Names}}|{{.Ports}}"])
-    if not output:
-        return None
-    for line in output.splitlines():
-        name, _, ports = line.partition("|")
-        # Published ports read like "127.0.0.1:5001->5001/tcp".
-        if re.search(rf"[:\s]{port}->", ports):
-            return name.strip()
-    return None
-
-
 def _running_containers():
     """``{published port: container name}`` for what is up right now."""
     output = _run_docker(["ps", "--format", "{{.Names}}|{{.Ports}}"])
@@ -108,6 +84,7 @@ def _running_containers():
     by_port = {}
     for line in output.splitlines():
         name, _, ports = line.partition("|")
+        # Published ports read like "127.0.0.1:5001->5001/tcp".
         for port in re.findall(r"[:\s](\d+)->", ports):
             by_port[port] = name.strip()
     return by_port
@@ -152,12 +129,7 @@ def container_snapshot(entries):
         ``[(kind, label, container, used MiB, limit MiB)]``, one row per
         entry whose port a running container publishes. Anything native,
         stopped, or unreachable is left out rather than reported as zero.
-
-    The figure is the whole container -- weights, Python runtime, web
-    server -- read at one moment while the service was warm. It is what
-    the service costs to deploy, not the size of the model, and the
-    services load their weights at start so a container can never be
-    caught empty from outside.
+        The figure is the whole container's memory at one moment.
     """
     by_port = _running_containers()
     if not by_port:

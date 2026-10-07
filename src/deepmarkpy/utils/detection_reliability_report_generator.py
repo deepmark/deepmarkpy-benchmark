@@ -1,20 +1,10 @@
 """LaTeX report for the ``detection_reliability`` mode.
 
-Structure:
-
-* **No-Attack Baseline** (always): false-positive and false-negative
-  counts on untouched audio, plus the quality of the watermarked signal
-  the detector was asked to judge.
-* **One section per attack family** (when attacks were selected): FP/FN
-  per attack, accuracy statistics, and the metric tables that family's
-  configuration asks for.
-
-Every column comes from the ``MetricResolver`` the config file built.
-``other`` -- the attacks belonging to no declared family -- is a
-configurable group like any other.
-
-False positives and false negatives are counts over attempts, not
-distributions, so no statistic applies to them and none is configurable.
+A no-attack baseline (false positives and negatives on untouched audio,
+and the watermarked signal's quality), then, when attacks ran, one section
+per attack family: FP/FN per attack, accuracy, and the metric tables the
+config asks for. FP and FN are counts over attempts, so no statistic
+applies to them.
 """
 
 from __future__ import annotations
@@ -32,12 +22,16 @@ from deepmarkpy.utils.attack_groups import (
 from deepmarkpy.utils.latex_helpers import (
     MetricCaveats,
     build_longtable,
+    compact_header,
     compile_latex,
     container_section,
     display_attack_name,
     duration_label_tex,
+    efficiency_tables,
+    embedding_cost_line,
     format_emr_cell,
     format_metric_cell,
+    grid_table,
     make_preamble,
     part_heading,
     slugify,
@@ -51,6 +45,7 @@ from deepmarkpy.utils.metric_resolver import (
     MetricResolver,
     NISQA_METRICS,
     QUALITY_METRICS,
+    compute_statistics,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,11 +83,7 @@ def _short_model_name(name: str) -> str:
 
 
 def _stat_value(entry, statistic):
-    """One statistic out of a ``{statistic: value}`` dict.
-
-    A bare number is read as the mean: some result files store a single
-    value per metric rather than a statistics dict.
-    """
+    """One statistic from a ``{statistic: value}`` dict; a bare number is the mean."""
     if isinstance(entry, (int, float)) and not isinstance(entry, bool):
         return float(entry) if statistic == "mean" else None
     if not isinstance(entry, dict):
@@ -151,35 +142,30 @@ def _no_attack_quality_tables(result: Dict[str, Any],
         if not with_data:
             continue
 
-        # One row per metric: the columns are statistics, and every metric
-        # in a family that shares a statistic list shares a table.
+        # A row per metric and a column per statistic; metrics sharing a
+        # statistic list share a table.
         by_statistics = {}
         for metric in with_data:
             key = tuple(resolver.statistics_for(None, metric))
             by_statistics.setdefault(key, []).append(metric)
 
         for index, (statistics, members) in enumerate(by_statistics.items()):
-            headers = ["Metric"] + [stat_header(s) for s in statistics]
-            rows = []
-            for metric in members:
-                cells = [metric_label(metric)]
-                for statistic in statistics:
-                    value = _stat_value(metrics[metric], statistic)
-                    cells.append(
-                        "N/A" if value is None
-                        else format_metric_cell(metric, value)
-                    )
-                rows.append("    " + " & ".join(cells) + " \\\\")
+            rows = [
+                (metric_label(metric), [
+                    format_metric_cell(metric, _stat_value(metrics[metric], s))
+                    for s in statistics
+                ])
+                for metric in members
+            ]
             suffix = f"_{index}" if len(by_statistics) > 1 else ""
-            blocks.append(build_longtable(
-                "l" + "c" * len(statistics), " & ".join(headers), rows,
+            blocks.append(grid_table(
+                "Metric", [stat_header(s) for s in statistics], rows,
                 f"{section_title} of the watermarked audio compared to the "
                 f"original (no attack applied).",
                 f"tab:dr_no_attack_{section_key}{part}{suffix}",
             ))
 
-    body = "\n\n".join(blocks)
-    return body + _silent_note(silent)
+    return "\n\n".join(blocks) + _silent_note(silent)
 
 
 # ---------------------------------------------------------------------------
@@ -229,31 +215,23 @@ def _accuracy_table(attacks: Dict[str, Any], attack_names: List[str],
         attacks[name].get("emr_count") is not None for name in present
     )
 
-    headers = ["Attack"] + [stat_header(s) for s in statistics]
+    headers = [stat_header(s) for s in statistics]
     if show_emr:
         headers.append(metric_label("emr"))
 
     rows = []
     for name in present:
         data = attacks[name]
-        cells = [display_attack_name(name)]
-        for statistic in statistics:
-            value = data.get(f"accuracy_{statistic}")
-            cells.append(
-                "--" if value is None
-                else format_metric_cell("accuracy", value)
-            )
+        cells = [format_metric_cell("accuracy", data.get(f"accuracy_{s}"), "--")
+                 for s in statistics]
         if show_emr:
             cells.append(format_emr_cell(
                 data.get("emr_count"), data.get("accuracy_n"),
                 data.get("emr_rate"),
             ))
-        rows.append("    " + " & ".join(cells) + " \\\\")
+        rows.append((display_attack_name(name), cells))
 
-    return build_longtable(
-        "l" + "c" * (len(headers) - 1), " & ".join(headers), rows,
-        caption, label,
-    )
+    return grid_table("Attack", headers, rows, caption, label)
 
 
 def _metric_tables(attacks: Dict[str, Any], attack_names: List[str],
@@ -268,7 +246,6 @@ def _metric_tables(attacks: Dict[str, Any], attack_names: List[str],
     if not present:
         return ""
 
-    resolver = resolver or MetricResolver.from_attack_groups()
     blocks = []
     silent = []
 
@@ -289,92 +266,55 @@ def _metric_tables(attacks: Dict[str, Any], attack_names: List[str],
         ]
         silent += [m for m in enabled if m not in with_data]
 
-        multi = [m for m in with_data
-                 if len(resolver.statistics_for(group_key, m)) > 1]
-        single = [m for m in with_data if m not in multi]
-
-        for metric in multi:
-            blocks.append(_single_metric_table(
-                attacks, present, metric,
-                resolver.statistics_for(group_key, metric),
-                f"{metric_label(metric)} --- {caption}",
-                f"{label}_{metric}",
-            ))
+        single = []
+        for metric in with_data:
+            statistics = resolver.statistics_for(group_key, metric)
+            if len(statistics) > 1:
+                blocks.append(_metric_table(
+                    attacks, present, [(metric, s) for s in statistics],
+                    [stat_header(s) for s in statistics],
+                    f"{metric_label(metric)} --- {caption}",
+                    f"{label}_{metric}",
+                ))
+            else:
+                single.append((metric, statistics[0]))
 
         if single:
-            blocks.append(_compact_metric_table(
-                attacks, present, single, group_key, resolver,
+            blocks.append(_metric_table(
+                attacks, present, single,
+                [compact_header(m, s) for m, s in single],
                 f"{section_title} --- {caption}", f"{label}_{section_key}",
             ))
 
-    return "\n\n".join(b for b in blocks if b) + _silent_note(silent)
+    return "\n\n".join(blocks) + _silent_note(silent)
 
 
-def _single_metric_table(attacks, present, metric, statistics, caption, label):
-    """One metric, one column per configured statistic."""
-    headers = ["Attack"] + [stat_header(s) for s in statistics]
-    rows = []
-    caveats = MetricCaveats()
-    for name in present:
-        entry = (attacks[name].get("metrics") or {}).get(metric)
-        cells = [display_attack_name(name)]
-        for statistic in statistics:
-            value = _stat_value(entry, statistic)
-            if value is None:
-                cells.append("N/A")
-                continue
-            cell = format_metric_cell(metric, value)
-            # Once per row: the attack makes the metric unreadable, not one
-            # statistic of it.
-            if statistic == statistics[0]:
-                cell += caveats.mark(name, metric)
-            cells.append(cell)
-        rows.append("    " + " & ".join(cells) + " \\\\")
+def _metric_table(attacks, present, columns, headers, caption, label):
+    """One row per attack, one column per ``(metric, statistic)``.
 
-    if caveats.any_flagged:
-        caption += " " + caveats.footnote().strip()
-    return build_longtable(
-        "l" + "c" * len(statistics), " & ".join(headers), rows, caption, label,
-    )
-
-
-def _compact_metric_table(attacks, present, metrics, group_key, resolver,
-                          caption, label):
-    """Metrics reduced to one statistic each, one column per metric."""
-    headers = ["Attack"]
-    for metric in metrics:
-        statistic = resolver.statistics_for(group_key, metric)[0]
-        header = metric_label(metric)
-        if statistic != "mean":
-            header += f" [{stat_header(statistic)}]"
-        headers.append(header)
-
+    A metric's first statistic carries the caveat mark.
+    """
     rows = []
     caveats = MetricCaveats()
     for name in present:
         entry_metrics = attacks[name].get("metrics") or {}
-        cells = [display_attack_name(name)]
-        for metric in metrics:
-            statistic = resolver.statistics_for(group_key, metric)[0]
-            entry = entry_metrics.get(metric)
-            # Older result files stored a bare float per metric rather than
-            # a statistics dict; read that as the mean it was.
-            if isinstance(entry, (int, float)):
-                value = entry if statistic == "mean" else None
-            else:
-                value = _stat_value(entry, statistic)
+        first = {}
+        cells = []
+        for metric, statistic in columns:
+            first.setdefault(metric, statistic)
+            value = _stat_value(entry_metrics.get(metric), statistic)
             if value is None:
                 cells.append("N/A")
                 continue
-            cells.append(format_metric_cell(metric, value)
-                         + caveats.mark(name, metric))
-        rows.append("    " + " & ".join(cells) + " \\\\")
+            cell = format_metric_cell(metric, value)
+            if statistic == first[metric]:
+                cell += caveats.mark(name, metric)
+            cells.append(cell)
+        rows.append((display_attack_name(name), cells))
 
     if caveats.any_flagged:
         caption += " " + caveats.footnote().strip()
-    return build_longtable(
-        "l" + "c" * len(metrics), " & ".join(headers), rows, caption, label,
-    )
+    return grid_table("Attack", headers, rows, caption, label)
 
 
 def _silent_note(metrics):
@@ -395,67 +335,24 @@ def _silent_note(metrics):
 
 def _efficiency_tables(attacks, attack_names, group_key, resolver, label_text,
                        label_key) -> str:
-    """Processing time for one attack group, in its own tables.
+    """Timing tables for one attack group, after a blank line, or ''.
 
-    Split the way the quality tables are: a metric with two or more
-    statistics gets its own table, the single-statistic ones share one.
-    Embedding is left out -- it happens once per file, not once per
-    attack, and is stated for the run instead.
+    Embedding happens once per file, so the baseline states it instead.
     """
     present = [a for a in attack_names if a in attacks]
-    if not present:
-        return ""
-
     metrics = [
         m for m in resolver.metrics_for_group(None, bucket="efficiency")
         if m not in PER_FILE_EFFICIENCY_METRICS
         and any((attacks[a].get("timings") or {}).get(m) for a in present)
     ]
-    if not metrics:
-        return ""
-
-    note = (
-        " These depend on the machine and on whether the plugin ran "
-        "natively or over HTTP, so they do not reproduce across runs the "
-        "way the measurements above do."
+    tables = efficiency_tables(
+        "Attack",
+        [(display_attack_name(a), attacks[a].get("timings") or {})
+         for a in present],
+        metrics, lambda metric: resolver.statistics_for(group_key, metric),
+        f"--- {label_text}", f"tab:dr_efficiency_{label_key}",
     )
-
-    def table(columns, headers, caption, label):
-        rows = []
-        for name in present:
-            timings = attacks[name].get("timings") or {}
-            cells = [display_attack_name(name)]
-            for metric, statistic in columns:
-                value = (timings.get(metric) or {}).get(statistic)
-                cells.append("--" if value is None else f"{float(value):.4f}")
-            rows.append("    " + " & ".join(cells) + " \\\\")
-        return build_longtable(
-            "l" + "c" * len(columns), " & ".join(["Attack"] + headers),
-            rows, caption, label,
-        )
-
-    blocks = []
-    compact = []
-    for metric in metrics:
-        statistics = resolver.statistics_for(group_key, metric)
-        if len(statistics) > 1:
-            blocks.append(table(
-                [(metric, s) for s in statistics],
-                [stat_header(s) for s in statistics],
-                f"{metric_label(metric)} --- {label_text}.{note}",
-                f"tab:dr_efficiency_{label_key}_{metric}",
-            ))
-        elif statistics:
-            compact.append((metric, statistics[0]))
-
-    if compact:
-        blocks.append(table(
-            compact, [metric_label(m) for m, _ in compact],
-            f"Processing time --- {label_text}.{note}",
-            f"tab:dr_efficiency_{label_key}",
-        ))
-
-    return "\n\n" + "\n\n".join(b for b in blocks if b) if blocks else ""
+    return "\n\n" + tables if tables else ""
 
 
 def _embedding_cost_line(result, resolver) -> str:
@@ -464,22 +361,8 @@ def _embedding_cost_line(result, resolver) -> str:
     if not resolver.is_enabled(None, metric):
         return ""
     timings = ((result.get("no_attack") or {}).get("timings") or {}).get(metric)
-    if not timings:
-        return ""
-
-    parts = []
-    for statistic in resolver.statistics_for(None, metric):
-        value = timings.get(statistic)
-        if value is not None:
-            parts.append(f"{float(value):.4f}\\,s ({stat_header(statistic).lower()})")
-    if not parts:
-        return ""
-    return (
-        f"\\noindent\\textbf{{Embedding cost per file:}} {', '.join(parts)}\n"
-        "\\\\{\\footnotesize Measured once per file, before any attack, so it "
-        "does not vary by attack. Like every timing it depends on this machine "
-        "and does not reproduce across runs.}\n\n"
-    )
+    return embedding_cost_line(timings or {},
+                               resolver.statistics_for(None, metric))
 
 
 def _build_group_section(attacks, attack_names, group_key, label_text,
@@ -558,8 +441,7 @@ def generate_detection_reliability_report(
         result: Detection reliability result dict.
         report_dir: Output directory.
         resolver: metric/statistic configuration for every table. Defaults
-            to the built-in matrix so the generator stays usable as a
-            library.
+            to the built-in matrix.
         duration_partitions: Optional list of (label, file_list) tuples.
             When provided, generates per-duration-group sections.
     """
@@ -664,14 +546,10 @@ def _aggregate_per_file_to_result(
     per_file: Dict[str, Any], original_result: Dict[str, Any], n_files: int,
     resolver: MetricResolver,
 ) -> Dict[str, Any]:
-    """Rebuild a result-shaped dict from a subset of per-file data.
+    """A result-shaped dict recomputed from a subset of the per-file records.
 
-    Uses the per-file records to recompute FP/FN counts and metrics for
-    the subset, reducing each to the statistics its group configured so
-    the duration sections and the overall ones agree on their columns.
+    Each value is reduced to the statistics its group configures.
     """
-    from deepmarkpy.utils.detection_reliability import _compute_metric_stats
-
     grouped = {}
     no_attack_fp = 0
     no_attack_fn = 0
@@ -687,9 +565,7 @@ def _aggregate_per_file_to_result(
         for metric, value in (file_data.get("no_attack_metrics") or {}).items():
             if value is not None:
                 no_attack_metrics.setdefault(metric, []).append(value)
-        # The baseline's timings sit at the top of the per-file record, as
-        # run_detection_reliability writes them. Left out, every duration
-        # part lost its embedding-cost line while the flat report kept it.
+        # The baseline's timings sit at the top of the per-file record.
         for metric in EFFICIENCY_METRICS:
             value = file_data.get(metric)
             if value is not None and resolver.is_enabled(None, metric):
@@ -722,14 +598,14 @@ def _aggregate_per_file_to_result(
     }
     if no_attack_metrics:
         no_attack["metrics"] = {
-            metric: _compute_metric_stats(
+            metric: compute_statistics(
                 values, resolver.statistics_for(None, metric), metric,
             )
             for metric, values in no_attack_metrics.items()
         }
     if no_attack_timings:
         no_attack["timings"] = {
-            metric: _compute_metric_stats(
+            metric: compute_statistics(
                 values, resolver.statistics_for(None, metric), metric,
             )
             for metric, values in no_attack_timings.items()
@@ -739,7 +615,7 @@ def _aggregate_per_file_to_result(
     for attack_name, state in grouped.items():
         group_key = resolver.group_for_attack(attack_name)
         accuracies = state["accuracies"]
-        stats = _compute_metric_stats(
+        stats = compute_statistics(
             accuracies, resolver.statistics_for(group_key, "accuracy"),
             "accuracy",
         ) or {}
@@ -752,13 +628,13 @@ def _aggregate_per_file_to_result(
             entry["emr_rate"] = float(exact / len(accuracies)) if accuracies else 0.0
 
         entry["metrics"] = {
-            metric: _compute_metric_stats(
+            metric: compute_statistics(
                 values, resolver.statistics_for(group_key, metric), metric,
             )
             for metric, values in state["metrics"].items()
         }
         entry["timings"] = {
-            metric: _compute_metric_stats(
+            metric: compute_statistics(
                 values, resolver.statistics_for(group_key, metric), metric,
             )
             for metric, values in state["timings"].items()

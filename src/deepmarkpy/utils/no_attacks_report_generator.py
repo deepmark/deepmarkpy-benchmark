@@ -1,18 +1,11 @@
 """Report generator for the ``no_attacks`` mode.
 
-Shows what each model does to audio it watermarks, and whether it can
-read its own watermark back with nothing in between:
-
-* a detection table per model family -- a zero-bit score is a detection
-  rate and a multi-bit score is bit agreement, and the two are never mixed
-  into one column. A "Detected" count is added for the models that
-  implement ``is_watermarked()``, which is the only thing entitled to say
-  whether a watermark was found;
-* one table per configured quality metric, with the statistics that
-  metric's configuration asks for.
-
-No attacks run in this mode, so there are no attack groups: every metric
-and statistic comes from ``metrics.defaults`` via the resolver.
+Whether each model reads its own watermark back with nothing in between,
+and what embedding costs the audio: a detection table per model family
+(zero-bit detection rates and multi-bit bit agreement are never mixed),
+with a "Detected" count for models that implement ``is_watermarked()``,
+then the configured quality metrics. Every metric and statistic comes from
+``metrics.defaults``.
 """
 
 import logging
@@ -21,12 +14,14 @@ import os
 import numpy as np
 
 from deepmarkpy.utils.latex_helpers import (
-    build_longtable,
+    compact_header,
     compile_latex,
     container_section,
     duration_label_tex,
+    efficiency_tables,
     format_emr_cell,
     format_metric_cell,
+    grid_table,
     make_preamble,
     part_heading,
     slugify,
@@ -34,19 +29,17 @@ from deepmarkpy.utils.latex_helpers import (
     stat_header,
 )
 from deepmarkpy.utils.metric_resolver import (
-    ALL_STATISTICS,
     INTELLIGIBILITY_METRICS,
     PER_MODEL_EFFICIENCY_METRICS,
     MetricResolver,
     NISQA_METRICS,
     QUALITY_METRICS,
-    worst_case_of,
+    compute_statistics,
 )
 
 logger = logging.getLogger(__name__)
 
-# The three metric families get their own tables so no single table has to
-# carry thirteen columns.
+# Metric families, each tabled separately.
 _METRIC_SECTIONS = (
     ("quality", "Audio quality of the watermarked signal (no attack).",
      QUALITY_METRICS),
@@ -60,30 +53,11 @@ _METRIC_SECTIONS = (
 
 
 def _compute_stats(values, statistics=None, metric="accuracy"):
-    """Statistics for a list of values, limited to ``statistics``.
-
-    ``metric`` decides which end of the range "worst case" means.
-    """
-    if not values:
-        return None
-    wanted = set(ALL_STATISTICS if statistics is None else statistics)
-    arr = np.array(values)
-    available = {
-        "mean": lambda: float(np.mean(arr)),
-        "std": lambda: float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0,
-        "median": lambda: float(np.median(arr)),
-        "p5": lambda: float(np.percentile(arr, 5)),
-        "p10": lambda: float(np.percentile(arr, 10)),
-        "p95": lambda: float(np.percentile(arr, 95)),
-        "p99": lambda: float(np.percentile(arr, 99)),
-        "worst_case": lambda: worst_case_of(arr, metric),
-    }
-    result = {
-        name: compute() for name, compute in available.items()
-        if name in wanted
-    }
-    result["n"] = len(arr)
-    return result
+    """``compute_statistics`` plus the sample count ``n``, or None without values."""
+    stats = compute_statistics(values, statistics, metric)
+    if stats is not None:
+        stats["n"] = len(values)
+    return stats
 
 
 def _summarize_model(results, resolver):
@@ -104,14 +78,11 @@ def _summarize_model(results, resolver):
         "accuracy_stats": accuracy_stats,
     }
 
-    # "Was a watermark found" is the model's own answer, recorded per file
-    # by run_no_attacks when the model implements is_watermarked(). Without
-    # it there is no honest count to print: a threshold on detect() output
-    # would be this report guessing what the output means.
+    # The model's own is_watermarked() answer, recorded per file by
+    # run_no_attacks; without it there is no count.
     if results.get("supports_detection"):
-        # Counted over the files the model actually decided. A file whose
-        # is_watermarked() raised has no answer, and counting it in the
-        # denominator reported each failure as "not detected".
+        # Over the files it decided: one whose is_watermarked() raised has
+        # no answer.
         decided = [f for f in files if "detected" in f]
         summary["supports_detection"] = True
         summary["positive_detections"] = sum(1 for f in decided if f["detected"])
@@ -135,8 +106,7 @@ def _summarize_model(results, resolver):
         if confidences:
             summary["mean_confidence"] = float(np.mean(confidences))
 
-    # Timings sit on the file entry beside accuracy, not inside the
-    # quality dict: they are not a comparison of two signals.
+    # Timings sit on the file entry, not in its quality dict.
     timing_stats = {}
     for metric in resolver.metrics_for_group(None, bucket="efficiency"):
         values = [f[metric] for f in files if f.get(metric) is not None]
@@ -146,7 +116,6 @@ def _summarize_model(results, resolver):
             )
     if timing_stats:
         summary["efficiency_stats"] = timing_stats
-
 
     quality_files = [
         f.get("watermarked_audio_quality") for f in files
@@ -180,15 +149,8 @@ def _short_model_name(name):
 def _accuracy_table(models_data, resolver, is_zero_bit, label):
     """Detection performance for one model family.
 
-    Zero-bit and multi-bit models are tabled separately: a zero-bit score
-    is the share of files in which anything was detected, a multi-bit
-    score is bit agreement, and a shared column would invite reading one
-    as the other.
-
-    The "Detected" column appears for the models that answer
-    ``is_watermarked()``, whatever family they are in -- a multi-bit model
-    that can say yes or no gets the count too. Models that cannot are left
-    with their accuracy columns alone.
+    "Detected" appears for the models that answer ``is_watermarked()``,
+    whatever their family.
     """
     statistics = resolver.statistics_for(None, "accuracy")
     show_ber = resolver.is_enabled(None, "ber") and not is_zero_bit
@@ -199,7 +161,7 @@ def _accuracy_table(models_data, resolver, is_zero_bit, label):
         d.get("supports_detection") for d in models_data.values()
     )
 
-    headers = ["Model"] + [stat_header(s) for s in statistics]
+    headers = [stat_header(s) for s in statistics]
     if show_detected:
         headers.append("Detected")
     if show_ber and len(ber_statistics) == 1:
@@ -211,13 +173,9 @@ def _accuracy_table(models_data, resolver, is_zero_bit, label):
 
     rows = []
     for model_name, data in models_data.items():
-        cells = [_short_model_name(model_name)]
         stats = data.get("accuracy_stats") or {}
-        for statistic in statistics:
-            value = stats.get(statistic)
-            cells.append(
-                "--" if value is None else format_metric_cell("accuracy", value)
-            )
+        cells = [format_metric_cell("accuracy", stats.get(s), "--")
+                 for s in statistics]
         if show_detected:
             cells.append(
                 f"{data.get('positive_detections', 0)}/"
@@ -226,7 +184,7 @@ def _accuracy_table(models_data, resolver, is_zero_bit, label):
             )
         if show_ber and len(ber_statistics) == 1:
             ber = (data.get("ber_stats") or {}).get(ber_statistics[0])
-            cells.append("--" if ber is None else format_metric_cell("ber", ber))
+            cells.append(format_metric_cell("ber", ber, "--"))
         if show_emr:
             cells.append(format_emr_cell(
                 data.get("emr_count"), stats.get("n"), data.get("emr_rate"),
@@ -234,152 +192,64 @@ def _accuracy_table(models_data, resolver, is_zero_bit, label):
         if has_confidence:
             confidence = data.get("mean_confidence")
             cells.append(f"{confidence:.4f}" if confidence is not None else "N/A")
-        rows.append("    " + " & ".join(cells) + " \\\\")
+        rows.append((_short_model_name(model_name), cells))
 
     family = "zero-bit" if is_zero_bit else "multi-bit"
-    return build_longtable(
-        "l" + "c" * (len(headers) - 1),
-        " & ".join(headers),
-        rows,
-        f"Baseline detection performance --- {family} models.",
-        label,
+    return grid_table(
+        "Model", headers, rows,
+        f"Baseline detection performance --- {family} models.", label,
     )
 
 
 def _ber_table(models_data, resolver, label):
-    """BER with two or more statistics, which does not fit inline."""
+    """BER with two or more statistics, one row per model."""
     statistics = resolver.statistics_for(None, "ber")
-    headers = ["Model"] + [stat_header(s) for s in statistics]
-    rows = []
-    for model_name, data in models_data.items():
-        stats = data.get("ber_stats") or {}
-        cells = [_short_model_name(model_name)] + [
-            "--" if stats.get(s) is None else format_metric_cell("ber", stats[s])
+    rows = [
+        (_short_model_name(model_name), [
+            format_metric_cell("ber", (data.get("ber_stats") or {}).get(s), "--")
             for s in statistics
-        ]
-        rows.append("    " + " & ".join(cells) + " \\\\")
-    return build_longtable(
-        "l" + "c" * len(statistics), " & ".join(headers), rows,
+        ])
+        for model_name, data in models_data.items()
+    ]
+    return grid_table(
+        "Model", [stat_header(s) for s in statistics], rows,
         "Bit error rate of the watermarked signal (no attack).", label,
     )
 
 
-def _metric_table(models_data, resolver, metric, label):
-    """One metric, one row per model, one column per configured statistic."""
-    statistics = resolver.statistics_for(None, metric)
-    present = {
-        name: (data.get("quality_metrics_stats") or {})[metric]
-        for name, data in models_data.items()
-        if (data.get("quality_metrics_stats") or {}).get(metric)
-    }
-    if not present:
-        return ""
-
-    headers = ["Model"] + [stat_header(s) for s in statistics]
-    rows = []
-    for model_name, stats in present.items():
-        cells = [_short_model_name(model_name)] + [
-            "N/A" if stats.get(s) is None else format_metric_cell(metric, stats[s])
-            for s in statistics
-        ]
-        rows.append("    " + " & ".join(cells) + " \\\\")
-
-    return build_longtable(
-        "l" + "c" * len(statistics), " & ".join(headers), rows,
-        f"{metric_label(metric)} of the watermarked signal (no attack).",
-        label,
-    )
-
-
-def _compact_metric_table(models_data, resolver, metrics, caption, label):
-    """Metrics reduced to one statistic each, one column per metric."""
-    headers = ["Model"]
-    for metric in metrics:
-        statistic = resolver.statistics_for(None, metric)[0]
-        header = metric_label(metric)
-        if statistic != "mean":
-            header += f" [{stat_header(statistic)}]"
-        headers.append(header)
-
-    rows = []
-    for model_name, data in models_data.items():
-        stats_by_metric = data.get("quality_metrics_stats") or {}
-        cells = [_short_model_name(model_name)]
-        for metric in metrics:
-            statistic = resolver.statistics_for(None, metric)[0]
-            value = (stats_by_metric.get(metric) or {}).get(statistic)
-            cells.append(
-                "N/A" if value is None else format_metric_cell(metric, value)
-            )
-        rows.append("    " + " & ".join(cells) + " \\\\")
-
-    return build_longtable(
-        "l" + "c" * len(metrics), " & ".join(headers), rows, caption, label,
-    )
+def _metric_table(models_data, columns, headers, caption, label):
+    """One row per model, one column per ``(metric, statistic)``."""
+    rows = [
+        (_short_model_name(model_name), [
+            format_metric_cell(metric, (
+                (data.get("quality_metrics_stats") or {}).get(metric) or {}
+            ).get(statistic))
+            for metric, statistic in columns
+        ])
+        for model_name, data in models_data.items()
+    ]
+    return grid_table("Model", headers, rows, caption, label)
 
 
 def _efficiency_table(summaries, resolver, label):
-    """What embedding and detection cost in time, per model.
-
-    Its own tables below the quality ones. Those describe the model and
-    reproduce from a seed; this describes the machine that ran it and
-    does not, so the two never share a row. Split the same way the
-    quality tables are, so several statistics do not make one wide table.
-    """
+    """Per-model timing tables; container memory has a section of its own."""
     metrics = [
         m for m in resolver.metrics_for_group(None, bucket="efficiency")
         if m not in PER_MODEL_EFFICIENCY_METRICS
         and any((d.get("efficiency_stats") or {}).get(m)
                 for d in summaries.values())
     ]
-    if not metrics:
-        return ""
-
-    note = (
-        " These depend on the machine and on whether the model runs "
-        "natively or in a container, so they do not reproduce across runs "
-        "the way the measurements above do."
-    )
-
-    tables = []
-    compact = []
-    for metric in metrics:
-        statistics = resolver.statistics_for(None, metric)
-        if len(statistics) > 1:
-            tables.append(_timing_table(
-                summaries, [(metric, s) for s in statistics],
-                [stat_header(s) for s in statistics],
-                f"{metric_label(metric)} per model, with no attack "
-                f"applied.{note}",
-                f"{label}_{metric}",
-            ))
-        elif statistics:
-            compact.append((metric, statistics[0]))
-
-    if compact:
-        tables.append(_timing_table(
-            summaries, compact, [metric_label(m) for m, _ in compact],
-            f"Processing time per model, with no attack applied.{note}",
-            label,
-        ))
-
-    return "\n\n".join(t for t in tables if t)
-
-
-def _timing_table(summaries, columns, headers, caption, label):
-    """One timing table: a row per model, a column per (metric, statistic)."""
-    rows = []
-    for name, data in summaries.items():
-        stats = data.get("efficiency_stats") or {}
-        cells = [_short_model_name(name)]
-        for metric, statistic in columns:
-            value = (stats.get(metric) or {}).get(statistic)
-            cells.append("--" if value is None else f"{float(value):.4f}")
-        rows.append("    " + " & ".join(cells) + " \\\\")
-
-    return build_longtable(
-        "l" + "c" * len(columns), " & ".join(["Model"] + headers),
-        rows, caption, label,
+    return efficiency_tables(
+        "Model",
+        [(_short_model_name(name), data.get("efficiency_stats") or {})
+         for name, data in summaries.items()],
+        metrics, lambda metric: resolver.statistics_for(None, metric),
+        "per model, with no attack applied", label,
+        note=(
+            " These depend on the machine and on whether the model runs "
+            "natively or in a container, so they do not reproduce across runs "
+            "the way the measurements above do."
+        ),
     )
 
 
@@ -420,21 +290,28 @@ def _build_body(summaries, resolver, label_suffix=""):
         ]
         silent += [m for m in enabled if m not in with_data]
 
-        multi = [m for m in with_data
-                 if len(resolver.statistics_for(None, m)) > 1]
-        single = [m for m in with_data if m not in multi]
-
-        for metric in multi:
-            table = _metric_table(
-                summaries, resolver, metric,
-                f"tab:no_attacks_{metric}{suffix}",
-            )
-            if table:
-                quality_tables.append(table)
+        single = []
+        for metric in with_data:
+            statistics = resolver.statistics_for(None, metric)
+            if len(statistics) > 1:
+                # Only the models with a value for this metric get a row.
+                present = {
+                    name: data for name, data in summaries.items()
+                    if (data.get("quality_metrics_stats") or {}).get(metric)
+                }
+                quality_tables.append(_metric_table(
+                    present, [(metric, s) for s in statistics],
+                    [stat_header(s) for s in statistics],
+                    f"{metric_label(metric)} of the watermarked signal "
+                    "(no attack).",
+                    f"tab:no_attacks_{metric}{suffix}",
+                ))
+            else:
+                single.append((metric, statistics[0]))
         if single:
-            quality_tables.append(_compact_metric_table(
-                summaries, resolver, single, caption,
-                f"tab:no_attacks_{section_key}{suffix}",
+            quality_tables.append(_metric_table(
+                summaries, single, [compact_header(m, s) for m, s in single],
+                caption, f"tab:no_attacks_{section_key}{suffix}",
             ))
 
     body = "\n\n".join(tables)
@@ -471,7 +348,7 @@ def generate_no_attacks_report(all_results, report_dir="report",
         duration_partitions: Optional list of (label, file_list) tuples.
             When provided, generates per-duration-group sections.
         resolver: metric/statistic configuration. Defaults to the built-in
-            matrix so the generator stays usable as a library.
+            matrix.
 
     Returns:
         Path to the generated .tex file.

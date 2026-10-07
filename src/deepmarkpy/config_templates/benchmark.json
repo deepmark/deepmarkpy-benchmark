@@ -1,8 +1,6 @@
 {
-  "_THIS_IS_A_TEMPLATE": "You are reading the blank template that 'deepmark-benchmark --init benchmark' prints. It is deliberately empty. Do NOT edit or run this file - edit your own copy at configs/benchmark.json, which is what --config takes.",
   "_file": "Benchmark mode: embed, apply each attack, measure what survives and what it cost. Keys starting with _ are comments and are ignored. Check with --validate-only; reset with 'deepmark-benchmark --init benchmark'.",
 
-  "_mode": "Which mode this file configures. One of: benchmark, no_attacks, detection_reliability.",
   "mode": "benchmark",
 
   "_general": "Operational settings; the matching CLI flag overrides each one. wav_files_dir has no default - set it here or pass --wav_files_dir. report_dir is DELETED at the start of every run. seed: integer for a repeatable run, or null for a fresh watermark per file.",
@@ -18,22 +16,16 @@
   "_models": "Model class names; two or more adds a comparative report. Any of: AudioSealModel, AwareModel, PerthModel, SilentCipherModel, TimbreWMModel, WavMarkModel. Each one's Docker service must be running.",
   "models": ["AudioSealModel"],
 
-  "_attacks": "groups and list are combined; leaving BOTH empty runs all 45 attacks. groups - any of: process_disruption, audio_editing, audio_distortion, desynchronization, ai_attacks, transmission. list - attack class names, optionally AttackName:version (e.g. GaussianNoiseAttack:aggressive).",
-  "_attacks_available": "Attack class names for attacks.list, all 45 of them: AdditiveNoiseAttack, BandstopFilterAttack, ChorusAttack, Codec2VocoderAttack, Collusion2Attack, CollusionAttack, CropBeginningAttack, CropRandomAttack, CrossModelAttack, CutSamplesAttack, DescriptAudioCodecAttack, DiffusionAttack, EchoAttack, EncodecAttack, EqualizerAttack, FlangerAttack, FlipSamplesAttack, GaussianNoiseAttack, HighpassFilterAttack, InvertedTimeStretchAttack, LPCAttack, LowpassFilterAttack, MixingAttack, Mp3CompressionAttack, NetworkTransmissionAttack, NeuralVocoderAttack, OpusCodecAttack, PCMQuantizationAttack, PinkNoiseAttack, PitchShiftAttack, QuantizationAttack, ReplayAttack, ResamplingPolyAttack, STFTQuantizationAttack, SameModelAttack, SignInversionAttack, SmoothingAttack, SpeechEnhancement1Attack, SpeechEnhancement2Attack, SpeechTokenizationAttack, TimeStretchAttack, VAEAttack, WaveletAttack, ZeroBitCollusionAttack, ZeroCrossInsertsAttack.",
-  "_attacks_versions": "No shipped attack declares parameter presets: each plugin's config.json holds one parameter set, which is its default version. You can define your own under attack_parameters as AttackName:version - give ALL of that attack's parameters, then name it in attacks.list. Naming an attack without a version runs every version it has. Codec2VocoderAttack expands to one run per bitrate in bitrate_codec2.",
+  "_attacks": "groups and list are combined; leaving BOTH empty runs every attack. groups - any of: process_disruption, audio_editing, audio_distortion, desynchronization, ai_attacks, transmission. list - attack class names, optionally AttackName:version (e.g. GaussianNoiseAttack:aggressive).",
   "attacks": {
     "groups": [],
     "list": []
   },
 
-  "_attack_parameters": "Override plugin parameters, keyed by attack CLASS NAME for its default version, or AttackName:version to define and configure a named one - e.g. {\"GaussianNoiseAttack\": {\"snr_db_gaussian_noise\": 25}, \"GaussianNoiseAttack:mild\": {\"snr_db_gaussian_noise\": 55}}, where :mild is a version this file defines. A bare name touches ONLY the default version, never the named ones.",
-  "_attack_parameters_new_version": "Naming a version the plugin does not have DEFINES it, if you give ALL of that attack's parameters - it is then selectable in attacks.list and included when the attack is named without a version. Give only some and the entry is skipped with a warning, since the rest would silently come from the default preset.",
-  "_attack_parameters_checks": "The attack name, every parameter name and every value type are checked against that plugin's config.json before the run starts. Find the parameter names with: cat src/deepmarkpy/plugins/attacks/<dir>/config.json",
+  "_attack_parameters": "Plugin parameter overrides, keyed by attack CLASS NAME (its default version ONLY) or AttackName:version; naming a version the plugin lacks DEFINES it when you give ALL of that attack's parameters. Delete the underscore from an entry below to activate it.",
   "attack_parameters": {
-    "_example": "Delete the underscore from a key below to activate it. The parser ignores every _-prefixed key, so this block is inert as written.",
     "_GaussianNoiseAttack": { "snr_db_gaussian_noise": 30 },
     "_GaussianNoiseAttack:aggressive": { "snr_db_gaussian_noise": 10 },
-    "_GaussianNoiseAttack:brutal": { "snr_db_gaussian_noise": 3 },
     "_TimeStretchAttack:subtle": { "stretch_rate_time_stretch": 1.05 }
   },
 
@@ -173,7 +165,7 @@
   "_crop_before_attack": "Percentage cropped from the START of the watermarked audio before each attack, to test a watermark that cannot rely on being aligned. A number greater than 0 and less than 100, or null to disable.",
   "crop_before_attack": null,
 
-  "_efficiency": "What the run cost in TIME, kept apart from the metrics block above. Those describe the watermarking method and reproduce from a seed; these describe this machine on this day and do not. enabled: false means no timing is taken at all. Metrics - embed_latency, detect_latency, attack_latency (seconds). Memory and any later efficiency measure will be listed here too.",
+  "_efficiency": "What the run cost in time and memory, kept apart from the metrics block above. Those describe the watermarking method and reproduce from a seed; these describe this machine on this day and do not. enabled: false means none of it is measured. Metrics - embed_latency, detect_latency, attack_latency (seconds), container_footprint (MiB).",
   "_efficiency_caveat": "A native attack is timed as pure computation; one running in Docker includes base64 encoding of the audio and the HTTP round trip, so the two are not comparable. The first call to a cold container also pays for loading the model.",
   "efficiency": {
     "enabled": false,

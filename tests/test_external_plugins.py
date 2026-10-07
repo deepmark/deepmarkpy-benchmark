@@ -36,14 +36,7 @@ def test_external_plugin_registers_with_config(external_dir):
 
 
 def test_external_plugin_can_actually_be_instantiated(external_dir):
-    """Registering is not enough: the run loop constructs the class.
-
-    BaseAttack locates its config.json with inspect.getfile(), which
-    resolves the class's module through sys.modules. A plugin loaded by
-    file path without being registered there raises "is a built-in class"
-    on the first instantiation -- so it discovered fine and then broke the
-    moment anything used it.
-    """
+    """A plugin loaded by file path can be constructed, as the run loop does."""
     pm = PluginManager(external_plugins_dir=str(external_dir))
     instance = pm.get_attacks()["ExternalDropInAttack"]["class"]()
     assert instance._config == {"gain_external_drop_in": 1.0}

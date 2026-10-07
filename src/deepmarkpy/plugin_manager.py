@@ -184,23 +184,3 @@ class PluginManager:
     def get_models(self):
         """Return a dict of {class_name: {"class": class, "config": config_data}} for all discovered models."""
         return self.models
-
-    def get_attack_versions(self, attack_name: str):
-        """Return list of available versions for an attack.
-
-        Single-version attacks return ['default'].
-        Multi-version attacks return all version names.
-        """
-        if attack_name not in self.attacks:
-            return []
-        raw = self.attacks[attack_name].get("_raw_config")
-        if raw is None:
-            return ["default"]
-        if "default" in raw and isinstance(raw["default"], dict):
-            return [k for k in raw.keys() if not k.startswith("_")]
-        return ["default"]
-
-    def is_multi_version(self, attack_name: str) -> bool:
-        """Return True if the attack has multiple parameter versions."""
-        versions = self.get_attack_versions(attack_name)
-        return len(versions) > 1

@@ -34,11 +34,8 @@ class ComparativeReportGenerator:
     individual detailed reports; mixing model-level metrics here would
     compare different models on different signals and is not meaningful.
 
-    A cell holds one number per model per attack, so the table can show
-    one statistic at a time. ``comparison.primary_statistic`` picks the one
-    for the main colour-ranked table, and every other statistic configured
-    for accuracy gets its own table after it -- so a configured statistic
-    is never dropped, and the main table stays readable.
+    ``comparison.primary_statistic`` picks the main colour-ranked table's
+    statistic; every other configured accuracy statistic gets its own table.
     """
 
     def __init__(self, report_dir="report/comparison", resolver=None,
@@ -57,10 +54,7 @@ class ComparativeReportGenerator:
     def _statistics(self, all_stats=None):
         """Accuracy statistics to table, primary first.
 
-        The union over the groups this run actually touched, not the
-        top-level list alone: a per-group override can configure a
-        statistic the defaults never name, and these tables are the only
-        place it would appear.
+        The union of what every group the run touched configures.
         """
         configured = list(self.resolver.statistics_for(None, "accuracy"))
         for attack in self._attacks_in(all_stats):
@@ -84,13 +78,9 @@ class ComparativeReportGenerator:
 
     @staticmethod
     def _value(entry, statistic):
-        """Read one statistic from a per-attack stats dict.
+        """One accuracy statistic from a per-attack stats dict, or None when absent.
 
-        Accepts a bare float as the mean, which is what a caller passing a
-        flattened ``{attack: accuracy}`` mapping supplies. Returns
-        ``None`` when the attack's group did not configure this
-        statistic, so the per-statistic tables print a dash rather than
-        another statistic's number under the wrong heading.
+        A bare float is read as the mean.
         """
         if entry is None:
             return None
@@ -99,12 +89,10 @@ class ComparativeReportGenerator:
         return entry.get(f"accuracy_{statistic}")
 
     def _primary_value(self, entry, attack_name):
-        """The single number per attack the radar draws.
+        """The radar's value for an attack.
 
-        Read in the statistic that attack's *own* group configured. The
-        report-wide primary can be absent from the entry when a group
-        overrides it, and drawing that as zero would put an attack nobody
-        measured in that statistic where a destroyed watermark belongs.
+        Its group's first configured accuracy statistic other than ``std``
+        that has a value, else the mean.
         """
         group_key = self.resolver.group_for_attack(attack_name)
         for statistic in self.resolver.statistics_for(group_key, "accuracy"):
@@ -235,9 +223,7 @@ class ComparativeReportGenerator:
             rankable = [v for v, zb in zip(values, zero_bit) if not zb]
             cells = []
             for value, zb in zip(values, zero_bit):
-                # A spread has no better end -- the lowest std can be
-                # a model that fails every file alike -- so it is
-                # tabled like a zero-bit column: shown, never ranked.
+                # A spread has no better end, so std is shown but not ranked.
                 if zb or statistic == "std":
                     cells.append("N/A" if value is None else f"{value:.2f}")
                 else:
@@ -440,8 +426,7 @@ class ComparativeReportGenerator:
         accuracy_table = self.generate_accuracy_table(all_stats, statistics[0])
         color_legend = self._color_legend_text()
 
-        # One table per remaining configured statistic, so nothing the
-        # config asked for is dropped just because a cell holds one number.
+        # One table per remaining configured statistic.
         secondary = ""
         if len(statistics) > 1:
             blocks = [

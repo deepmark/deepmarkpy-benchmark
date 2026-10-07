@@ -87,9 +87,7 @@ class TestExpandAttacks:
         assert [d for _, d, _, _ in expanded] == ["Codec2VocoderAttack_700"]
 
     def test_a_bare_bitrate_attack_also_runs_a_config_defined_version(self):
-        """A bare name runs every version at each of its bitrates. The one
-        the config defines loads the plugin's default preset and takes its
-        bitrates from the config."""
+        """A bare name runs each version, a config-defined one too, per bitrate."""
         registry = {"Codec2VocoderAttack": {"config": {"bitrate_codec2": [700, 2400]}}}
         expanded = expand_attacks(
             ["Codec2VocoderAttack"], registry,
@@ -132,9 +130,7 @@ class TestExpandAttacks:
         ]
 
     def test_a_colon_inside_the_version_stays_in_the_version(self):
-        """Validation splits at the first colon, and so does expansion: at
-        the last, "GaussianNoiseAttack:v:2" would name a class
-        "GaussianNoiseAttack:v" that benchmark mode skips."""
+        """Expansion splits a spec at the first colon, as validation does."""
         registry = {"GaussianNoiseAttack": {
             "config": {"snr_db_gaussian_noise": 35},
             "_raw_config": {
@@ -150,8 +146,7 @@ class TestExpandAttacks:
         assert display == "GaussianNoiseAttack (v:2)"
 
     def test_a_saved_audio_filename_replaces_what_a_path_cannot_hold(self):
-        """A version name may hold a path separator or a character Windows
-        reserves; in the saved-audio filename each becomes an underscore."""
+        """A path separator or a Windows-reserved character becomes ``_``."""
         assert audio_filename_label("GaussianNoiseAttack (v:2)") == "GaussianNoiseAttack (v_2)"
         assert audio_filename_label("PresetNoiseAttack (lo/hi)") == "PresetNoiseAttack (lo_hi)"
 
@@ -383,10 +378,7 @@ class TestComparativeTableComparability:
         assert "A" in table
 
     def test_a_std_table_ranks_no_model(self):
-        """A spread has no better end, so its cells are shown uncoloured.
-
-        The same row at the mean is ranked, so the data itself ranks.
-        """
+        """A spread has no better end, so its cells are shown uncoloured."""
         gen = self._gen({}, ("mean", "std"))
         std_row = self._data_row(gen.generate_accuracy_table(
             self.STEADY_VS_ERRATIC, "std", with_note=False), "Gaussian")
@@ -427,8 +419,6 @@ class TestMultiModelPath:
     """
 
     def test_collects_stats_and_metadata_for_every_model(self, tmp_path, monkeypatch):
-        import argparse
-
         from deepmarkpy import run as run_module
 
         models = {
@@ -490,13 +480,7 @@ class TestMultiModelPath:
 
 
 class TestExpansionIsDeduplicated:
-    """A row must not be expanded twice.
-
-    Naming a version in attacks.list while its attack also arrives from a
-    group produced that version twice: attacked twice per file, then
-    collapsed by the results dict, which keys on the display name. Pure
-    wasted work, and invisible in the output.
-    """
+    """A row is expanded once, however many specs reach it."""
 
     @staticmethod
     def _registry():
@@ -541,8 +525,7 @@ class TestExpansionIsDeduplicated:
         assert names == ["GaussianNoiseAttack (mild)"]
 
     def test_default_and_bare_bitrate_attack_is_one_row_per_bitrate(self):
-        """On a single-version plugin ':default' names the bare attack, so
-        together they give each bitrate one row, not two."""
+        """On a single-version plugin ':default' and the bare name are one row."""
         names = [
             display for _, display, _, _ in expand_attacks(
                 ["Codec2VocoderAttack:default", "Codec2VocoderAttack"],
@@ -552,8 +535,7 @@ class TestExpansionIsDeduplicated:
         assert names == ["Codec2VocoderAttack_700", "Codec2VocoderAttack_2400"], names
 
     def test_a_bitrate_version_named_and_reached_bare_is_one_row(self):
-        """The named config-defined version runs at its own bitrate, and
-        the bare name adds only the rows it does not already have."""
+        """The bare name adds only the rows the named version does not have."""
         names = [
             display for _, display, _, _ in expand_attacks(
                 ["Codec2VocoderAttack:hi", "Codec2VocoderAttack"],
@@ -566,23 +548,11 @@ class TestExpansionIsDeduplicated:
         ], names
 
 
+@pytest.mark.usefixtures("no_pdflatex")
 class TestTheCropCaveatSurvivesDurationGrouping:
-    """A cropped run says so whichever shape the report takes.
-
-    Both reports stated it in their abstract, and the duration-grouped
-    documents have no abstract -- so grouping a cropped run silently
-    dropped the one sentence that says the numbers do not describe the
-    whole signal.
-    """
+    """A cropped run says so whichever shape the report takes."""
 
     CROP = 12.5
-
-    @pytest.fixture(autouse=True)
-    def _no_pdflatex(self, monkeypatch):
-        monkeypatch.setattr(
-            "deepmarkpy.utils.latex_helpers.compile_latex",
-            lambda *a, **k: None,
-        )
 
     def _grouped_stats(self):
         return {
@@ -606,15 +576,12 @@ class TestTheCropCaveatSurvivesDurationGrouping:
         )
         return (tmp_path / "benchmark_report.tex").read_text()
 
-    def test_the_basic_grouped_report_carries_the_note(self, tmp_path):
-        assert "A crop of 12.5\\%" in self._basic_tex(tmp_path, self.CROP)
+    def test_the_basic_grouped_report_carries_the_note_once(self, tmp_path):
+        tex = self._basic_tex(tmp_path, self.CROP)
+        assert tex.count("A crop of") == tex.count("A crop of 12.5\\%") == 1
 
     def test_an_uncropped_grouped_report_says_nothing(self, tmp_path):
         assert "A crop of" not in self._basic_tex(tmp_path, None)
-
-    def test_the_note_appears_once_not_per_duration_part(self, tmp_path):
-        tex = self._basic_tex(tmp_path, self.CROP)
-        assert tex.count("A crop of") == 1
 
     def test_the_detailed_grouped_report_carries_the_note(self, tmp_path):
         from deepmarkpy.utils.detailed_report_generator import (

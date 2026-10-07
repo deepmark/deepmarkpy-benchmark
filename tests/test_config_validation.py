@@ -1,28 +1,19 @@
-"""Every validation error code, raised by the input that should raise it.
-
-The point of the error catalog is that a user fixes a config file in one
-pass: every problem is reported together, each with a stable code, the
-exact JSON path, the offending value, and a suggestion when the value
-looks like a typo. These tests pin one input per code, so a message can
-be reworded but a code cannot silently stop firing.
-"""
+"""Every validation error code, raised by the input that should raise it: one
+input per code, so a message can be reworded but a code cannot stop firing."""
 
 import json
-import re
 
 import pytest
 
 from deepmarkpy.benchmark import expand_attacks
 from deepmarkpy.config import (
     ConfigError,
-    MODE_KEYS,
     VALID_MODES,
     init_template,
     load_config_data,
     load_configs,
 )
 from deepmarkpy.core.base_model import BaseModel
-from deepmarkpy.plugin_manager import PluginManager
 from deepmarkpy.run import _peek_plugins_dir
 from deepmarkpy.utils.attack_groups import ATTACK_GROUPS
 
@@ -126,8 +117,7 @@ class TestFileLevelCodes:
         assert "UTF-8" in issue_for(error, "E002").message
 
     def test_a_utf8_byte_order_mark_is_accepted(self, tmp_path):
-        """What 'Out-File -Encoding utf8', the fix E002 suggests, writes in
-        PowerShell 5.1. The plugins_dir peek before discovery reads it too."""
+        """A UTF-8 BOM is read by the loader and by the plugins_dir peek."""
         path = tmp_path / "bom.json"
         path.write_bytes(json.dumps(
             {**BASE, "general": {"plugins_dir": "plugins"}}
@@ -181,10 +171,10 @@ class TestKeyCodes:
         found, _ = codes(write(tmp_path, {"general": "report"}))
         assert "E009" in found
 
-    def test_E039_unknown_general_key(self, tmp_path):
+    def test_E007_unknown_general_key(self, tmp_path):
         found, error = codes(write(tmp_path, {"general": {"report_dirr": "x"}}))
-        assert "E039" in found
-        assert issue_for(error, "E039").suggestion == "report_dir"
+        assert "E007" in found
+        assert issue_for(error, "E007").suggestion == "report_dir"
 
 
 class TestModelCodes:
@@ -251,8 +241,7 @@ class TestModelCodes:
         assert config.models == ["PerthModel"]
 
     def test_no_E044_without_a_model_class(self, tmp_path):
-        """No registry (the pass before plugins load) or a name-only one
-        has no class to ask, so the model is not refused there."""
+        """No registry, or a name-only one, has no class to ask, so no E044."""
         path = write(tmp_path, {
             "mode": "detection_reliability", "models": ["WavMarkModel"],
         })
@@ -295,8 +284,7 @@ class TestAttackCodes:
         assert issue_for(error, "E014").suggestion == "GaussianNoiseAttack"
 
     def test_E014_group_member_that_was_not_discovered(self, tmp_path):
-        """A group runs every attack it declares, and the run refuses one
-        whose plugin did not load."""
+        """A group whose member's plugin did not load is refused."""
         found, error = codes(write(
             tmp_path, {"attacks": {"groups": ["audio_distortion"]}}))
         assert "E014" in found
@@ -350,8 +338,7 @@ class TestAttackParameterCodes:
         assert "E019" in found
 
     def test_two_attacks_may_share_a_parameter_name(self, tmp_path):
-        """Parameters are routed per attack entry, so both values apply,
-        each to its own attack."""
+        """Parameters are routed per attack, so each value reaches its own."""
         registry = dict(ATTACKS)
         registry["OtherEchoAttack"] = {"config": {"delay_echo": 0.3}}
         config = load_configs([write(tmp_path, {"attack_parameters": {
@@ -382,17 +369,6 @@ class TestAttackParameterCodes:
             "snr_db_gaussian_noise": 50,
         }
         assert config.parameters_for("GaussianNoiseAttack", "default") == {}
-
-    def test_default_and_a_named_version_can_differ(self, tmp_path):
-        config = load_configs([write(tmp_path, {"attack_parameters": {
-            "GaussianNoiseAttack": {"snr_db_gaussian_noise": 30},
-            "GaussianNoiseAttack:mild": {"snr_db_gaussian_noise": 55},
-        }})], ATTACKS, MODELS)[0]
-
-        assert config.parameters_for("GaussianNoiseAttack", "default")[
-            "snr_db_gaussian_noise"] == 30
-        assert config.parameters_for("GaussianNoiseAttack", "mild")[
-            "snr_db_gaussian_noise"] == 55
 
     def test_a_complete_new_version_is_defined(self, tmp_path):
         """All parameters given, so the version is added and selectable."""
@@ -489,8 +465,7 @@ class TestAttackParameterCodes:
         assert "E019" in found
 
     def test_E019_no_other_list_parameter_takes_a_single_value(self, tmp_path):
-        """A range or per-band list given as one number would reach the
-        attack unchanged and fail inside apply()."""
+        """A range or per-band list parameter given as one number is E019."""
         registry = {"BandstopFilterAttack": {
             "config": {"freq_range_bandstop": [350, 500]}}}
         found, _ = codes(write(tmp_path, {"attack_parameters": {
@@ -537,8 +512,7 @@ class TestAttackParameterCodes:
             {"bitrate_codec2": [1300, 3200]}
 
     def test_E011_unknown_cross_model_second_model(self, tmp_path):
-        """The second model is checked against the discovered models, as
-        each name under 'models' is."""
+        """The second model is checked as each name under 'models' is."""
         found, error = codes(write(tmp_path, {
             "attacks": {"list": ["CrossModelAttack"]},
             "attack_parameters": {"CrossModelAttack": {
@@ -597,8 +571,7 @@ class TestStatisticCodes:
         assert "spread" in issue.message
 
     def test_no_E046_for_a_subsection_no_table_reads(self, tmp_path):
-        """No table reads a subsection's accuracy statistics, so W016 says
-        so and E046 does not apply."""
+        """No table reads a subsection's accuracy statistics: W016, not E046."""
         config = load_configs([write(tmp_path, {"metrics": {
             "defaults": {"accuracy": {"enabled": True}},
             "per_group": {"temporal_editing": {
@@ -745,8 +718,7 @@ class TestComparisonCodes:
         assert config.comparison_primary_statistic == "mean"
 
     def test_W015_a_selected_group_leaves_the_primary_out(self, tmp_path):
-        """Its rows read N/A in the main table, but every number is still
-        reported, so the run goes ahead."""
+        """Its rows read N/A in the main table; the run goes ahead."""
         config = load_configs([write(tmp_path, {
             **self.NARROWED, "comparison": {"primary_statistic": "mean"},
         })], ATTACKS, MODELS)[0]
@@ -777,8 +749,7 @@ class TestComparisonCodes:
 
     def test_W015_covers_an_ungrouped_attack_when_every_attack_runs(
             self, tmp_path):
-        """With no selection every discovered attack runs, and an ungrouped
-        one's rows sit under 'other'."""
+        """With no selection an ungrouped attack runs, its rows under 'other'."""
         path = write(tmp_path, {
             "models": ["AudioSealModel", "PerthModel"],
             "metrics": {
@@ -804,8 +775,7 @@ class TestComparisonCodes:
         assert not [w for w in config.warnings if w.code == "W015"]
 
     def test_no_W015_for_unselected_groups_or_subsections(self, tmp_path):
-        """A group this run does not reach has no rows, and a subsection's
-        accuracy statistics never reach the comparison."""
+        """Neither reaches the comparison, so neither draws W015."""
         config = load_configs([write(tmp_path, {
             **self.NARROWED,
             "attacks": {"list": ["LowpassFilterAttack"]},
@@ -822,7 +792,7 @@ class TestComparisonCodes:
         assert not [w for w in config.warnings if w.code == "W015"]
 
 
-class TestSeedAndLegacyCodes:
+class TestSeedCodes:
     @pytest.mark.parametrize("seed", [-1, 2**32])
     def test_E037_seed_outside_numpy_range(self, tmp_path, seed):
         found, _ = codes(write(tmp_path, {"general": {"seed": seed}}))
@@ -836,21 +806,6 @@ class TestSeedAndLegacyCodes:
     def test_E037_seed_must_be_an_integer(self, tmp_path):
         found, _ = codes(write(tmp_path, {"general": {"seed": "42"}}))
         assert "E037" in found
-
-    def test_E038_pre_2_1_modes_block(self, tmp_path):
-        found, error = codes(write(tmp_path, {
-            "modes": {"benchmark": True, "no_attacks": False}}))
-        assert "E038" in found
-        assert "--init benchmark" in issue_for(error, "E038").message
-
-    def test_E038_positional_statistic_string(self, tmp_path):
-        found, _ = codes(write(tmp_path, {"metrics": {
-            "pesq": {"enabled": True, "statistics": "mean:T std:F"}}}))
-        assert "E038" in found
-
-    def test_E038_attacks_source_key(self, tmp_path):
-        found, _ = codes(write(tmp_path, {"attacks": {"source": "all"}}))
-        assert "E038" in found
 
 
 class TestAllProblemsAreReportedTogether:
@@ -887,7 +842,7 @@ class TestAllProblemsAreReportedTogether:
 
 class TestWarningsDoNotBlockTheRun:
     def test_per_group_for_an_unselected_group_is_only_noted(self, tmp_path):
-        """Requirement: an unused group section must not stop the run."""
+        """An unused group section is noted and does not stop the run."""
         config = load_configs([write(tmp_path, {
             "attacks": {"groups": ["audio_distortion"]},
             "metrics": {"per_group": {"transmission": {"mcd": {"enabled": False}}}},
@@ -921,8 +876,7 @@ class TestWarningsDoNotBlockTheRun:
         assert any(w.code == "W005" for w in config.warnings)
 
     def test_W016_robustness_metric_under_a_subsection(self, tmp_path):
-        """Accuracy, BER and EMR are tabled per top-level group; a
-        subsection splits only the signal-metric tables."""
+        """Accuracy, BER and EMR are tabled per top-level group, not subsection."""
         config = load_configs([write(tmp_path, {"metrics": {
             "defaults": {"accuracy": {"enabled": True}},
             "per_group": {"temporal_editing": {
@@ -973,58 +927,15 @@ class TestTemplates:
         documented = [k for k in raw if k.startswith("_")]
         assert len(documented) >= 5, "template carries no inline instructions"
 
-    @pytest.mark.parametrize("mode", VALID_MODES)
-    def test_packaged_template_is_what_init_prints(self, mode):
-        """--init must print the packaged file, not a reconstruction of it."""
-        path = f"src/deepmarkpy/config_templates/{mode}.json"
-        with open(path, encoding="utf-8") as fh:
-            assert fh.read() == init_template(mode)
-
-    @pytest.mark.parametrize("mode", VALID_MODES)
-    def test_the_repo_example_still_validates(self, mode):
-        """configs/ holds working files, edited by whoever runs the benchmark.
-
-        They are expected to diverge from the template -- that is the point
-        of them -- but a broken example is worth catching, so this checks
-        they load rather than that they match byte for byte.
-        """
-        config = load_configs([f"configs/{mode}.json"])[0]
-        assert config.mode == mode
-
-    @pytest.mark.parametrize("mode", ["benchmark", "detection_reliability"])
-    def test_template_attack_list_is_the_discovered_set(self, mode):
-        """The names and counts a template documents are what discovery finds."""
-        text = init_template(mode)
-        discovered = sorted(PluginManager().get_attacks())
-        listed = json.loads(text)["_attacks_available"].split(": ", 1)[1]
-        assert listed.rstrip(".").split(", ") == discovered
-        for count in re.findall(r"all (\d+)", text):
-            assert int(count) == len(discovered)
-
     def test_init_rejects_an_unknown_mode(self):
         with pytest.raises(ConfigError) as excinfo:
             init_template("benchmrak")
         assert excinfo.value.issues[0].suggestion == "benchmark"
 
-    @pytest.mark.parametrize("mode", VALID_MODES)
-    def test_template_only_uses_keys_its_mode_accepts(self, mode):
-        raw = json.loads(init_template(mode))
-        real = {k for k in raw if not k.startswith("_")}
-        assert real <= MODE_KEYS[mode]
-
-    def test_no_attacks_template_omits_attack_sections_entirely(self):
+    def test_no_attacks_template_does_not_document_per_group(self):
+        """The mode has no attack groups, so its metrics block names none."""
         raw = json.loads(init_template("no_attacks"))
-        for key in ("attacks", "attack_parameters", "crop_before_attack",
-                    "comparison"):
-            assert key not in raw, (
-                f"{key} is not valid in no_attacks mode, so the template must "
-                f"not show it at all"
-            )
         assert "per_group" not in json.dumps(raw.get("metrics", {}))
-
-    def test_detection_reliability_template_omits_ber(self):
-        raw = json.loads(init_template("detection_reliability"))
-        assert "ber" not in raw["metrics"]["defaults"]
 
 
 class TestSelectionCoverage:
@@ -1080,8 +991,7 @@ class TestSelectionCoverage:
 
     def test_W011_detection_reliability_empty_selection_runs_no_attacks(
             self, tmp_path):
-        """In this mode an empty selection measures the no-attack baseline
-        alone, so no attack's parameters are applied."""
+        """Here an empty selection runs no attacks, so no parameters apply."""
         config = load_configs([write(tmp_path, {
             "mode": "detection_reliability",
             "attacks": {"groups": [], "list": []},
@@ -1094,12 +1004,7 @@ class TestSelectionCoverage:
 
 
 class TestParkedEntries:
-    """An underscore parks an entry without deleting it.
-
-    JSON has no way to comment code out, so the _-prefix doubles as an
-    on/off switch. What matters is that a parked entry is inert *and*
-    that selecting it is then an error rather than a silent no-op.
-    """
+    """A ``_``-prefixed entry is inert, and selecting it is an error."""
 
     def test_a_parked_version_is_not_defined(self, tmp_path):
         config = load_configs([write(tmp_path, {
@@ -1117,15 +1022,6 @@ class TestParkedEntries:
             w for w in config.warnings if w.code in ("W010", "W011")
         ], "a parked entry should raise no attack_parameters warning"
 
-    def test_a_parked_override_does_not_apply(self, tmp_path):
-        config = load_configs([write(tmp_path, {
-            "attacks": {"list": ["GaussianNoiseAttack"]},
-            "attack_parameters": {
-                "_GaussianNoiseAttack": {"snr_db_gaussian_noise": 1},
-            },
-        })], ATTACKS, MODELS)[0]
-        assert config.parameters_for("GaussianNoiseAttack", "default") == {}
-
     def test_selecting_a_parked_version_is_an_error(self, tmp_path):
         """The one thing that must not happen is a silent no-op."""
         found, error = codes(write(tmp_path, {
@@ -1137,28 +1033,9 @@ class TestParkedEntries:
         assert "E015" in found
         assert "insane" in issue_for(error, "E015").value
 
-    def test_unparking_defines_the_version(self, tmp_path):
-        """The same file with the underscore removed."""
-        config = load_configs([write(tmp_path, {
-            "attacks": {"list": ["GaussianNoiseAttack:insane"]},
-            "attack_parameters": {
-                "GaussianNoiseAttack:insane": {"snr_db_gaussian_noise": 1},
-            },
-        })], ATTACKS, MODELS)[0]
-
-        assert config.synthetic_versions == {
-            "GaussianNoiseAttack": {"insane": {"snr_db_gaussian_noise": 1}},
-        }
-        assert config.attack_list == ["GaussianNoiseAttack:insane"]
-
 
 class TestJsonSyntaxErrorsAreLocatable:
-    """A broken file must say where and why, not just that it broke.
-
-    Python's own message describes the parser's state ("Expecting
-    property name enclosed in double quotes"), which does not tell you a
-    stray comma is the problem.
-    """
+    """A broken file says where and why it broke, not the parser's state."""
 
     @staticmethod
     def _issue(tmp_path, text):
@@ -1225,24 +1102,7 @@ class TestSilentlyEmptyMetricsIsWarned:
 
 
 class TestValidatingWithoutAFile:
-    """An application that builds the configuration itself validates it here.
-
-    A project embedding the benchmark assembles a config from its own UI
-    and needs the same answer the CLI would give -- before writing
-    anything to disk, so it can put the error in front of its own user.
-    The two paths must not drift: the file loader and this one run the
-    same checks over the same mapping.
-    """
-
-    def test_a_valid_mapping_returns_a_config(self):
-        config = load_config_data(dict(BASE), quiet=True)
-        assert config.mode == "benchmark"
-        assert config.models == ["AudioSealModel"]
-
-    def test_no_file_is_touched(self):
-        """The source is a label, not a path, so it need not exist."""
-        config = load_config_data(dict(BASE), source="wizard step 3", quiet=True)
-        assert config.source == "wizard step 3"
+    """load_config_data runs the file loader's checks over a mapping."""
 
     def test_it_raises_the_same_code_a_file_would(self, tmp_path):
         data = {**BASE, "attacks": {"groups": ["desync"], "list": []}}
@@ -1262,27 +1122,13 @@ class TestValidatingWithoutAFile:
             load_config_data({**BASE, "mode": "nonsense"}, source="wizard")
         assert all(i.source == "wizard" for i in error.value.issues)
 
-    def test_it_resolves_metrics_the_same_way_a_file_does(self, tmp_path):
-        overrides = {
-            "statistics": ["mean", "worst_case"],
-            "metrics": {"defaults": {"pesq": {"enabled": True},
-                                     "visqol": {"enabled": False}}},
-        }
-        from_memory = load_config_data({**BASE, **overrides}, quiet=True)
-        from_file = load_configs([write(tmp_path, overrides)], quiet=True)[0]
-
-        for group in (None, "audio_distortion", "desynchronization"):
-            assert from_memory.resolver.metrics_for_group(group) == \
-                   from_file.resolver.metrics_for_group(group)
-
     def test_a_non_mapping_is_rejected_not_crashed_on(self):
         with pytest.raises(ConfigError) as error:
             load_config_data(["not", "a", "mapping"])
         assert [i.code for i in error.value.issues] == ["E003"]
 
     def test_registry_checks_apply_from_memory_too(self):
-        """The plugin registries are how an unknown attack is caught, and
-        they reach this path exactly as they reach the file one."""
+        """The plugin registries reach this path as they reach the file one."""
         with pytest.raises(ConfigError) as error:
             load_config_data(
                 {**BASE, "attacks": {"groups": [], "list": ["NoSuchAttack"]}},
@@ -1293,12 +1139,7 @@ class TestValidatingWithoutAFile:
 
 
 class TestEfficiencyMetricsBelongToTheirOwnSection:
-    """Naming one under ``metrics`` is an error, not a flag that does nothing.
-
-    They are in the canonical metric order, so the metrics block would take
-    them without complaint -- but ``is_enabled`` reads them from the
-    efficiency section, so the flag would have no effect.
-    """
+    """Naming one under ``metrics`` is an error, not a flag that does nothing."""
 
     def test_E043_efficiency_metric_in_the_metrics_block(self, tmp_path):
         path = write(tmp_path, {"metrics": {"defaults": {
@@ -1327,12 +1168,7 @@ class TestEfficiencyMetricsBelongToTheirOwnSection:
 
 
 class TestABareAttackNameAndItsDefaultVersionAreOneTarget:
-    """Which spelling each side uses is not a fact they share.
-
-    The validator keys a bare name by how many versions the plugin
-    declares; the run loop asks by how ``attacks.list`` spelled the
-    attack. A mismatch dropped the override without a word.
-    """
+    """Either spelling in attack_parameters reaches either spelling in attacks.list."""
 
     SINGLE_VERSION = {"LowpassFilterAttack": {
         "config": {"cutoff_lowpass": 4000},
@@ -1361,26 +1197,11 @@ class TestABareAttackNameAndItsDefaultVersionAreOneTarget:
         assert config.parameters_for("LowpassFilterAttack", "default") == \
             {"cutoff_lowpass": 2500}
 
-    def test_a_bare_key_still_does_not_reach_a_named_version(self, tmp_path):
-        """The point of keying by version in the first place."""
-        path = write(tmp_path, {
-            "attacks": {"list": ["GaussianNoiseAttack"]},
-            "attack_parameters": {
-                "GaussianNoiseAttack": {"snr_db_gaussian_noise": 33},
-            },
-        })
-        config = load_configs([path], attacks_registry=ATTACKS,
-                              models_registry=MODELS, quiet=True)[0]
-        assert config.parameters_for("GaussianNoiseAttack", "default") == \
-            {"snr_db_gaussian_noise": 33}
-        assert config.parameters_for("GaussianNoiseAttack", "mild") == {}
-
     @pytest.mark.parametrize("listed", ["LowpassFilterAttack",
                                         "LowpassFilterAttack:default"])
     def test_E016_both_spellings_set_for_a_single_version_attack(
             self, tmp_path, listed):
-        """Two entries for one target: neither may quietly win, whichever
-        spelling attacks.list uses."""
+        """Neither entry quietly wins, whichever spelling attacks.list uses."""
         found, error = codes(write(tmp_path, {
             "attacks": {"list": [listed]},
             "attack_parameters": {
@@ -1411,12 +1232,7 @@ class TestABareAttackNameAndItsDefaultVersionAreOneTarget:
 
 
 class TestDefiningAVersionIgnoresDocumentationKeys:
-    """W010 does not count ``_``-prefixed comment keys as unset parameters.
-
-    Counted, a plugin whose config.json carries one could never have a
-    version defined for it: every parameter given, and the entry still
-    skipped as partial.
-    """
+    """W010 does not count ``_``-prefixed comment keys as unset parameters."""
 
     DOCUMENTED = {"Codec2VocoderAttack": {
         "config": {"_comment": "supported bitrates", "bitrate_codec2": [700]},

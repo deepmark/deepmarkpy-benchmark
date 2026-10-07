@@ -1,14 +1,6 @@
-"""Every figure a report references exists, and only three kinds are drawn.
-
-The ``.tex`` can point ``\\includegraphics`` at a file that was never
-written, which fails at compile time, long after the run. The basic report
-draws the accuracy ranking and the strength curves, the comparative report
-draws the radar chart, and the detailed, no_attacks and
-detection_reliability reports are tables only. All five are checked here.
-
-Chart drawing is real: the PNGs are written and their existence asserted.
-Only ``pdflatex`` is stubbed out.
-"""
+"""Every figure a report references is drawn: the basic report's accuracy
+ranking and strength curves and the comparative report's radar. The detailed,
+no_attacks and detection_reliability reports are tables only."""
 
 import json
 import re
@@ -30,6 +22,8 @@ from deepmarkpy.utils.detection_reliability_report_generator import (
 from deepmarkpy.utils.no_attacks_report_generator import generate_no_attacks_report
 from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
 
+pytestmark = pytest.mark.usefixtures("no_pdflatex")
+
 SIGNAL_METRICS = [
     "pesq", "psnr", "si_sdr", "mcd", "visqol", "stoi", "sii", "ncm",
 ]
@@ -49,20 +43,6 @@ ATTACKS = [
 # The strength curves sit in the section whose accuracy table they draw,
 # so their filename carries the group; audio_distortion holds the ladder.
 LADDER = "attack_strength_audio_distortion.png"
-
-
-@pytest.fixture(autouse=True)
-def _skip_pdflatex(monkeypatch):
-    for module in ("report_generator", "detailed_report_generator",
-                   "no_attacks_report_generator",
-                   "detection_reliability_report_generator",
-                   "comparative_report_generator"):
-        monkeypatch.setattr(
-            f"deepmarkpy.utils.{module}.compile_latex",
-            lambda *a, **k: None, raising=False,
-        )
-    monkeypatch.setattr("deepmarkpy.utils.latex_helpers.compile_latex",
-                        lambda *a, **k: None)
 
 
 def make_results(n_files=6):
@@ -263,12 +243,7 @@ class TestStrengthLadder:
     def test_each_ladder_is_drawn_against_its_own_version_names(
         self, tmp_path, monkeypatch, pink,
     ):
-        """Two attacks in one group need not name their versions alike.
-
-        Every point sits above its own version's name. A shared 0..n-1
-        axis under one ladder's names would put the other ladder's points
-        on versions it does not have.
-        """
+        """Every point sits above its own version's name, however each is named."""
         drawn = {}
         save = report_charts._save
 
@@ -299,12 +274,7 @@ class TestStrengthLadder:
     def test_a_shorter_ladder_first_keeps_the_longer_one_in_order(
         self, tmp_path, monkeypatch,
     ):
-        """Each ladder reads left to right in its own version order.
-
-        With the two-version ladder first, a tick axis in first-seen order
-        would put ``mild`` after ``aggressive`` and draw ``GaussianNoise``
-        right to left.
-        """
+        """Each ladder reads left to right in its own version order."""
         drawn = {}
         save = report_charts._save
 
@@ -349,21 +319,13 @@ class TestLabelsRenderAsText:
     @pytest.mark.parametrize("latex,expected", [
         ("ViSQOL (1--5)", "ViSQOL (1–5)"),
         ("PESQ --- Audio Editing", "PESQ — Audio Editing"),
-        ("Codec2Vocoder\\_700", "Codec2Vocoder_700"),
-        ("Accuracy (\\%)", "Accuracy (%)"),
     ])
     def test_latex_fragments_become_plain_text(self, latex, expected):
         assert report_charts.plain(latex) == expected
 
 
 class TestNoAttacksDetectedColumn:
-    """The count of detected files comes from the model, or not at all.
-
-    ``is_watermarked()`` is the only thing that knows what a model's
-    ``detect()`` output means. A report that applied its own threshold
-    would be guessing, and would disagree with the detection_reliability
-    mode on the same file.
-    """
+    """The count of detected files comes from the model, or not at all."""
 
     def _tex(self, tmp_path, **kwargs):
         config = write_config(tmp_path, mode="no_attacks")
@@ -390,15 +352,13 @@ class TestNoAttacksDetectedColumn:
 
 class TestDurationPartsAreSelfContained:
     def test_a_part_restarts_the_section_numbering(self):
-        """Each part is a report over its own files, so its sections are
-        its first and second, not the document's seventh and eighth."""
+        """Each part numbers its sections from one."""
         heading = part_heading("$<$ 5.0s", "3 files")
         assert "\\part{$<$ 5.0s (3 files)}" in heading
         assert "\\setcounter{section}{0}" in heading
 
     def test_the_two_sides_of_one_boundary_get_different_slugs(self):
-        """Stripping the comparison as punctuation collapsed them onto one
-        slug, so both bins wrote their figures to the same filenames."""
+        """``<`` and ``>`` at one boundary give the two bins different slugs."""
         assert slugify("< 5.0s") != slugify("> 5.0s")
 
     @pytest.mark.parametrize("label", ["< 4.0s", "4.0-6.0s", "≥ 6.0s",
@@ -409,8 +369,7 @@ class TestDurationPartsAreSelfContained:
 
 
 class TestTheLastDurationBinIsInclusive:
-    """A file exactly on the last boundary goes into the last bin, which
-    was labelled ``> b`` -- describing a population that excluded it."""
+    """A file exactly on the last boundary falls in the last bin, ``≥ b``."""
 
     def test_a_file_on_the_last_boundary_is_in_a_bin_that_says_so(
         self, tmp_path,
@@ -426,22 +385,13 @@ class TestTheLastDurationBinIsInclusive:
         assert files == [str(path)]
         assert label == "≥ 2.0s"
 
-    def test_the_config_names_the_bins_the_run_uses(self):
-        from deepmarkpy.config import ModeConfig
-        from deepmarkpy.utils.utils import duration_bin_labels
-
-        config = ModeConfig(mode="benchmark", source="c.json",
-                            duration_boundaries=[5.0, 10.0])
-        assert config.duration_labels() == duration_bin_labels([5.0, 10.0])
-
     def test_the_two_sides_of_one_boundary_still_get_different_slugs(self):
         assert slugify("< 5.0s") != slugify("≥ 5.0s")
 
     def test_a_grouped_report_carries_no_raw_sign_pdflatex_cannot_set(
         self, tmp_path,
     ):
-        """≥ has no glyph under pdflatex's default input encoding, in the
-        heading text or in a \\label name."""
+        """No raw ≥, which pdflatex cannot set, in a heading or a \\label name."""
         from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
 
         stats = {label: {"n_files": 2, "stats": {

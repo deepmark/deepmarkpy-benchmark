@@ -1,11 +1,7 @@
 {
-  "_THIS_IS_A_TEMPLATE": "You are reading the blank template that 'deepmark-benchmark --init no_attacks' prints. It is deliberately empty. Do NOT edit or run this file - edit your own copy at configs/no_attacks.json, which is what --config takes.",
   "_file": "Baseline mode: embed and detect with nothing in between - does the model read back its own watermark, and what does embedding alone cost the audio? Keys starting with _ are comments and are ignored. Reset with 'deepmark-benchmark --init no_attacks'.",
 
-  "_mode": "Which mode this file configures. One of: benchmark, no_attacks, detection_reliability.",
   "mode": "no_attacks",
-
-  "_not_here": "No attacks run in this mode, so attacks, attack_parameters, crop_before_attack, comparison and metrics.per_group are NOT valid keys here - naming one is an error, not an ignored setting. Metrics are set once, under metrics.defaults.",
 
   "_general": "Operational settings; the matching CLI flag overrides each one. wav_files_dir has no default - set it here or pass --wav_files_dir. report_dir is DELETED at the start of every run. seed: integer for a repeatable run, or null for a fresh watermark per file.",
   "general": {
@@ -48,7 +44,7 @@
     }
   },
 
-  "_efficiency": "What the run cost in TIME, kept apart from the metrics block above. Those describe the watermarking method and reproduce from a seed; these describe this machine on this day and do not. enabled: false means no timing is taken at all. Metrics - embed_latency, detect_latency, attack_latency (seconds). Memory and any later efficiency measure will be listed here too.",
+  "_efficiency": "What the run cost in time and memory, kept apart from the metrics block above. Those describe the watermarking method and reproduce from a seed; these describe this machine on this day and do not. enabled: false means none of it is measured. Metrics - embed_latency, detect_latency, attack_latency (seconds), container_footprint (MiB).",
   "_efficiency_caveat": "A native attack is timed as pure computation; one running in Docker includes base64 encoding of the audio and the HTTP round trip, so the two are not comparable. The first call to a cold container also pays for loading the model.",
   "efficiency": {
     "enabled": false,

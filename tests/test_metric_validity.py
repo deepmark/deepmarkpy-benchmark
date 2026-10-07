@@ -161,12 +161,7 @@ class TestMetricValues:
 
 
 class TestCaveatFootnotesMatchTheirReason:
-    """Each caveat prints its own explanation, not a shared one.
-
-    ``get_metric_caveat`` returns a different reason per case; a footnote
-    with one fixed wording would explain SignInversion's SI-SDR cell as a
-    timing shift.
-    """
+    """Each caveat prints its own explanation, not a shared one."""
 
     def test_distinct_reasons_get_distinct_markers(self):
         caveats = MetricCaveats()
@@ -305,12 +300,7 @@ def _detection_reliability_tex(tmp_path, attack, statistics):
 
 
 class TestEveryReportGeneratorAnnotatesCaveats:
-    """Every table printing per-attack quality metrics marks a value the
-    attack makes unreadable, and says why, in both table shapes.
-
-    TimeStretch is a desynchronization attack: its MCD and STOI compare
-    samples by index and are marked; its PESQ aligns internally and is not.
-    """
+    """Every per-attack quality table marks an unreadable value and says why."""
 
     BUILDERS = [_basic_tex, _detailed_tex, _detection_reliability_tex]
     REPORTS = ["basic", "detailed", "detection_reliability"]
@@ -378,12 +368,7 @@ class TestEveryReportGeneratorAnnotatesCaveats:
 
 
 class TestBerAgreesBetweenReports:
-    """BER is computed once, not derived from accuracy's summary.
-
-    BER is ``1 - accuracy``, so its 10th percentile is accuracy's 90th --
-    not one of the eight statistics, and no mapping of accuracy's
-    percentiles yields it. Both reports reduce the same BER samples.
-    """
+    """Both reports reduce the same BER samples, not accuracy's summary."""
 
     SAMPLES = [98.2, 95.0, 88.0, 100.0, 51.8, 72.5, 99.0, 64.0, 100.0, 83.3]
     STATISTICS = ["mean", "std", "median", "p5", "p10", "p95", "p99",

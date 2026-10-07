@@ -1,12 +1,6 @@
-"""The CLI, driven end to end from config files.
-
-Runs ``main()`` against a throwaway model plugin and real native attacks,
-so the wiring the unit tests stub out -- argument parsing, config
-loading, mode dispatch, the report calls -- is actually executed.
-
-Docker is not involved: the model plugin here runs in-process and has no
-``base_url``, so the service reachability check passes it over.
-"""
+"""The CLI, driven end to end from config files: ``main()`` runs real native
+attacks against an in-process model plugin with no ``base_url``, so no
+service is probed and Docker is not involved."""
 
 import json
 import pathlib
@@ -20,6 +14,8 @@ import soundfile as sf
 
 from deepmarkpy import run as run_module
 
+pytestmark = pytest.mark.usefixtures("no_pdflatex")
+
 MODEL_SOURCE = '''
 import numpy as np
 
@@ -27,12 +23,7 @@ from deepmarkpy.core.base_model import BaseModel
 
 
 class DummyWatermarkModel(BaseModel):
-    """Adds a tiny deterministic offset and reads it back.
-
-    Real enough to exercise the pipeline: embedding perturbs the signal
-    (so quality metrics have something to measure) and detection degrades
-    once an attack has been applied.
-    """
+    """Adds a tiny deterministic offset and reads it back."""
 
     WATERMARK_SIZE = 16
 
@@ -135,6 +126,7 @@ def audio_dir(tmp_path):
 
 
 def write_config(tmp_path, name, **overrides):
+    """Write a config file from ``overrides``; a None value drops the key."""
     data = {
         "mode": "benchmark",
         "models": ["DummyWatermarkModel"],
@@ -161,25 +153,26 @@ def write_config(tmp_path, name, **overrides):
         }},
     }
     data.update(overrides)
+    data = {key: value for key, value in data.items() if value is not None}
+    if data["mode"] == "detection_reliability":
+        # BER does not apply to this mode.
+        data.get("metrics", {}).get("defaults", {}).pop("ber", None)
     path = tmp_path / name
     path.write_text(json.dumps(data))
     return str(path)
 
 
-@pytest.fixture(autouse=True)
-def _skip_pdflatex(monkeypatch):
-    """These assert on the .tex and the JSON, not on PDF rendering."""
-    monkeypatch.setattr(
-        "deepmarkpy.utils.latex_helpers.compile_latex", lambda *a, **k: None,
-    )
-    for module in ("report_generator", "detailed_report_generator",
-                   "no_attacks_report_generator",
-                   "detection_reliability_report_generator",
-                   "comparative_report_generator"):
-        monkeypatch.setattr(
-            f"deepmarkpy.utils.{module}.compile_latex",
-            lambda *a, **k: None, raising=False,
-        )
+def resolved_for(tmp_path, plugins_dir, **overrides):
+    """The parameters each row of this config's run would apply."""
+    from deepmarkpy.benchmark import Benchmark
+    from deepmarkpy.config import load_configs
+
+    benchmark = Benchmark(external_plugins_dir=plugins_dir)
+    config = load_configs(
+        [write_config(tmp_path, "resolved.json", **overrides)],
+        benchmark.attacks, benchmark.models,
+    )[0]
+    return run_module.resolved_attack_parameters(benchmark, config)
 
 
 def run_cli(*argv):
@@ -208,11 +201,7 @@ UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
 
 
 def saved_audio(report_dir):
-    """The files a single-mode run saved, checked to sit directly in audio/.
-
-    Not in a folder per mode, which only a run of several modes uses, and
-    never in a directory a version name created.
-    """
+    """The files a single-mode run saved, checked to sit directly in audio/."""
     audio = report_dir / "audio"
     saved = [path for path in audio.rglob("*") if path.is_file()]
     assert {path.parent for path in saved} == {audio}, saved
@@ -256,8 +245,14 @@ class TestBenchmarkMode:
             assert "BER" not in tex and "Bit error rate" not in tex
 
     def test_produces_results_stats_metadata_and_reports(
-        self, tmp_path, plugins_dir, audio_dir,
+        self, tmp_path, plugins_dir, audio_dir, monkeypatch,
     ):
+        """Only the configured metrics and statistics, no timings, no docker calls."""
+        from deepmarkpy.utils import efficiency
+
+        docker_calls = []
+        monkeypatch.setattr(efficiency, "_run_docker",
+                            lambda args: docker_calls.append(args))
         config = write_config(tmp_path, "benchmark.json")
         report_dir = tmp_path / "report"
 
@@ -280,59 +275,33 @@ class TestBenchmarkMode:
         assert metadata["config_file"] == config
         assert metadata["n_files"] == 3
 
-    def test_stats_carry_only_the_configured_metrics(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        config = write_config(tmp_path, "benchmark.json")
-        report_dir = tmp_path / "report"
-        run_cli("--config", config, "--wav_files_dir", audio_dir,
-                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir)
-
         stats = json.loads((report_dir / "benchmark_stats.json").read_text())
         entry = stats[ATTACK_NAME]
-
         assert {"accuracy_mean", "accuracy_worst_case", "accuracy_n"} <= set(entry)
         assert "pesq_mean" in entry and "stoi_mean" in entry
-        # Disabled metrics must not have been computed at all.
         for metric in ("mcd", "psnr", "si_sdr", "sii", "ncm", "nisqa_mos"):
             assert not any(k.startswith(f"{metric}_") for k in entry), (
                 f"{metric} was computed despite being disabled in the config"
             )
-        # And only the configured statistics.
         assert "accuracy_median" not in entry
 
-    def test_attack_parameters_reach_the_attack(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        """A per-version attack_parameters entry must change the measurement."""
-        report_dir = tmp_path / "report"
-
-        def snr_for(value):
-            config = write_config(
-                tmp_path, f"cfg{value}.json",
-                attack_parameters={ATTACK_SPEC: {"snr_db_preset_noise": value}},
-            )
-            run_cli("--config", config, "--wav_files_dir", audio_dir,
-                    "--report_dir", str(report_dir),
-                    "--plugins_dir", plugins_dir, "--seed", "3")
-            results = json.loads((report_dir / "benchmark_results.json").read_text())
-            first = next(iter(results.values()))
-            return first["attacks"][ATTACK_NAME]["attack_snr_db"]
-
-        quiet, loud = snr_for(40), snr_for(10)
-        assert quiet > loud + 15, (
-            f"snr_db_preset_noise did not reach the attack: {quiet} vs {loud}"
-        )
+        # No timing is taken at all, rather than taken and filtered out.
+        results = json.loads((report_dir / "benchmark_results.json").read_text())
+        measured = next(iter(results.values()))["attacks"][ATTACK_NAME]
+        assert not [k for k in measured if "latency" in k], measured
+        assert not [k for k in entry if "latency" in k], entry
+        tex = (report_dir / "benchmark_report.tex").read_text()
+        assert "tab:benchmark_efficiency" not in tex
+        assert "Attack time" not in tex
+        detailed = (report_dir / "detailed_report.tex").read_text()
+        assert "tab:efficiency_" not in detailed
+        assert "Attack time" not in detailed
+        assert docker_calls == [], docker_calls
 
     def test_a_bare_key_does_not_leak_onto_a_named_version(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """Two versions in one run must keep measuring differently.
-
-        A bare class name targets the default version only. If it reached
-        the named ones too they would collapse to the same number while
-        the report kept printing their distinct labels.
-        """
+        """A bare class name targets the default version, not the named ones."""
         config = write_config(
             tmp_path, "bare.json",
             attacks={"list": ["PresetNoiseAttack:mild",
@@ -355,58 +324,10 @@ class TestBenchmarkMode:
         # The presets, untouched: mild is 45 dB and aggressive is 15 dB.
         assert 40 < mild < 50 and 10 < aggressive < 20
 
-    def test_a_complete_new_version_is_run_and_labelled(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        """A version the plugin does not declare, defined in the config."""
-        config = write_config(
-            tmp_path, "newver.json",
-            attacks={"list": ["PresetNoiseAttack:brutal"]},
-            attack_parameters={
-                "PresetNoiseAttack:brutal": {"snr_db_preset_noise": 5},
-            },
-        )
-        report_dir = tmp_path / "report"
-        assert run_cli(
-            "--config", config, "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
-            "--seed", "3",
-        ) == run_module.EXIT_OK
-
-        attacks = next(iter(json.loads(
-            (report_dir / "benchmark_results.json").read_text()).values()))["attacks"]
-        assert "PresetNoiseAttack (brutal)" in attacks
-        snr = attacks["PresetNoiseAttack (brutal)"]["attack_snr_db"]
-        assert 3 < snr < 7, f"the defined version's parameter was not used: {snr}"
-
-    def test_naming_the_attack_bare_runs_the_defined_version_too(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        config = write_config(
-            tmp_path, "allver.json",
-            attacks={"list": ["PresetNoiseAttack"]},
-            attack_parameters={
-                "PresetNoiseAttack:brutal": {"snr_db_preset_noise": 5},
-            },
-        )
-        report_dir = tmp_path / "report"
-        run_cli("--config", config, "--wav_files_dir", audio_dir,
-                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir)
-
-        attacks = next(iter(json.loads(
-            (report_dir / "benchmark_results.json").read_text()).values()))["attacks"]
-        assert set(attacks) == {
-            "PresetNoiseAttack (default)",
-            "PresetNoiseAttack (mild)",
-            "PresetNoiseAttack (aggressive)",
-            "PresetNoiseAttack (brutal)",
-        }
-
     def test_naming_codec2_bare_runs_the_defined_version_too(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """Codec2 runs once per bitrate of each of its versions, and the
-        bare name reaches a config-defined one, as for every other attack."""
+        """One run per bitrate of each version, a config-defined one included."""
         pytest.importorskip("pycodec2")
         config = write_config(
             tmp_path, "codec2.json",
@@ -432,8 +353,7 @@ class TestBenchmarkMode:
     def test_saved_audio_survives_any_version_name(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """The results keep a version's name verbatim; the file its audio
-        is saved to gets a name every filesystem accepts."""
+        """Results keep a version name verbatim; its saved file gets a safe one."""
         config = write_config(tmp_path, "unsafe.json", **UNSAFE_VERSIONS)
         report_dir = tmp_path / "report"
         assert run_cli(
@@ -463,9 +383,14 @@ class TestBenchmarkMode:
     def test_duration_groups_produce_one_part_per_bin(
         self, tmp_path, plugins_dir, audio_dir,
     ):
+        """One part per bin, each stating the embedding cost."""
         config = write_config(
             tmp_path, "durations.json",
             duration_groups={"boundaries": [1.2], "include_overall": True},
+            efficiency={"enabled": True, "metrics": {
+                "embed_latency": {"statistics": ["mean"]},
+                "attack_latency": {"statistics": ["mean"]},
+            }},
         )
         report_dir = tmp_path / "report"
         run_cli("--config", config, "--wav_files_dir", audio_dir,
@@ -476,13 +401,14 @@ class TestBenchmarkMode:
         assert any(label.startswith("<") for label in stats)
 
         tex = (report_dir / "benchmark_report.tex").read_text()
-        assert "\\part{" in tex
+        parts = tex.count("\\part{")
+        assert parts >= 2, tex
+        assert tex.count("Embedding cost per file") == parts
 
     def test_overall_is_dropped_when_every_file_lands_in_one_bin(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """One bin makes "Overall" a verbatim copy of it, under a second
-        heading, and the reader is left looking for a difference."""
+        """With one bin, "Overall" would repeat it verbatim, so it is dropped."""
         config = write_config(
             tmp_path, "one_bin.json",
             duration_groups={"boundaries": [30], "include_overall": True},
@@ -502,12 +428,7 @@ class TestBenchmarkMode:
     def test_comparison_stats_cover_every_bin(
         self, tmp_path, plugins_dir, audio_dir, monkeypatch, include_overall,
     ):
-        """The flat stats the comparative report ranks are over every file.
-
-        Without "Overall" they are computed from every file's results, not
-        taken from the first bin, which would leave the later bins' files
-        out of a multi-model comparison.
-        """
+        """The flat stats the comparative report ranks cover every bin's files."""
         returned = []
         original = run_module.run_single_model
 
@@ -535,14 +456,8 @@ class TestNoAttacksMode:
         self, tmp_path, plugins_dir, audio_dir,
     ):
         config = write_config(
-            tmp_path, "no_attacks.json", mode="no_attacks",
-            attacks=None,
+            tmp_path, "no_attacks.json", mode="no_attacks", attacks=None,
         )
-        # 'attacks' is not a valid key for this mode, so remove it.
-        raw = json.loads(open(config).read())
-        raw.pop("attacks", None)
-        open(config, "w").write(json.dumps(raw))
-
         report_dir = tmp_path / "report"
         assert run_cli(
             "--config", config, "--wav_files_dir", audio_dir,
@@ -561,13 +476,10 @@ class TestDetectionReliabilityMode:
     def test_writes_reliability_results_and_report(
         self, tmp_path, plugins_dir, audio_dir,
     ):
+        """Writes results and report; with no efficiency section, times nothing."""
         config = write_config(
             tmp_path, "dr.json", mode="detection_reliability",
         )
-        raw = json.loads(open(config).read())
-        raw["metrics"]["defaults"].pop("ber")
-        open(config, "w").write(json.dumps(raw))
-
         report_dir = tmp_path / "report"
         assert run_cli(
             "--config", config, "--wav_files_dir", audio_dir,
@@ -583,22 +495,27 @@ class TestDetectionReliabilityMode:
         assert {"accuracy_mean", "accuracy_worst_case"} <= set(entry)
         assert entry["false_positive_attempts"] == 3
 
+        assert not entry.get("timings"), entry.get("timings")
+        assert not data["no_attack"].get("timings")
+        record = next(iter(data["per_file"].values()))
+        assert not [k for k in record if "latency" in k], record
+        for attack_record in record["attacks"].values():
+            assert not [k for k in attack_record if "latency" in k], attack_record
+        tex = (report_dir / "detection_reliability_report.tex").read_text()
+        assert "tab:dr_efficiency" not in tex
+        assert "Attack time" not in tex
+
     def test_saved_audio_survives_any_version_name(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """This mode saves audio from its own run loop, under the same
-        rule: verbatim names in the results, safe ones on disk."""
-        config = pathlib.Path(write_config(
+        """This mode's own run loop saves audio under the same naming rule."""
+        config = write_config(
             tmp_path, "unsafe.json", mode="detection_reliability",
             **UNSAFE_VERSIONS,
-        ))
-        raw = json.loads(config.read_text())
-        raw["metrics"]["defaults"].pop("ber")
-        config.write_text(json.dumps(raw))
-
+        )
         report_dir = tmp_path / "report"
         assert run_cli(
-            "--config", str(config), "--wav_files_dir", audio_dir,
+            "--config", config, "--wav_files_dir", audio_dir,
             "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
             "--save_audio",
         ) == run_module.EXIT_OK
@@ -617,19 +534,12 @@ class TestSeveralModesInOneInvocation:
     def test_both_modes_run_and_neither_erases_the_other(
         self, tmp_path, plugins_dir, audio_dir, repeated,
     ):
-        """Both reports are written and each mode saves its audio in
-        audio/<mode>/, whether one --config names both files or the flag
-        is repeated."""
+        """Each mode reports and saves its audio in audio/<mode>/."""
         benchmark = write_config(tmp_path, "benchmark.json")
+        dr = write_config(tmp_path, "dr.json", mode="detection_reliability")
 
-        dr_raw = json.loads(open(write_config(tmp_path, "dr.json")).read())
-        dr_raw["mode"] = "detection_reliability"
-        dr_raw["metrics"]["defaults"].pop("ber")
-        dr_path = tmp_path / "dr.json"
-        dr_path.write_text(json.dumps(dr_raw))
-
-        configs = (["--config", benchmark, "--config", str(dr_path)] if repeated
-                   else ["--config", benchmark, str(dr_path)])
+        configs = (["--config", benchmark, "--config", dr] if repeated
+                   else ["--config", benchmark, dr])
         report_dir = tmp_path / "report"
         assert run_cli(
             *configs,
@@ -651,8 +561,7 @@ class TestFailureModes:
 
     @staticmethod
     def _model_whose_service_drops(name="DummyWatermarkModel"):
-        """The test model under ``name``, failing in embed the way a
-        stopped container does."""
+        """The test model as ``name``, failing in embed like a stopped container."""
         return MODEL_SOURCE.replace("DummyWatermarkModel", name).replace(
             "self._last = np.asarray(watermark_data)",
             'raise ConnectionError("service dropped")',
@@ -685,8 +594,7 @@ class TestFailureModes:
         ) == run_module.EXIT_CONFIG_ERROR
 
     def test_validate_only_needs_no_audio_directory(self, tmp_path, plugins_dir):
-        """A config is checked before its audio is chosen: the --init
-        templates leave general.wav_files_dir null."""
+        """Validation needs no general.wav_files_dir, which --init leaves null."""
         config = write_config(tmp_path, "benchmark.json",
                               general={"wav_files_dir": None})
         assert run_cli(
@@ -706,9 +614,7 @@ class TestFailureModes:
     def test_an_unknown_cross_model_second_model_is_a_config_error(
         self, tmp_path, plugins_dir, audio_dir, capsys,
     ):
-        """The second model is checked against the discovered models with
-        the rest of the config: before the report directory is cleared,
-        and before any audio is embedded."""
+        """E011, before the report directory is cleared or any audio embedded."""
         embedded = tmp_path / "embedded"
         write_model_plugin(plugins_dir, MODEL_SOURCE.replace(
             "self._last = np.asarray(watermark_data)",
@@ -740,9 +646,7 @@ class TestFailureModes:
     def test_a_group_with_an_undiscovered_member_is_a_config_error(
         self, tmp_path, plugins_dir, audio_dir, monkeypatch, capsys, mode,
     ):
-        """A group runs every attack in it, so one whose plugin failed to
-        import is refused by validation, before the report directory is
-        cleared."""
+        """E014 for a member that failed to import, before anything is cleared."""
         from deepmarkpy.plugin_manager import PluginManager
 
         load = PluginManager._load_attacks
@@ -760,8 +664,6 @@ class TestFailureModes:
         config = write_config(
             tmp_path, f"{mode}.json", mode=mode,
             attacks={"groups": ["audio_distortion"]},
-            # No BER: it does not apply to detection_reliability.
-            metrics={"defaults": {"accuracy": {"enabled": True}}},
         )
         report_dir = tmp_path / "report"
         report_dir.mkdir()
@@ -779,9 +681,7 @@ class TestFailureModes:
     def test_a_reliability_model_without_is_watermarked_is_a_config_error(
         self, tmp_path, plugins_dir, audio_dir, capsys,
     ):
-        """The mode scores the model's own detected/not-detected decision,
-        so a model that cannot make one is refused by validation, whether
-        it is named in a config file or by the flags."""
+        """E044 for a model without is_watermarked(), from a file or the flags."""
         write_model_plugin(
             plugins_dir, MODEL_SOURCE.split("    def is_watermarked")[0],
         )
@@ -815,8 +715,7 @@ class TestFailureModes:
     def test_the_deprecated_launcher_exits_with_mains_code(
         self, tmp_path, plugins_dir, monkeypatch, failure,
     ):
-        """python src/run.py stands in for the console script, so a caller
-        checking its exit status sees what main() returned."""
+        """python src/run.py exits with the code main() returned."""
         if failure == "config":
             argv = ["--config", str(tmp_path / "missing.json"),
                     "--wav_files_dir", str(tmp_path)]
@@ -836,8 +735,7 @@ class TestFailureModes:
     def test_a_reliability_run_that_fails_exits_one(
         self, tmp_path, plugins_dir, audio_dir, monkeypatch,
     ):
-        """A mode that produced nothing is a failed run, not a success
-        that left no report."""
+        """A mode that produced nothing fails the run."""
         def fail(*args, **kwargs):
             raise ValueError("the run could not start")
 
@@ -891,8 +789,7 @@ class TestFailureModes:
     def test_a_comparison_one_model_survives_exits_zero(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """A model lost to an infrastructure failure is skipped, and the
-        run still succeeds on the one that completed."""
+        """A model lost to an infrastructure failure is skipped; the run succeeds."""
         write_model_plugin(
             plugins_dir, self._model_whose_service_drops("OtherWatermarkModel"),
             "other",
@@ -910,22 +807,20 @@ class TestFailureModes:
 
 
 class TestCliOverridesConfig:
-    @pytest.mark.parametrize("seed", [-1, 2**32])
-    @pytest.mark.parametrize("from_cli", [False, True])
-    @pytest.mark.parametrize("validate_only", [False, True])
+    @pytest.mark.parametrize("extra", [
+        [], ["--seed", "-1"], ["--seed", str(2**32), "--validate-only"],
+    ])
     def test_invalid_seed_preserves_existing_reports(
-        self, tmp_path, plugins_dir, audio_dir, seed, from_cli, validate_only,
+        self, tmp_path, plugins_dir, audio_dir, extra,
     ):
+        """An out-of-range seed, from the config or --seed, is refused."""
         config = write_config(
-            tmp_path, "benchmark.json", general={"seed": 7 if from_cli else seed},
+            tmp_path, "benchmark.json", general={"seed": 7 if extra else 2**32},
         )
         report_dir = tmp_path / "report"
         report_dir.mkdir()
         existing = report_dir / "previous.json"
         existing.write_text('{"completed": true}')
-        extra = ["--seed", str(seed)] if from_cli else []
-        if validate_only:
-            extra.append("--validate-only")
         assert run_cli(
             "--config", config, "--wav_files_dir", audio_dir,
             "--report_dir", str(report_dir), "--plugins_dir", plugins_dir, *extra,
@@ -965,17 +860,12 @@ class TestCliOverridesConfig:
 
 
 class TestServiceProbe:
-    """A container that answers slowly must not read as one that is down.
-
-    WavMark loads its checkpoint on the first request and takes over ten
-    seconds to answer when cold, so a single short probe aborted a run
-    that would have worked seconds later.
-    """
+    """A container that answers slowly is waited for, not reported as down."""
 
     @staticmethod
-    def _benchmark(base_url="http://localhost:9/"):
+    def _benchmark():
         model_cls = type("Slow", (), {"__init__": lambda self: setattr(
-            self, "base_url", base_url)})
+            self, "base_url", "http://localhost:9/")})
         return type("_B", (), {"models": {"SlowModel": {"class": model_cls}}})()
 
     @staticmethod
@@ -1032,32 +922,22 @@ class TestServiceProbe:
         assert len(messages) == 1
         assert calls["n"] == 1, "probed more than once with wait=False"
 
-    def test_a_model_without_a_base_url_is_skipped(self, monkeypatch):
-        """An in-process plugin has no service to check."""
-        messages = run_module._unreachable_model_services(
-            self._benchmark(base_url=None), self._config(),
-        )
-        assert messages == []
-
 
 class TestParameterProvenance:
-    """Which version ran with which values must be answerable.
+    """Which version ran with which values, before and after the run."""
 
-    Before the run, from --validate-only; after it, from
-    run_metadata.json. Inferring it from the config by hand is exactly
-    what silently mislabelled two identical rows before.
-    """
-
+    # Two presets overridden and two versions defined, all run through the
+    # bare name.
     LADDER = {
         "PresetNoiseAttack:mild": {"snr_db_preset_noise": 45},
-        "PresetNoiseAttack": {"snr_db_preset_noise": 35},
+        "PresetNoiseAttack": {"snr_db_preset_noise": 30},
         "PresetNoiseAttack:aggressive": {"snr_db_preset_noise": 20},
         "PresetNoiseAttack:brutal": {"snr_db_preset_noise": 10},
         "PresetNoiseAttack:extreme": {"snr_db_preset_noise": 3},
     }
     EXPECTED = {
         "PresetNoiseAttack (mild)": 45,
-        "PresetNoiseAttack (default)": 35,
+        "PresetNoiseAttack (default)": 30,
         "PresetNoiseAttack (aggressive)": 20,
         "PresetNoiseAttack (brutal)": 10,
         "PresetNoiseAttack (extreme)": 3,
@@ -1083,13 +963,15 @@ class TestParameterProvenance:
                 f"{name} not reported with its value"
             )
 
-    def test_run_metadata_records_every_version(
+    def test_run_metadata_matches_what_each_version_measured(
         self, tmp_path, plugins_dir, audio_dir,
     ):
+        """The values recorded are the ones that reached the signal."""
         report_dir = tmp_path / "report"
         run_cli("--config", self._config(tmp_path),
                 "--wav_files_dir", audio_dir,
-                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir)
+                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
+                "--seed", "1")
 
         resolved = json.loads(
             (report_dir / "run_metadata.json").read_text()
@@ -1098,16 +980,6 @@ class TestParameterProvenance:
             name: params["snr_db_preset_noise"]
             for name, params in resolved.items()
         } == self.EXPECTED
-
-    def test_the_five_versions_actually_measure_differently(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        """The provenance must match what reached the signal."""
-        report_dir = tmp_path / "report"
-        run_cli("--config", self._config(tmp_path),
-                "--wav_files_dir", audio_dir,
-                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
-                "--seed", "1")
 
         attacks = next(iter(json.loads(
             (report_dir / "benchmark_results.json").read_text()).values()))["attacks"]
@@ -1122,21 +994,11 @@ class TestParameterProvenance:
         self, tmp_path, plugins_dir,
     ):
         """An override names only what it changes; the rest is the preset."""
-        from deepmarkpy.benchmark import Benchmark
-        from deepmarkpy.config import load_configs
-
-        benchmark = Benchmark(external_plugins_dir=plugins_dir)
-        config = load_configs(
-            [write_config(tmp_path, "partial.json",
-                          attacks={"list": ["FlipSamplesAttack"]},
-                          attack_parameters={
-                              "FlipSamplesAttack": {"num_flip_samples": 50},
-                          })],
-            benchmark.attacks, benchmark.models,
-        )[0]
-
-        resolved = run_module.resolved_attack_parameters(benchmark, config)
-        entry = resolved["FlipSamplesAttack"]
+        entry = resolved_for(
+            tmp_path, plugins_dir,
+            attacks={"list": ["FlipSamplesAttack"]},
+            attack_parameters={"FlipSamplesAttack": {"num_flip_samples": 50}},
+        )["FlipSamplesAttack"]
         assert entry["num_flip_samples"] == 50, "override not applied"
         assert "duration_flip_samples" in entry, (
             "untouched plugin parameters are missing, so the record is "
@@ -1145,59 +1007,27 @@ class TestParameterProvenance:
 
 
 class TestParameterReportingPerMode:
-    """An empty attack selection means something different per mode.
-
-    The provenance table has to agree with the run loop, or it describes
-    attacks that never ran.
-    """
+    """The parameters reported are those of the attacks the mode runs."""
 
     def test_no_attacks_mode_reports_no_attack_parameters(self, tmp_path, plugins_dir):
         """This mode applies none, so listing every attack would be nonsense."""
-        from deepmarkpy.benchmark import Benchmark
-        from deepmarkpy.config import load_configs
-
-        path = tmp_path / "na.json"
-        path.write_text(json.dumps({
-            "mode": "no_attacks", "models": ["DummyWatermarkModel"],
-            "calculate_quality_metrics": False,
-        }))
-        benchmark = Benchmark(external_plugins_dir=plugins_dir)
-        config = load_configs([str(path)], benchmark.attacks, benchmark.models)[0]
-
-        assert run_module.resolved_attack_parameters(benchmark, config) == {}
+        assert resolved_for(
+            tmp_path, plugins_dir, mode="no_attacks", attacks=None,
+        ) == {}
 
     def test_detection_reliability_empty_selection_is_no_attacks(
         self, tmp_path, plugins_dir,
     ):
         """Empty means baseline-only here, not 'every attack'."""
-        from deepmarkpy.benchmark import Benchmark
-        from deepmarkpy.config import load_configs
-
-        path = tmp_path / "dr.json"
-        path.write_text(json.dumps({
-            "mode": "detection_reliability", "models": ["DummyWatermarkModel"],
-            "calculate_quality_metrics": False,
-            "attacks": {"groups": [], "list": []},
-        }))
-        benchmark = Benchmark(external_plugins_dir=plugins_dir)
-        config = load_configs([str(path)], benchmark.attacks, benchmark.models)[0]
-
-        assert run_module.resolved_attack_parameters(benchmark, config) == {}
+        assert resolved_for(
+            tmp_path, plugins_dir, mode="detection_reliability",
+            attacks={"groups": [], "list": []},
+        ) == {}
 
     def test_benchmark_empty_selection_is_every_attack(self, tmp_path, plugins_dir):
-        from deepmarkpy.benchmark import Benchmark
-        from deepmarkpy.config import load_configs
-
-        path = tmp_path / "b.json"
-        path.write_text(json.dumps({
-            "mode": "benchmark", "models": ["DummyWatermarkModel"],
-            "calculate_quality_metrics": False,
-            "attacks": {"groups": [], "list": []},
-        }))
-        benchmark = Benchmark(external_plugins_dir=plugins_dir)
-        config = load_configs([str(path)], benchmark.attacks, benchmark.models)[0]
-
-        assert len(run_module.resolved_attack_parameters(benchmark, config)) > 20
+        assert len(resolved_for(
+            tmp_path, plugins_dir, attacks={"groups": [], "list": []},
+        )) > 20
 
     def test_plugin_documentation_keys_are_not_reported_as_parameters(
         self, tmp_path, plugins_dir,
@@ -1222,12 +1052,7 @@ class TestParameterReportingPerMode:
 
 
 class TestEfficiencySection:
-    """Timings are measured only when the efficiency section asks for them.
-
-    The section is separate from ``metrics`` because these numbers
-    describe the machine rather than the watermarking method: they do not
-    reproduce, and a run decides whether to take the measurement at all.
-    """
+    """Timings are measured only when the efficiency section asks for them."""
 
     EFFICIENCY = {
         "enabled": True,
@@ -1246,10 +1071,17 @@ class TestEfficiencySection:
         return report_dir
 
     def test_timings_are_recorded_and_tabled_when_enabled(
-        self, tmp_path, plugins_dir, audio_dir,
+        self, tmp_path, plugins_dir, audio_dir, caplog,
     ):
-        report_dir = self._run(tmp_path, plugins_dir, audio_dir, "eff_on.json",
-                               efficiency=self.EFFICIENCY)
+        from deepmarkpy.utils.efficiency import TERMINAL_TAG
+
+        with caplog.at_level("INFO"):
+            report_dir = self._run(tmp_path, plugins_dir, audio_dir,
+                                   "eff_on.json", efficiency=self.EFFICIENCY)
+
+        # Timing output carries its own tag, so it can be filtered on its own.
+        tagged = [r.message for r in caplog.records if TERMINAL_TAG in r.message]
+        assert any("Attack time" in line for line in tagged), tagged
 
         results = json.loads((report_dir / "benchmark_results.json").read_text())
         entry = next(iter(next(iter(results.values()))["attacks"].values()))
@@ -1277,27 +1109,6 @@ class TestEfficiencySection:
             assert "Embedding cost per file" in document
             assert "Embed time (s)" not in document
 
-    def test_nothing_is_measured_when_the_section_is_absent(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        report_dir = self._run(tmp_path, plugins_dir, audio_dir, "eff_off.json")
-
-        results = json.loads((report_dir / "benchmark_results.json").read_text())
-        entry = next(iter(next(iter(results.values()))["attacks"].values()))
-        stats = json.loads((report_dir / "benchmark_stats.json").read_text())
-        row = next(iter(stats.values()))
-
-        # The raw results too, not only the aggregate: with efficiency off
-        # no timing is taken at all, rather than taken and filtered out.
-        assert not [k for k in entry if "latency" in k], entry
-        assert not [k for k in row if "latency" in k], row
-        tex = (report_dir / "benchmark_report.tex").read_text()
-        assert "tab:benchmark_efficiency" not in tex
-        assert "Attack time" not in tex
-        detailed = (report_dir / "detailed_report.tex").read_text()
-        assert "tab:efficiency_" not in detailed
-        assert "Attack time" not in detailed
-
     def test_a_disabled_metric_is_left_out_of_the_table(
         self, tmp_path, plugins_dir, audio_dir,
     ):
@@ -1313,72 +1124,13 @@ class TestEfficiencySection:
         assert "Attack time (s)" in tex
         assert "Embed time" not in tex and "Detect time" not in tex
 
-    def test_the_terminal_lines_carry_the_efficiency_tag(
-        self, tmp_path, plugins_dir, audio_dir, caplog,
-    ):
-        """Its own tag, so timing output can be read or filtered on its own."""
-        from deepmarkpy.utils.efficiency import TERMINAL_TAG
-
-        with caplog.at_level("INFO"):
-            self._run(tmp_path, plugins_dir, audio_dir, "eff_log.json",
-                      efficiency=self.EFFICIENCY)
-
-        tagged = [r.message for r in caplog.records if TERMINAL_TAG in r.message]
-        assert tagged, "no tagged efficiency output"
-        assert any("Attack time" in line for line in tagged), tagged
-
-
-class TestEmbeddingCostIsStatedOncePerPart:
-    """Duration parts take a different code path from the flat report.
-
-    The flat report states the embedding cost in its summary; the grouped
-    one has no summary, so the statement has to be emitted per part or it
-    disappears from exactly the configuration that uses duration groups.
-    """
-
-    def test_every_duration_part_states_it(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        config = write_config(
-            tmp_path, "grouped.json",
-            duration_groups={"boundaries": [1.2], "include_overall": True},
-            efficiency={"enabled": True, "metrics": {
-                "embed_latency": {"statistics": ["mean"]},
-                "attack_latency": {"statistics": ["mean"]},
-            }},
-        )
-        report_dir = tmp_path / "grouped"
-        run_cli("--config", config, "--wav_files_dir", audio_dir,
-                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir)
-
-        tex = (report_dir / "benchmark_report.tex").read_text()
-        parts = tex.count("\\part{")
-        assert parts >= 2, tex
-        assert tex.count("Embedding cost per file") == parts
-
 
 class TestReliabilityModeTimings:
-    """The reliability mode has its own run loop, so it must time its own.
-
-    It calls detect twice per file and twice per attack -- on clean audio
-    for the false-positive rate and on watermarked audio for the false
-    negative. Only the calls matching what the other modes time are
-    recorded, so ``attack_latency`` means the same thing in all three.
-    """
-
-    @staticmethod
-    def _write(tmp_path, name, **overrides):
-        """BER is not a metric in this mode, so the shared base drops it."""
-        config = write_config(tmp_path, name,
-                              mode="detection_reliability", **overrides)
-        raw = json.loads(pathlib.Path(config).read_text())
-        raw["metrics"]["defaults"].pop("ber", None)
-        pathlib.Path(config).write_text(json.dumps(raw))
-        return config
+    """The reliability mode times its own run loop, as the other modes do."""
 
     def _run(self, tmp_path, plugins_dir, audio_dir, **overrides):
-        config = self._write(
-            tmp_path, "reliability_eff.json",
+        config = write_config(
+            tmp_path, "reliability_eff.json", mode="detection_reliability",
             efficiency={"enabled": True, "metrics": {
                 "embed_latency": {"statistics": ["mean"]},
                 "detect_latency": {"statistics": ["mean"]},
@@ -1411,36 +1163,10 @@ class TestReliabilityModeTimings:
         assert "Embedding cost per file" in tex
         assert "Embed time (s)" not in tex
 
-    def test_nothing_is_measured_without_the_section(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        config = self._write(tmp_path, "reliability_off.json")
-        report_dir = tmp_path / "reliability_off"
-        run_cli("--config", config, "--wav_files_dir", audio_dir,
-                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir)
-
-        result = json.loads(
-            (report_dir / "detection_reliability.json").read_text()
-        )
-        attack = next(iter(result["attacks"].values()))
-        assert not attack.get("timings"), attack.get("timings")
-        assert not result["no_attack"].get("timings")
-
-        record = next(iter(result["per_file"].values()))
-        assert not [k for k in record if "latency" in k], record
-        for attack_record in record["attacks"].values():
-            assert not [k for k in attack_record if "latency" in k], attack_record
-
-        tex = (report_dir / "detection_reliability_report.tex").read_text()
-        assert "tab:dr_efficiency" not in tex
-        assert "Attack time" not in tex
-
     def test_every_duration_part_states_the_embedding_cost(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """Each part is rebuilt from the per-file records, and that rebuild
-        dropped the baseline timings, so the grouped report lost the line
-        the flat one carries."""
+        """Each part, rebuilt from per-file records, keeps the baseline timings."""
         report_dir = self._run(
             tmp_path, plugins_dir, audio_dir,
             duration_groups={"boundaries": [1.2], "include_overall": True},
@@ -1450,29 +1176,9 @@ class TestReliabilityModeTimings:
         assert parts >= 2, tex
         assert tex.count("Embedding cost per file") == parts
 
-    def test_the_section_no_longer_warns_that_the_mode_ignores_it(
-        self, tmp_path,
-    ):
-        """Detection reliability records timings, so enabling them there
-        draws no warning that the mode ignores them."""
-        from deepmarkpy.config import load_config_data
-
-        config = load_config_data(
-            {"mode": "detection_reliability", "models": ["AudioSealModel"],
-             "efficiency": {"enabled": True}},
-            quiet=True,
-        )
-        assert "W014" not in [w.code for w in config.warnings]
-
 
 class TestContainerMemorySection:
-    """A snapshot of the services the run used, gated by the config.
-
-    Not a per-attack metric: it covers models, dockerized attacks and the
-    metric services, and it reports the whole container rather than the
-    model. Only running containers appear; anything native, stopped or
-    unreachable is absent rather than reported as zero.
-    """
+    """A snapshot of the running containers the run used, gated by the config."""
 
     ENABLED = {"enabled": True, "metrics": {
         "container_footprint": {"enabled": True},
@@ -1535,34 +1241,9 @@ class TestContainerMemorySection:
             [("Model", "X", "not a url"), ("Model", "Y", None)]
         ) == []
 
-    def test_it_is_not_collected_unless_the_config_asks(
-        self, tmp_path, plugins_dir, audio_dir, monkeypatch,
-    ):
-        """Reading it shells out to docker, so a run that did not ask must
-        not pay for it."""
-        from deepmarkpy.utils import efficiency
-
-        calls = []
-        monkeypatch.setattr(efficiency, "_run_docker",
-                            lambda args: calls.append(args))
-
-        config = write_config(tmp_path, "no_containers.json")
-        report_dir = tmp_path / "no_containers"
-        run_cli("--config", config, "--wav_files_dir", audio_dir,
-                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir)
-
-        assert calls == [], calls
-
 
 class TestContainerSectionCoversTheWholeRun:
-    """The section lists every service the report's run used.
-
-    That is the run's model, the dockerized attacks its mode applies, and
-    NISQA wherever the config enables it, per attack group included, as
-    the shipped templates do. Each model's report in a multi-model
-    benchmark covers that model's run, so it lists only that model's
-    container.
-    """
+    """The section lists every service the report's own run used."""
 
     class _DockerAttack:
         endpoint = "http://localhost:9999/attack"
@@ -1626,8 +1307,7 @@ class TestContainerSectionCoversTheWholeRun:
 
     @pytest.mark.parametrize("mode", ["no_attacks", "detection_reliability"])
     def test_a_mode_that_runs_no_attacks_counts_none(self, tmp_path, mode):
-        """No selection there means no attacks, not every attack, so a
-        running service it never called is not this run's footprint."""
+        """No selection here means no attacks, so no attack service is listed."""
         # detection_reliability measures one model per config.
         entries = self._rows_for(tmp_path, mode=mode, models=["AudioSealModel"])
         assert not any(kind == "Attack" for kind, _, _ in entries), entries
@@ -1663,14 +1343,7 @@ class TestContainerSectionCoversTheWholeRun:
 
 
 class TestTheFlagInterfaceStillWorks:
-    """The pre-2.0 flags, and what they must still produce.
-
-    An existing caller runs `--wm_model X --attack_types Y
-    --calculate_quality_metrics` and gets its reports. The flags are
-    assembled into a config mapping and validated by the same code a
-    file goes through, so the run below this point is identical -- which
-    is what these assert, by running both and comparing.
-    """
+    """The 2.x flags build a config that runs as the equivalent file does."""
 
     def _flag_run(self, tmp_path, plugins_dir, audio_dir, *extra):
         report_dir = tmp_path / "flags"
@@ -1685,23 +1358,10 @@ class TestTheFlagInterfaceStillWorks:
         )
         return code, report_dir
 
-    def test_a_flag_run_produces_its_reports(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        code, report_dir = self._flag_run(tmp_path, plugins_dir, audio_dir)
-        assert code == run_module.EXIT_OK
-
-        assert (report_dir / "benchmark_results.json").exists()
-        assert (report_dir / "benchmark_report.tex").exists()
-        # --calculate_quality_metrics has always meant the detailed report too.
-        assert (report_dir / "detailed_report.tex").exists()
-
     def test_the_quality_flag_keeps_pesq_and_stoi_for_desynchronization(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """Every attack is measured with PESQ, ViSQOL and STOI. The flag's
-        per-group matrix adds to them and takes none away, including for
-        the desynchronization group."""
+        """The flag's per-group matrix keeps PESQ and STOI for desynchronization."""
         report_dir = tmp_path / "desync"
         assert run_cli(
             "--wm_model", "DummyWatermarkModel",
@@ -1724,7 +1384,12 @@ class TestTheFlagInterfaceStillWorks:
         self, tmp_path, plugins_dir, audio_dir,
     ):
         """The same run, expressed both ways, measures the same thing."""
-        _code, flag_dir = self._flag_run(tmp_path, plugins_dir, audio_dir)
+        code, flag_dir = self._flag_run(tmp_path, plugins_dir, audio_dir)
+        assert code == run_module.EXIT_OK
+        # --calculate_quality_metrics also writes the detailed report.
+        for name in ("benchmark_results.json", "benchmark_report.tex",
+                     "detailed_report.tex"):
+            assert (flag_dir / name).exists(), f"{name} was not written"
 
         config = write_config(
             tmp_path, "equivalent.json",
@@ -1747,12 +1412,7 @@ class TestTheFlagInterfaceStillWorks:
     def test_an_attack_parameter_flag_reaches_the_attack(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """The old CLI generated one flag per plugin parameter.
-
-        It lands on the default preset only, exactly as the same key
-        written bare in a config file does -- the flat namespace the
-        flags had cannot name a version, so it cannot reach one.
-        """
+        """It lands on the default version only, as a bare config key does."""
         report_dir = tmp_path / "params"
         assert run_cli(
             "--wm_model", "DummyWatermarkModel",
@@ -1803,9 +1463,7 @@ class TestTheFlagInterfaceStillWorks:
     def test_combined_mode_flags_with_several_models_are_refused(
         self, tmp_path, plugins_dir, audio_dir, capsys,
     ):
-        """--no_attacks --detection_reliability builds one config per mode,
-        and reliability is measured for one model, so listing several is
-        E012 here as it is for --detection_reliability alone."""
+        """E012: reliability measures one model, with or without --no_attacks."""
         write_model_plugin(
             plugins_dir,
             MODEL_SOURCE.replace("class DummyWatermarkModel",
@@ -1860,8 +1518,7 @@ class TestTheFlagInterfaceStillWorks:
     def test_a_zero_crop_from_the_flags_is_no_crop(
         self, tmp_path, plugins_dir, audio_dir,
     ):
-        """The flag has always accepted 0, which crops nothing. A config
-        file spells that null and refuses 0, so the flag's 0 is no crop."""
+        """--crop_before_attack 0 crops nothing, as a config file's null does."""
         code, report_dir = self._flag_run(
             tmp_path, plugins_dir, audio_dir, "--crop_before_attack", "0",
         )

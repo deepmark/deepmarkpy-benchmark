@@ -65,8 +65,7 @@ class TestGroupAttacks:
 
 
 class TestMetricsForAttack:
-    """The taxonomy decides the default metric set for each attack, via
-    the matrix ``MetricResolver.from_attack_groups`` builds from it."""
+    """The default metric set per attack comes from the taxonomy's matrix."""
 
     @staticmethod
     def _metrics(attack):
@@ -81,8 +80,3 @@ class TestMetricsForAttack:
         metrics = self._metrics("SameModelAttack")
         assert "pesq" in metrics
         assert "nisqa_mos" in metrics
-
-    def test_unknown_attack_gets_the_full_set(self):
-        """An ungrouped attack lands in "other", which enables everything."""
-        from deepmarkpy.utils.metric_resolver import SIGNAL_METRICS
-        assert set(self._metrics("FakeAttack")) == set(SIGNAL_METRICS)

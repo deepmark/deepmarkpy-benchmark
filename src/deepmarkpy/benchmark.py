@@ -146,43 +146,31 @@ def expand_attacks(attack_types, attacks_registry, parameters=None,
                    extra_versions=None):
     """Expand attacks into (class_name, display_name, kwargs_override, version) quads.
 
-    Handles:
-    - Bitrate expansion: Codec2VocoderAttack with bitrate list becomes
-      Codec2VocoderAttack_700, _1300, _2400.
-    - Version syntax: GaussianNoiseAttack:aggressive becomes a separate entry
-      with version='aggressive'.
-    - Per-version parameter overrides, and versions the config defines
-      that the plugin does not.
+    A Codec2 bitrate list gives one entry per bitrate
+    (``Codec2VocoderAttack_700``, ...), ``AttackName:version`` one entry for
+    that version, and a bare multi-version attack one entry per version.
 
     Args:
         attack_types: attack specs, optionally ``AttackName:version``.
         attacks_registry: ``Benchmark.attacks``.
-        parameters: callable ``(attack_name, version) -> params`` giving the
-            parameters to apply to one entry, or None for no overrides.
-            Queried by *resolved* version, so an override on the default
-            preset cannot leak onto a named one.
-        extra_versions: ``{attack: {version: params}}`` for versions defined
-            outside the plugin. They are expanded like declared ones, but
-            load the plugin's default preset and take every parameter from
-            ``params`` -- which is why a config may only define a version
-            when it supplies all of them.
+        parameters: ``(attack_name, version) -> params`` for one entry,
+            queried by resolved version, or None for no overrides.
+        extra_versions: ``{attack: {version: params}}`` for versions the
+            config defines; they load the plugin's default preset and take
+            every parameter from ``params``.
 
-    Returns a list of (class_name, display_name, kwargs_override, version)
-    tuples. ``version`` is the preset to *load* from the plugin, so it is
-    None for a config-defined version; the name it was given appears in
-    ``display_name``.
+    ``version`` in each quad is the preset to load: None for a
+    config-defined version, whose name appears in ``display_name``.
     """
     parameters = parameters or (lambda name, version: {})
     extra_versions = extra_versions or {}
     expanded = []
 
     def add(entry):
-        """Append unless this row already exists.
+        """Append unless a row with this display name exists.
 
-        A version named in ``attacks.list`` while its attack also arrives
-        from a group would otherwise be expanded twice: attacked twice per
-        file, then silently collapsed by the results dict, which keys on
-        the display name. The explicit spec comes first and wins.
+        A version listed explicitly can arrive again through its group;
+        the explicit spec comes first and wins.
         """
         if any(existing[1] == entry[1] for existing in expanded):
             logger.debug(f"Already expanded, skipping duplicate: {entry[1]}")
@@ -278,10 +266,8 @@ def expand_attacks(attack_types, attacks_registry, parameters=None,
 def instantiate_attack(attack_cls, class_name, version):
     """Construct an attack, passing ``version`` only when it accepts one.
 
-    Decided by signature rather than by catching ``TypeError`` from the
-    call: that catch would also swallow a ``TypeError`` raised *inside* a
-    constructor that does take a version and retry without it, so a broken
-    plugin would run its default preset under the requested version's name.
+    Decided by signature, so a ``TypeError`` raised inside a constructor
+    that takes a version propagates instead of triggering a retry without it.
     """
     try:
         parameters = inspect.signature(attack_cls.__init__).parameters
@@ -295,9 +281,7 @@ def instantiate_attack(attack_cls, class_name, version):
         return attack_cls(version=version)
 
     if version and version != "default":
-        # Warning and carrying on would run the default preset under the
-        # requested version's display name, labelling the results as data
-        # they are not.
+        # Running the default preset would label its results as this version.
         raise ValueError(
             f"{class_name} does not support versions, so version "
             f"'{version}' cannot be loaded: its constructor takes no "
@@ -509,8 +493,6 @@ class Benchmark:
                 "filepath": filepath,
                 "accuracy": accuracy,
             }
-            # Recorded unconditionally and cheaply; whether the report
-            # shows it is the resolver's decision, like every other metric.
             entry.update(timings)
 
             # Whether the watermark was found is the model's decision, not a
@@ -935,10 +917,8 @@ class Benchmark:
                         "accuracy_cross_model": [],
                         "confidence": [],
                         "detection_valid": [],
-                        # metrics_for_attack is deliberately signal-only --
-                        # it says what compute_metrics must produce. The
-                        # timings are measured rather than computed, so they
-                        # are added here instead of widening that meaning.
+                        # metrics_for_attack lists what compute_metrics
+                        # produces; the enabled timings are added here.
                         "metrics": {
                             m: [] for m in (
                                 list(resolver.metrics_for_attack(attack_name))

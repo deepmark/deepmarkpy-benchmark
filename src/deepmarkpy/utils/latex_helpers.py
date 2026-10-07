@@ -1,8 +1,7 @@
-"""Shared LaTeX helpers for DeepMark report generators.
+"""LaTeX building blocks shared by the five report generators.
 
-Centralizes preamble generation, attack-name formatting, longtable
-scaffolding and pdflatex compilation so the three report generators
-(basic, detailed, comparative) share a single implementation.
+Preamble, attack-name and metric formatting, tables, caveat marks, figure
+blocks and pdflatex compilation.
 """
 
 import logging
@@ -89,9 +88,8 @@ _LATEX_SPECIAL = {
 
 
 def latex_escape(text: str) -> str:
-    """``text`` with every LaTeX special character made literal.
+    """``text`` with every LaTeX special character escaped, in one pass.
 
-    One pass over the characters, so a replacement is never escaped again.
     ``report_charts.plain`` reverses it for the figures.
     """
     return "".join(_LATEX_SPECIAL.get(c, c) for c in text)
@@ -100,11 +98,8 @@ def latex_escape(text: str) -> str:
 def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str:
     """Render an attack class name as human-readable text.
 
-    Drops the trailing ``Attack`` suffix from the base class name.
-    A version suffix like ``(aggressive)`` is preserved when present —
-    ``expand_attacks`` only includes one when the attack's config is
-    multi-version, so the display layer trusts the key as-is.
-
+    Drops the trailing ``Attack`` suffix from the base class name and keeps
+    a version suffix such as ``(aggressive)``; both parts are LaTeX-escaped.
     When ``split_camel_case`` is ``True`` each interior uppercase
     boundary in the base name is expanded to a space.
 
@@ -123,9 +118,6 @@ def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str
     if base.endswith("Attack"):
         base = base[:-6]
     base = latex_escape(base)
-    # A version name is the config author's own text -- "very_aggressive"
-    # is a natural one -- and every table prints this, so it is escaped
-    # like the base rather than trusted.
     version_suffix = latex_escape(version_suffix)
 
     if not split_camel_case:
@@ -143,32 +135,13 @@ def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str
     return formatted + version_suffix
 
 
-# Column headers for the eight statistics. Every generator renders a
-# statistic column through this, so "worst_case" reads the same everywhere.
-STAT_HEADERS = {
-    "mean": "Mean",
-    "std": "Std",
-    "median": "Median",
-    "p5": "P5",
-    "p10": "P10",
-    "p95": "P95",
-    "p99": "P99",
-    "worst_case": "Worst Case",
-}
-
-# Metrics reported as a percentage rather than a bare number.
-_PERCENT_METRICS = frozenset({"accuracy"})
-
-# Metrics stored as a 0-1 fraction but read as a percentage.
-_FRACTION_METRICS = frozenset({"ber"})
-
 # Metrics whose useful resolution is below 0.01.
 _FINE_GRAINED_METRICS = frozenset({"stoi", "sii", "ncm"})
 
 
 def stat_header(statistic: str) -> str:
-    """Column header for a statistic name."""
-    return STAT_HEADERS.get(statistic, statistic.replace("_", " ").title())
+    """Column header for a statistic name, e.g. ``Worst Case``."""
+    return statistic.replace("_", " ").title()
 
 
 def metric_label(metric: str) -> str:
@@ -178,25 +151,28 @@ def metric_label(metric: str) -> str:
     extra = {
         "accuracy": "Accuracy (\\%)",
         "ber": "BER (\\%)",
-        "emr": "EMR",
     }
     if metric in extra:
         return extra[metric]
     return METRIC_LABELS.get(metric, metric.upper().replace("_", " "))
 
 
-def format_metric_cell(metric: str, value) -> str:
-    """Render one metric value, in the unit that metric is read in.
+def compact_header(metric: str, statistic: str) -> str:
+    """A metric's single-column header; names the statistic unless it is the mean."""
+    if statistic == "mean":
+        return metric_label(metric)
+    return f"{metric_label(metric)} [{stat_header(statistic)}]"
 
-    Returns ``"N/A"`` for a missing value, which is deliberately distinct
-    from the ``"--"`` a report prints when a statistic was never computed.
-    """
+
+def format_metric_cell(metric: str, value, missing: str = "N/A") -> str:
+    """Render one metric value in the unit that metric is read in, or ``missing``."""
     if value is None:
-        return "N/A"
+        return missing
     value = float(value)
-    if metric in _FRACTION_METRICS:
+    # BER is stored as a 0-1 fraction.
+    if metric == "ber":
         return f"{value * 100:.2f}\\%"
-    if metric in _PERCENT_METRICS:
+    if metric == "accuracy":
         return f"{value:.2f}\\%"
     if metric in _FINE_GRAINED_METRICS:
         return f"{value:.4f}"
@@ -204,11 +180,7 @@ def format_metric_cell(metric: str, value) -> str:
 
 
 def format_emr_cell(count, total, rate) -> str:
-    """Render the exact-match rate as ``n/N (r%)``.
-
-    EMR is a count first: "3 of 20 files came back bit-perfect" is the
-    fact, and the percentage is the derived reading of it.
-    """
+    """The exact-match rate as ``n/N (r%)``, or the rate alone without a count."""
     if rate is None:
         return "N/A"
     if count is not None and total:
@@ -267,33 +239,54 @@ class MetricCaveats:
         )
 
 
-# Figures are set narrower than the text block. At full width a chart with
-# a handful of bars towers over the table it belongs to, and the section
-# reads as a picture with a footnote rather than a table with a picture.
+# Width of every report figure, relative to the text block.
 FIGURE_WIDTH = "0.72\\linewidth"
 
 
-def container_section(rows, label: str = "tab:containers") -> str:
-    """A section listing the memory each running service holds.
+def crop_note(crop_before_attack) -> str:
+    """The red caveat that every attack ran on cropped audio, or ''."""
+    if crop_before_attack is None:
+        return ""
+    return (
+        f"\\textcolor{{red}}{{A crop of {crop_before_attack:.1f}\\% was "
+        f"applied to the beginning of the watermarked audio prior to each "
+        f"attack. The original (reference) audio was cropped identically, so "
+        f"quality metrics compare cropped original vs.\\ cropped attacked "
+        f"audio, and BER is measured by detecting the watermark from the "
+        f"cropped attacked signal.}}"
+    )
 
-    Its own section rather than a column anywhere: this is a snapshot of
-    the deployment at one moment, not a measurement of the watermarking
-    method, and it covers services -- models, dockerized attacks, the
-    metric services -- rather than attacks or files.
+
+def embedding_cost_line(timings, statistics) -> str:
+    """The run's "Embedding cost per file" sentence, or '' without a value.
+
+    ``timings`` maps each of ``statistics`` to seconds.
     """
+    parts = [
+        f"{float(timings[s]):.4f}\\,s ({stat_header(s).lower()})"
+        for s in statistics if timings.get(s) is not None
+    ]
+    if not parts:
+        return ""
+    return (
+        f"\\noindent\\textbf{{Embedding cost per file:}} {', '.join(parts)}\n"
+        "\\\\{\\footnotesize Measured once per file, before any attack, so it "
+        "does not vary by attack. Like every timing it depends on this machine "
+        "and does not reproduce across runs.}\n\n"
+    )
+
+
+def container_section(rows, label: str = "tab:containers") -> str:
+    """A section listing the memory each running service held, or '' without rows."""
     if not rows:
         return ""
 
     body = []
-    for kind, name, container, used, limit in rows:
-        share = f"{100.0 * used / limit:.0f}\\%" if limit else "--"
-        body.append(
-            f"    {kind} & {name.replace('_', chr(92) + '_')} & "
-            f"{used:.0f} & {limit:.0f} & {share} \\\\"
-            if limit else
-            f"    {kind} & {name.replace('_', chr(92) + '_')} & "
-            f"{used:.0f} & -- & -- \\\\"
-        )
+    for kind, name, _, used, limit in rows:
+        of_limit = (f"{limit:.0f} & {100.0 * used / limit:.0f}\\%" if limit
+                    else "-- & --")
+        name = name.replace("_", "\\_")
+        body.append(f"    {kind} & {name} & {used:.0f} & {of_limit} \\\\")
 
     table = build_longtable(
         "llccc",
@@ -316,10 +309,7 @@ def container_section(rows, label: str = "tab:containers") -> str:
 def slugify(label: str) -> str:
     """Filename- and label-safe form of a duration-group label.
 
-    The comparison is spelled out rather than stripped as punctuation.
-    Dropping it collapses ``"< 5.0s"`` and ``"> 5.0s"`` onto the same
-    slug, so a run with one boundary writes both bins' figures to the
-    same filenames and emits the same ``\\label`` twice.
+    Comparison signs are spelled out, so ``"< 5.0s"`` and ``"> 5.0s"`` differ.
     """
     text = (label.replace("<", " lt ").replace("≥", " ge ")
             .replace(">", " gt "))
@@ -329,24 +319,16 @@ def slugify(label: str) -> str:
 
 
 def duration_label_tex(label: str) -> str:
-    """A duration-group label as LaTeX text.
+    """A duration-group label as LaTeX text, its comparison signs in math mode.
 
-    The comparison signs are typeset in math mode; ``≥`` in particular
-    has no text-mode glyph under pdflatex's default input encoding, so a
-    raw one stops the compile.
+    ``≥`` has no text-mode glyph under pdflatex's default input encoding.
     """
     return (label.replace("<", "$<$").replace(">", "$>$")
             .replace("≥", "$\\geq$"))
 
 
 def part_heading(label: str, subtitle: str = "") -> str:
-    """A ``\\part`` whose sections start again at 1.
-
-    Each duration part is a self-contained report over its own files, so
-    its sections are its first, second, third -- not the seventh, eighth
-    and ninth of a document the reader is not reading straight through.
-    ``\\part`` does not reset the section counter on its own.
-    """
+    """A ``\\part`` heading that restarts section numbering at 1."""
     heading = f"{label} ({subtitle})" if subtitle else label
     return (
         f"\\part{{{heading}}}\n"
@@ -355,11 +337,7 @@ def part_heading(label: str, subtitle: str = "") -> str:
 
 
 def figure_block(filename: str, caption: str, label: str) -> str:
-    """A centred ``figure`` environment, sized relative to the text block.
-
-    Every generator builds its figures through this, so one change of
-    ``FIGURE_WIDTH`` resizes every figure.
-    """
+    """A centred ``figure`` environment ``FIGURE_WIDTH`` wide."""
     return (
         "\\begin{figure}[H]\n"
         "    \\centering\n"
@@ -421,6 +399,71 @@ def build_longtable(
         f"\\end{{longtable}}"
         f"{size_suffix}"
     )
+
+
+def grid_table(row_header, headers, rows, caption, label) -> str:
+    """A longtable with a label column and one centred column per header.
+
+    ``rows`` holds ``(name, cells)`` pairs, or raw lines such as
+    ``"    \\midrule"`` that are passed through.
+    """
+    return build_longtable(
+        "l" + "c" * len(headers),
+        " & ".join([row_header, *headers]),
+        [row if isinstance(row, str)
+         else "    " + " & ".join([row[0], *row[1]]) + " \\\\"
+         for row in rows],
+        caption, label,
+    )
+
+
+# Appended to every timing table's caption.
+TIMING_NOTE = (
+    " These depend on the machine and on whether the plugin ran natively or "
+    "over HTTP, so they do not reproduce across runs the way the "
+    "measurements above do."
+)
+
+
+def efficiency_tables(row_header, rows, metrics, statistics_for, subject,
+                      label, note=TIMING_NOTE, value_of=None) -> str:
+    """Timing tables: one per metric with several statistics, one for the rest.
+
+    ``rows`` holds ``(name, record)`` pairs. A record maps each metric to
+    ``{statistic: seconds}``, unless ``value_of(record, metric, statistic)``
+    reads it. Captions read ``"<metric> <subject>.<note>"`` and
+    ``"Processing time <subject>.<note>"``.
+    """
+    read = value_of or (lambda record, m, s: (record.get(m) or {}).get(s))
+
+    def seconds(value):
+        return "--" if value is None else f"{float(value):.4f}"
+
+    def table(columns, headers, caption, table_label):
+        return grid_table(row_header, headers, [
+            (name, [seconds(read(record, m, s)) for m, s in columns])
+            for name, record in rows
+        ], caption, table_label)
+
+    tables = []
+    shared = []
+    for metric in metrics:
+        statistics = statistics_for(metric)
+        if len(statistics) > 1:
+            tables.append(table(
+                [(metric, s) for s in statistics],
+                [stat_header(s) for s in statistics],
+                f"{metric_label(metric)} {subject}.{note}", f"{label}_{metric}",
+            ))
+        elif statistics:
+            shared.append((metric, statistics[0]))
+
+    if shared:
+        tables.append(table(
+            shared, [metric_label(m) for m, _ in shared],
+            f"Processing time {subject}.{note}", label,
+        ))
+    return "\n\n".join(tables)
 
 
 def compile_latex(report_dir: str, tex_basename: str) -> Optional[str]:

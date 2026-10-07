@@ -1,20 +1,8 @@
-"""Figures for the basic benchmark report.
+"""The basic report's figures: the accuracy ranking and the attack-strength curves.
 
-Two figures: the attacks ranked by detection accuracy, and the accuracy
-across the configured versions of the same attack.
-
-Two rules hold for both:
-
-* **Nothing is drawn from a constant.** Which statistic a figure reads is
-  decided by the caller from the ``MetricResolver`` the config built --
-  the same source the tables use.
-* **A figure never breaks a report.** Each function returns ``True`` when
-  it wrote a file and ``False`` when the data it needs was missing or the
-  draw failed; the caller then omits the figure instead of pointing
-  ``\\includegraphics`` at a file that does not exist.
-
-The ranking is sorted worst-first rather than alphabetically, because the
-reader is looking for the worst case.
+The caller picks the statistic a figure reads. Each chart returns ``True``
+when it wrote its file and ``False`` when the data was missing or the draw
+failed, so the caller can leave the figure out.
 """
 
 import functools
@@ -50,9 +38,8 @@ MODEL_COLORS = (
 )
 
 
-# Private-use stand-ins for characters a later rule would otherwise eat:
-# an escaped "$" must survive the math-mode "$" removal, and a literal
-# backslash must not start another escape. Restored at the very end.
+# Private-use stand-ins that keep an escaped "$" and a literal backslash
+# out of the later rules; restored last.
 _DOLLAR, _BACKSLASH = "", ""
 
 _LATEX_TO_TEXT = (
@@ -80,14 +67,7 @@ _LATEX_TO_TEXT = (
 
 
 def plain(text):
-    """Render a LaTeX fragment as the plain text a figure can draw.
-
-    Callers hand these charts the same labels the tables use --
-    ``ViSQOL (1--5)``, ``Codec2Vocoder\\_700`` -- because a figure that
-    named things differently from the table beside it would be a second
-    vocabulary to learn. The conversion happens here rather than at every
-    call site.
-    """
+    """Render a LaTeX table label, e.g. ``ViSQOL (1--5)``, as plain text to draw."""
     if not isinstance(text, str):
         return text
     for source, target in _LATEX_TO_TEXT:
@@ -104,11 +84,7 @@ def tier_color(accuracy):
 
 
 def _chart(fn):
-    """Make a chart function total: it returns False instead of raising.
-
-    A report that loses a figure is still a report; one that raises part
-    way through writing its ``.tex`` is not.
-    """
+    """Make a chart function return False, with a warning, instead of raising."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
@@ -146,13 +122,8 @@ def _save(fig, output_path):
     return True
 
 
-def _tier_legend(ax, accuracies, chance_floor=None, inside=False):
-    """Legend listing only the tiers actually present.
-
-    ``inside`` puts it in the axes' top-left corner, which the ascending
-    sort guarantees is empty; otherwise it goes under the axes, clear of
-    the bars and of a rotated tick label.
-    """
+def _tier_legend(ax, accuracies, chance_floor=None):
+    """Legend in the axes' empty top-left corner, listing the tiers present."""
     handles = [
         matplotlib.patches.Patch(facecolor=color, edgecolor="white", label=label)
         for _, label, color in TIERS
@@ -163,23 +134,15 @@ def _tier_legend(ax, accuracies, chance_floor=None, inside=False):
             [], [], color="#C0392B", linestyle="--", linewidth=1.2,
             label=f"chance floor ({chance_floor:.0f}%)",
         ))
-    if len(handles) < 2:
-        return
-    if inside:
+    if len(handles) >= 2:
         ax.legend(handles=handles, loc="upper left", frameon=True,
                   framealpha=0.92, edgecolor="#dddddd", fontsize=9.5)
-        return
-    ax.legend(handles=handles, loc="upper center", frameon=False, fontsize=9.5,
-              bbox_to_anchor=(0.5, _below_axes(ax.get_figure())),
-              ncol=min(len(handles), 5))
 
 
-def _below_axes(fig, inches=0.62):
-    """``bbox_to_anchor`` y that sits a fixed distance under the axes.
+def _below_axes(fig, inches):
+    """``bbox_to_anchor`` y for a legend ``inches`` under the axes.
 
-    A legend placed at a fixed *fraction* below the axes lands on the x
-    label of a short chart and far away from a tall one. Converting a real
-    distance into that fraction keeps the gap the same on both.
+    Converted from inches, so the gap is the same on short and tall charts.
     """
     axes_height = max(fig.get_figheight() * 0.72, 0.75)
     return -(inches / axes_height)
@@ -198,13 +161,7 @@ def accuracy_ranking(values, output_path, statistic_label="Mean",
         values: ``{attack display name: accuracy in percent}``.
         statistic_label: which statistic the values are, for the axis.
         chance_floor: accuracy a failed detection lands on (50 for a
-            multi-bit model, 0 for zero-bit). Drawn as a reference line so
-            "low" can be read against "no better than guessing".
-
-    Vertical bars, which is the shape this chart has always had, but
-    ordered by severity rather than alphabetically and with the bar colour
-    carrying the robustness tier, so the worst cases are the first thing
-    read and the tier boundaries need no lookup.
+            multi-bit model, 0 for zero-bit), drawn as a dashed line.
     """
     if not values:
         return False
@@ -213,12 +170,9 @@ def accuracy_ranking(values, output_path, statistic_label="Mean",
     names = [plain(name) for name, _ in ordered]
     scores = [score for _, score in ordered]
 
-    # Rotated attack names add real height under the axes, so the plot area
-    # is kept wide and shallow to stop the figure squaring up and taking a
-    # third of the page.
+    # Wide and shallow: the rotated attack names add height under the axes.
     width = max(10.0, 0.7 * len(names) + 3.5)
     fig, ax = plt.subplots(figsize=(min(width, 20.0), 4.6))
-    fig.patch.set_facecolor("white")
 
     positions = np.arange(len(names))
     ax.bar(positions, scores, color=[tier_color(s) for s in scores],
@@ -242,7 +196,7 @@ def accuracy_ranking(values, output_path, statistic_label="Mean",
            ylabel=f"Detection accuracy ({statistic_label}, %)",
            title=f"Attacks ranked by detection accuracy ({statistic_label})",
            grid_axis="y")
-    _tier_legend(ax, scores, chance_floor, inside=True)
+    _tier_legend(ax, scores, chance_floor)
     return _save(fig, output_path)
 
 
@@ -254,9 +208,6 @@ def attack_strength_curves(series, output_path, statistic_label="Mean",
     Args:
         series: ``{attack base name: [(version label, accuracy %)]}``, the
             versions in the order the configuration declared them.
-
-    Five rows of a table say the same thing, but only a curve shows where
-    the watermark stops surviving.
     """
     return _line_series(
         series, output_path,
@@ -274,9 +225,8 @@ def _line_series(series, output_path, xlabel, ylabel, title,
     if not usable:
         return False
 
-    # Every label any series uses. A label not seen yet goes right after
-    # the previous label of its own series, so each series keeps its own
-    # order left to right; each point is drawn at its own label.
+    # Every label any series uses; a new label goes right after the previous
+    # label of its own series, so each series reads in its own order.
     tick_labels = []
     for entries in usable.values():
         after = -1
@@ -290,7 +240,6 @@ def _line_series(series, output_path, xlabel, ylabel, title,
 
     width = max(8.0, 1.5 * len(tick_labels) + 3.0)
     fig, ax = plt.subplots(figsize=(min(width, 13), 4.6))
-    fig.patch.set_facecolor("white")
 
     annotate = len(usable) <= 4
     for index, (base, entries) in enumerate(usable.items()):
@@ -347,9 +296,7 @@ def version_series(ordered_names, value_of):
 
     Returns:
         ``{base name: [(version label, value)]}`` for the bases that have
-        two or more versions with a value. Attacks that were not expanded
-        into versions produce nothing, so a run without a ladder simply
-        has no such figure.
+        two or more versions with a value.
     """
     series = {}
     for name in ordered_names:

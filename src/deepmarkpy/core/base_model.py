@@ -116,15 +116,11 @@ class BaseModel(abc.ABC):
         pass
 
     def is_watermarked(self, detect_output) -> bool:
-        """Determine whether a watermark is present based on detect() output.
+        """Whether the raw ``detect()`` output means a watermark is present.
 
-        A model's own answer to "is this file watermarked". Only the model
-        knows what its ``detect()`` output means, so nothing else is
-        entitled to guess -- a report that needs this decision asks
-        ``implements_is_watermarked()`` first and omits the column when the
-        answer is no, rather than inventing a threshold.
-
-        The default raises so support can be checked at runtime.
+        Override to support detection_reliability mode and the no-attacks
+        detection count. The default raises; callers check
+        ``implements_is_watermarked()`` first.
         """
         raise NotImplementedError(
             f"{self.name} does not implement is_watermarked(). "

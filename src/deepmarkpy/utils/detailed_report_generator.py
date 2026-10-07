@@ -1,18 +1,10 @@
 """The detailed benchmark report: per-attack-family metric breakdowns.
 
-Organised by attack family, because a family is what decides which
-metrics mean anything for it. ``audio_editing`` is further split into the
-four subsections declared by ``ATTACK_SUBGROUPS`` -- filtering, temporal
-edits, effects and compression -- each of which can enable different
-metrics, and each of which is configurable under the same
-``metrics.per_group`` key as a top-level group.
-
-Every column comes from the ``MetricResolver`` the config file built:
-each group's tables show the statistics that group configured, in the
-order it listed them.
-
-Every metric table carries a "No Attack (watermark only)" baseline row,
-so a value is read against what embedding alone already cost.
+One section per attack family; ``audio_editing`` is split into the
+subsections ``ATTACK_SUBGROUPS`` declares, each configurable under
+``metrics.per_group`` like a family. Columns come from the config's
+``MetricResolver``, and every metric table opens with a "No Attack
+(watermark only)" baseline row.
 """
 
 import logging
@@ -23,6 +15,7 @@ import numpy as np
 from deepmarkpy.utils.attack_groups import (
     GROUP_ORDER,
     OTHER_GROUP_KEY,
+    get_subgroup_for_attack,
     group_attacks,
     group_label,
     subgroups_of,
@@ -30,13 +23,17 @@ from deepmarkpy.utils.attack_groups import (
 )
 from deepmarkpy.utils.latex_helpers import (
     MetricCaveats,
-    build_longtable,
+    compact_header,
     compile_latex,
     container_section,
+    crop_note,
     display_attack_name,
     duration_label_tex,
+    efficiency_tables,
+    embedding_cost_line,
     format_emr_cell,
     format_metric_cell,
+    grid_table,
     make_preamble,
     part_heading,
     slugify,
@@ -49,7 +46,7 @@ from deepmarkpy.utils.metric_resolver import (
     MetricResolver,
     NISQA_METRICS,
     QUALITY_METRICS,
-    worst_case_of,
+    compute_statistics,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,8 +90,7 @@ GROUP_DESCRIPTIONS = {
     ),
 }
 
-# Metric families, each given its own table so no table carries thirteen
-# columns.
+# Metric families, each tabled separately.
 _METRIC_SECTIONS = (
     ("qual", "Audio quality", QUALITY_METRICS),
     ("intell", "Speech intelligibility", INTELLIGIBILITY_METRICS),
@@ -109,9 +105,8 @@ class DetailedReportGenerator:
         """
         Args:
             report_dir: where the ``.tex`` and ``.pdf`` are written.
-            resolver: decides every table's metrics and statistic columns.
-                Defaults to the built-in matrix declared by
-                ``ATTACK_GROUPS``/``ATTACK_SUBGROUPS``.
+            resolver: decides every table's metrics and statistic columns;
+                defaults to the built-in ``ATTACK_GROUPS`` matrix.
         """
         self.report_dir = report_dir
         self.resolver = resolver or MetricResolver.from_attack_groups()
@@ -143,19 +138,17 @@ class DetailedReportGenerator:
         Args:
             results: Raw benchmark results dict (per file, per attack)
             is_zero_bit: When True, accuracy is treated as a boolean
-                detection flag (0/1 per file) and the aggregate is
-                reported as a count string ``"n/N"`` (files detected /
-                files total) alongside the percentage.
+                detection flag (0/1 per file) and the aggregate also
+                carries a count string ``"n/N"`` (files detected /
+                files total).
 
         Returns:
             dict with ``watermarked_audio_quality`` (the no-attack
             baseline), ``is_zero_bit``, and ``attacks`` mapping each
-            attack to its accuracy statistics and per-metric statistics.
+            attack to its accuracy, metric and timing statistics.
         """
         metrics = self.resolver.all_signal_metrics()
-        # Timings are not signal metrics, so all_signal_metrics leaves them
-        # out by design. They are collected alongside, from the attack
-        # entry itself rather than from its quality dict.
+        # Timings sit on the attack entry, not in its quality dict.
         timing_metrics = self.resolver.metrics_for_group(
             None, bucket="efficiency",
         )
@@ -230,10 +223,9 @@ class DetailedReportGenerator:
                         subject=None):
         """Accuracy statistics for a subset of attacks.
 
-        Zero-bit models additionally report a per-attack count "n/N"
-        (files where the watermark was detected over total files), since
-        the per-file value collapses to 0/1 and the count makes the
-        underlying detection ratio explicit.
+        Zero-bit models add a "Detected" ``n/N`` count, since their per-file
+        accuracy is 0 or 100. BER with several statistics follows in a table
+        of its own, captioned with ``subject`` or else ``caption``.
         """
         available = sorted(a for a in attacks if a in aggregated["attacks"])
         if not available:
@@ -247,13 +239,10 @@ class DetailedReportGenerator:
 
         ber_statistics = self.resolver.statistics_for(group_key, "ber")
         show_ber = not is_zero_bit and self.resolver.is_enabled(group_key, "ber")
-        inline_ber = (
-            show_ber
-            and len(ber_statistics) == 1
-        )
+        inline_ber = show_ber and len(ber_statistics) == 1
         show_emr = self.resolver.is_enabled(group_key, "emr")
 
-        headers = ["Attack"] + [stat_header(s) for s in statistics]
+        headers = [stat_header(s) for s in statistics]
         if is_zero_bit:
             headers.append("Detected")
         if inline_ber:
@@ -267,20 +256,14 @@ class DetailedReportGenerator:
         for attack in available:
             data = aggregated["attacks"][attack]
             accuracy = data["accuracy"]
-            cells = [self._display_name(attack)]
-            for statistic in statistics:
-                value = accuracy.get(statistic)
-                cells.append(
-                    "--" if value is None
-                    else format_metric_cell("accuracy", value)
-                )
+            cells = [format_metric_cell("accuracy", accuracy.get(s), "--")
+                     for s in statistics]
             if is_zero_bit:
                 cells.append(accuracy.get("count", "N/A"))
             if inline_ber:
-                value = _ber_statistic(accuracy, ber_statistics[0])
-                cells.append(
-                    "--" if value is None else format_metric_cell("ber", value)
-                )
+                cells.append(format_metric_cell(
+                    "ber", _ber_statistic(accuracy, ber_statistics[0]), "--",
+                ))
             if show_emr:
                 cells.append(format_emr_cell(
                     accuracy.get("emr_count"), accuracy.get("n"),
@@ -291,249 +274,102 @@ class DetailedReportGenerator:
                 cells.append(
                     f"{confidence:.2f}" if confidence is not None else "---"
                 )
-            rows.append("    " + " & ".join(cells) + " \\\\")
+            rows.append((self._display_name(attack), cells))
 
-        tables = [build_longtable(
-            "l" + "c" * (len(headers) - 1), " & ".join(headers), rows,
-            caption, label,
-        )]
+        tables = [grid_table("Attack", headers, rows, caption, label)]
 
         if show_ber and not inline_ber:
-            # Its own subject, not the accuracy caption with a prefix, which
-            # read "Bit error rate --- Watermark detection robustness --- X".
-            tables.append(self._ber_table(
-                aggregated, available, ber_statistics,
+            ber_rows = [
+                (self._display_name(attack), [
+                    format_metric_cell("ber", _ber_statistic(
+                        aggregated["attacks"][attack]["accuracy"], s), "--")
+                    for s in ber_statistics
+                ])
+                for attack in available
+            ]
+            tables.append(grid_table(
+                "Attack", [stat_header(s) for s in ber_statistics], ber_rows,
                 f"Bit error rate --- {subject or caption}", f"{label}_ber",
             ))
         return "\n\n".join(tables)
 
-    def _ber_table(self, aggregated, available, statistics, caption, label):
-        """BER with two or more configured statistics."""
-        headers = ["Attack"] + [stat_header(s) for s in statistics]
-        rows = []
-        for attack in available:
-            accuracy = aggregated["attacks"][attack]["accuracy"]
-            cells = [self._display_name(attack)]
-            for statistic in statistics:
-                value = _ber_statistic(accuracy, statistic)
-                cells.append(
-                    "--" if value is None else format_metric_cell("ber", value)
-                )
-            rows.append("    " + " & ".join(cells) + " \\\\")
-        return build_longtable(
-            "l" + "c" * len(statistics), " & ".join(headers), rows,
-            caption, label,
-        )
+    def _metric_table(self, aggregated, available, columns, headers, caption,
+                      label):
+        """A row per attack and a column per ``(metric, statistic)``.
 
-    def _metric_table(self, aggregated, attacks, metric, group_key,
-                      caption, label):
-        """One metric, one column per configured statistic, baseline first."""
-        statistics = self.resolver.statistics_for(group_key, metric)
-        if not statistics:
-            return ""
-
-        available = sorted(a for a in attacks if a in aggregated["attacks"])
-        if not available:
-            return ""
-
-        headers = ["Condition"] + [stat_header(s) for s in statistics]
-        rows = []
-
-        baseline = (aggregated.get("watermarked_audio_quality") or {}).get(metric)
-        if baseline and baseline.get("mean") is not None:
-            cells = ["No Attack (watermark only)"] + [
-                "N/A" if baseline.get(s) is None
-                else format_metric_cell(metric, baseline[s])
-                for s in statistics
-            ]
-            rows.append("    " + " & ".join(cells) + " \\\\")
-            rows.append("    \\midrule")
-
-        caveats = MetricCaveats()
-        for attack in available:
-            data = aggregated["attacks"][attack]["metrics"].get(metric) or {}
-            cells = [self._display_name(attack)]
-            for statistic in statistics:
-                value = data.get(statistic)
-                if value is None:
-                    cells.append("N/A")
-                    continue
-                cell = format_metric_cell(metric, value)
-                # Once per row: the attack makes the metric unreadable,
-                # not one statistic of it.
-                if statistic == statistics[0]:
-                    cell += caveats.mark(attack, metric)
-                cells.append(cell)
-            rows.append("    " + " & ".join(cells) + " \\\\")
-
-        if caveats.any_flagged:
-            caption += " " + caveats.footnote().strip()
-        return build_longtable(
-            "l" + "c" * len(statistics), " & ".join(headers), rows,
-            caption, label,
-        )
-
-    def _compact_metric_table(self, aggregated, attacks, metrics, group_key,
-                              caption, label):
-        """Metrics reduced to one statistic each, one column per metric."""
-        available = sorted(a for a in attacks if a in aggregated["attacks"])
-        if not available or not metrics:
-            return ""
-
-        headers = ["Condition"]
-        for metric in metrics:
-            statistic = self.resolver.statistics_for(group_key, metric)[0]
-            header = metric_label(metric)
-            if statistic != "mean":
-                header += f" [{stat_header(statistic)}]"
-            headers.append(header)
-
-        rows = []
-
+        The no-attack baseline row comes first when any of its cells has a
+        value. A metric's first statistic carries the caveat mark.
+        """
         baseline = aggregated.get("watermarked_audio_quality") or {}
-        baseline_cells = []
-        for metric in metrics:
-            statistic = self.resolver.statistics_for(group_key, metric)[0]
-            value = (baseline.get(metric) or {}).get(statistic)
-            baseline_cells.append(
-                "N/A" if value is None else format_metric_cell(metric, value)
-            )
+        baseline_cells = [
+            format_metric_cell(metric, (baseline.get(metric) or {}).get(statistic))
+            for metric, statistic in columns
+        ]
+        rows = []
         if any(cell != "N/A" for cell in baseline_cells):
-            rows.append(
-                "    No Attack (watermark only) & "
-                + " & ".join(baseline_cells) + " \\\\"
-            )
-            rows.append("    \\midrule")
+            rows += [("No Attack (watermark only)", baseline_cells),
+                     "    \\midrule"]
 
         caveats = MetricCaveats()
         for attack in available:
             attack_metrics = aggregated["attacks"][attack]["metrics"]
-            cells = [self._display_name(attack)]
-            for metric in metrics:
-                statistic = self.resolver.statistics_for(group_key, metric)[0]
+            first = {}
+            cells = []
+            for metric, statistic in columns:
+                first.setdefault(metric, statistic)
                 value = (attack_metrics.get(metric) or {}).get(statistic)
                 if value is None:
                     cells.append("N/A")
                     continue
-                cells.append(format_metric_cell(metric, value)
-                             + caveats.mark(attack, metric))
-            rows.append("    " + " & ".join(cells) + " \\\\")
+                cell = format_metric_cell(metric, value)
+                if statistic == first[metric]:
+                    cell += caveats.mark(attack, metric)
+                cells.append(cell)
+            rows.append((self._display_name(attack), cells))
 
         if caveats.any_flagged:
             caption += " " + caveats.footnote().strip()
-        return build_longtable(
-            "l" + "c" * len(metrics), " & ".join(headers), rows, caption, label,
-        )
+        return grid_table("Condition", headers, rows, caption, label)
 
     def _embedding_cost_line(self, aggregated):
-        """Embedding time, stated once rather than per attack.
-
-        Measured once per file and independent of which attack follows,
-        so it belongs in a sentence about the run, not in a column of a
-        table whose rows are attacks.
-        """
+        """The per-file embedding time, stated once for the run, or ''."""
         metric = "embed_latency"
         if not self.resolver.is_enabled(None, metric):
             return ""
 
-        # The same per-file cost is recorded on every attack entry, so any
-        # of them carries it.
+        # Every attack entry records the same per-file cost.
+        statistics = self.resolver.statistics_for(None, metric)
         for data in aggregated["attacks"].values():
-            timings = (data.get("timings") or {}).get(metric) or {}
-            parts = []
-            for statistic in self.resolver.statistics_for(None, metric):
-                value = timings.get(statistic)
-                if value is not None:
-                    parts.append(
-                        f"{float(value):.4f}\\,s ({stat_header(statistic).lower()})"
-                    )
-            if parts:
-                return (
-                    f"\\noindent\\textbf{{Embedding cost per file:}} "
-                    f"{', '.join(parts)}\n"
-                    "\\\\{\\footnotesize Measured once per file, before any "
-                    "attack, so it does not vary by attack. Like every timing "
-                    "it depends on this machine and does not reproduce across "
-                    "runs.}\n\n"
-                )
+            line = embedding_cost_line(
+                (data.get("timings") or {}).get(metric) or {}, statistics,
+            )
+            if line:
+                return line
         return ""
 
     def _efficiency_table(self, aggregated, attacks, group_key, label_text,
                           label_key):
-        """Processing time for one section, in its own tables.
-
-        Below the quality tables and never a column beside them: those
-        describe the watermarking method and reproduce from a seed, this
-        describes the machine that ran it and does not. Split the same way
-        the quality tables are, so several statistics do not become one
-        very wide table.
-        """
+        """Timing tables for one section; embedding time is stated for the run."""
         available = sorted(a for a in attacks if a in aggregated["attacks"])
-        if not available:
-            return ""
-
         metrics = [
             m for m in self.resolver.metrics_for_group(None,
                                                        bucket="efficiency")
-            if any((aggregated["attacks"][a].get("timings") or {}).get(m)
-                   for a in available)
-            # Embedding does not depend on the attack, so it is not a
-            # column in a table whose rows are attacks.
             if m not in PER_FILE_EFFICIENCY_METRICS
+            and any((aggregated["attacks"][a].get("timings") or {}).get(m)
+                    for a in available)
         ]
-        if not metrics:
-            return ""
-
-        note = (
-            " These depend on the machine and on whether the plugin ran "
-            "natively or over HTTP, so they do not reproduce across runs the "
-            "way the measurements above do."
-        )
-
-        tables = []
-        compact = []
-        for metric in metrics:
-            statistics = self.resolver.statistics_for(group_key, metric)
-            if len(statistics) > 1:
-                tables.append(self._timing_table(
-                    aggregated, available, [(metric, s) for s in statistics],
-                    [stat_header(s) for s in statistics],
-                    f"{metric_label(metric)} --- {label_text}.{note}",
-                    f"tab:efficiency_{label_key}_{metric}",
-                ))
-            elif statistics:
-                compact.append((metric, statistics[0]))
-
-        if compact:
-            tables.append(self._timing_table(
-                aggregated, available, compact,
-                [metric_label(m) for m, _ in compact],
-                f"Processing time --- {label_text}.{note}",
-                f"tab:efficiency_{label_key}",
-            ))
-
-        return "\n\n".join(t for t in tables if t)
-
-    def _timing_table(self, aggregated, available, columns, headers,
-                      caption, label):
-        """One timing table: a row per attack, a column per (metric, statistic)."""
-        rows = []
-        for attack in available:
-            timings = aggregated["attacks"][attack].get("timings") or {}
-            cells = [self._display_name(attack)]
-            for metric, statistic in columns:
-                value = (timings.get(metric) or {}).get(statistic)
-                cells.append("--" if value is None else f"{float(value):.4f}")
-            rows.append("    " + " & ".join(cells) + " \\\\")
-
-        return build_longtable(
-            "l" + "c" * len(columns), " & ".join(["Attack"] + headers),
-            rows, caption, label,
+        return efficiency_tables(
+            "Attack",
+            [(self._display_name(a), aggregated["attacks"][a].get("timings") or {})
+             for a in available],
+            metrics,
+            lambda metric: self.resolver.statistics_for(group_key, metric),
+            f"--- {label_text}", f"tab:efficiency_{label_key}",
         )
 
     def _metric_tables(self, aggregated, attacks, group_key, label_text,
                        label_key):
-        """Every metric table for one group or subgroup."""
+        """Every metric table for one group or subgroup, and its silent metrics."""
         available = sorted(a for a in attacks if a in aggregated["attacks"])
         if not available:
             return "", []
@@ -558,24 +394,23 @@ class DetailedReportGenerator:
             ]
             silent += [m for m in enabled if m not in with_data]
 
-            multi = [
-                m for m in with_data
-                if len(self.resolver.statistics_for(group_key, m)) > 1
-            ]
-            single = [m for m in with_data if m not in multi]
-
-            for metric in multi:
-                table = self._metric_table(
-                    aggregated, available, metric, group_key,
-                    f"{metric_label(metric)} --- {label_text}.",
-                    f"tab:{section_key}_{label_key}_{metric}",
-                )
-                if table:
-                    blocks.append(table)
+            single = []
+            for metric in with_data:
+                statistics = self.resolver.statistics_for(group_key, metric)
+                if len(statistics) > 1:
+                    blocks.append(self._metric_table(
+                        aggregated, available, [(metric, s) for s in statistics],
+                        [stat_header(s) for s in statistics],
+                        f"{metric_label(metric)} --- {label_text}.",
+                        f"tab:{section_key}_{label_key}_{metric}",
+                    ))
+                else:
+                    single.append((metric, statistics[0]))
 
             if single:
-                blocks.append(self._compact_metric_table(
-                    aggregated, available, single, group_key,
+                blocks.append(self._metric_table(
+                    aggregated, available, single,
+                    [compact_header(m, s) for m, s in single],
                     f"{section_title} --- {label_text}.",
                     f"tab:{section_key}_{label_key}",
                 ))
@@ -612,9 +447,7 @@ class DetailedReportGenerator:
             section += self._subgroup_sections(
                 aggregated, subgroups, available, label_key,
             )
-            # One table for the family, after its subsections: timing is a
-            # property of the attack, not of which metrics a subsection
-            # happens to report.
+            # The timing tables cover the whole family, after its subsections.
             section += self._efficiency_table(
                 aggregated, available, group_key, label_text, label_key,
             )
@@ -632,19 +465,16 @@ class DetailedReportGenerator:
 
     def _subgroup_sections(self, aggregated, subgroups, group_attack_list,
                            label_key):
-        """Subsections for a group that declares subgroups."""
-        assigned = set()
+        """One subsection per subgroup with attacks in the report."""
         sections = ""
-
         for subgroup in subgroups:
             definition = ATTACK_SUBGROUPS[subgroup]
             members = [
                 attack for attack in group_attack_list
-                if _matches_any(attack, definition["attacks"])
+                if get_subgroup_for_attack(attack) == subgroup
             ]
             if not members:
                 continue
-            assigned.update(members)
 
             sections += "\\needspace{5\\baselineskip}\n"
             sections += f"\\subsection{{{definition['label']}}}\n\n"
@@ -662,27 +492,13 @@ class DetailedReportGenerator:
                     "enabled for this subsection in the configuration.\n\n"
                 )
             sections += _silent_note(silent)
-
-        # An attack in the group but in none of its subgroups would
-        # otherwise vanish from the report entirely.
-        unassigned = [a for a in group_attack_list if a not in assigned]
-        if unassigned:
-            sections += "\\needspace{5\\baselineskip}\n"
-            sections += "\\subsection{Other Editing Attacks}\n\n"
-            body, silent = self._metric_tables(
-                aggregated, unassigned, "audio_editing",
-                "Other Editing Attacks", f"{label_key}_unassigned",
-            )
-            sections += body + "\n\n" + _silent_note(silent)
-
         return sections
 
     def _generate_body(self, aggregated, label_suffix=""):
         """Per-group sections, in the taxonomy's order.
 
-        ``label_suffix`` distinguishes one duration part from another: the
-        parts repeat the same groups, so without it every part would emit
-        the same ``\\label`` names.
+        ``label_suffix`` keeps one duration part's ``\\label`` names apart
+        from another's.
         """
         grouped = group_attacks(list(aggregated["attacks"]))
         ordered = [k for k in GROUP_ORDER if k in grouped]
@@ -721,9 +537,9 @@ class DetailedReportGenerator:
             "DeepMark Benchmark System",
         )
 
-        crop_note = self._crop_note(crop_before_attack)
-        if crop_note:
-            crop_note = " " + crop_note
+        crop = crop_note(crop_before_attack)
+        if crop:
+            crop = " " + crop
 
         abstract = (
             f"\\begin{{abstract}}\n"
@@ -733,7 +549,7 @@ class DetailedReportGenerator:
             f"impact analysis, and speech intelligibility measures, comparing "
             f"the effects of watermark embedding and adversarial "
             f"{'attack' if is_single else 'attacks'} on the audio signal."
-            f"{crop_note}\n"
+            f"{crop}\n"
             f"\\end{{abstract}}\n"
         )
 
@@ -743,25 +559,6 @@ class DetailedReportGenerator:
             f"{self._generate_body(aggregated)}"
             f"{container_section(containers or [])}"
             f"\\end{{document}}"
-        )
-
-    @staticmethod
-    def _crop_note(crop_before_attack):
-        """The caveat that every attack ran on cropped audio.
-
-        Shared by the flat and the duration-grouped document, because a
-        reader who does not see it takes the numbers for the whole signal
-        whichever shape the report has.
-        """
-        if crop_before_attack is None:
-            return ""
-        return (
-            f"\\textcolor{{red}}{{A crop of {crop_before_attack:.1f}\\% was applied to the "
-            f"beginning of the watermarked audio prior to each attack. "
-            f"The original (reference) audio was cropped identically, so "
-            f"quality metrics compare cropped original vs.\\ cropped attacked "
-            f"audio, and BER is measured by detecting the watermark from the "
-            f"cropped attacked signal.}}"
         )
 
     def generate_full_report(self, results, model_name="DeepMark",
@@ -774,8 +571,7 @@ class DetailedReportGenerator:
             results: Raw benchmark results dict from Benchmark.run()
             model_name: Name of the watermarking model
             is_zero_bit: When True, also render accuracy as "n/N" detection
-                counts (a zero-bit detector returns 0/1 per file, so the
-                percentage column alone only ever shows 0 or 100).
+                counts.
             crop_before_attack: If set, percentage cropped before attacks
             duration_partitions: Optional list of (label, file_list) tuples
                 for duration-based grouping. When provided, generates a
@@ -808,11 +604,9 @@ class DetailedReportGenerator:
                           duration_partitions, containers=None,
                           crop_before_attack=None):
         """Detailed report with one part per duration bin."""
-        preamble = make_preamble(
+        preamble = self._preamble(
             f"{model_name} --- Detailed Results (by Duration)",
             "DeepMark Benchmark",
-            self._has_deepmark_cls,
-            extra_packages=("xcolor",),
         )
 
         parts = []
@@ -831,13 +625,12 @@ class DetailedReportGenerator:
                 + self._generate_body(aggregated, label_suffix=slug)
             )
 
-        # The crop applies to every bin, so it is stated once above
-        # them rather than repeated in each part.
-        crop_note = self._crop_note(crop_before_attack)
-        if crop_note:
-            crop_note = f"\\noindent {crop_note}\n\n"
+        # The crop applies to every bin, so it is stated once above them.
+        crop = crop_note(crop_before_attack)
+        if crop:
+            crop = f"\\noindent {crop}\n\n"
 
-        return (f"{preamble}\n\n" + crop_note + "\n\n".join(parts)
+        return (f"{preamble}\n\n" + crop + "\n\n".join(parts)
                 + "\n\n" + container_section(containers or [])
                 + "\n\n\\end{document}")
 
@@ -847,11 +640,10 @@ class DetailedReportGenerator:
 # ---------------------------------------------------------------------------
 
 def _statistics(values, zero_bit=False, metric="accuracy"):
-    """All eight statistics for a list of values, plus EMR and BER inputs.
+    """All eight statistics of ``values``, with the EMR count and rate and ``n``.
 
-    Computed in full because this aggregate is internal and never written
-    to disk; which of them a table shows is the resolver's decision. That
-    keeps aggregation independent of which group an attack lands in.
+    Zero-bit accuracy adds the ``count`` of detections; multi-bit accuracy
+    adds ``ber``, BER's own statistics.
     """
     if not values:
         return {}
@@ -861,14 +653,7 @@ def _statistics(values, zero_bit=False, metric="accuracy"):
 
     exact = int(np.sum(arr == 100.0))
     stats = {
-        "mean": float(np.mean(arr)),
-        "std": float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0,
-        "median": float(np.median(arr)),
-        "p5": float(np.percentile(arr, 5)),
-        "p10": float(np.percentile(arr, 10)),
-        "p95": float(np.percentile(arr, 95)),
-        "p99": float(np.percentile(arr, 99)),
-        "worst_case": worst_case_of(arr, metric),
+        **compute_statistics(arr, metric=metric),
         "emr_count": exact,
         "emr_rate": float(exact / len(arr)),
         "n": len(arr),
@@ -877,40 +662,15 @@ def _statistics(values, zero_bit=False, metric="accuracy"):
         detected = int(sum(1 for v in arr if v))
         stats["count"] = f"{detected}/{len(arr)}"
     if metric == "accuracy" and not zero_bit:
-        # From the BER samples themselves, exactly as ``compute_metrics``
-        # does, and not by inverting accuracy's summary: BER's 10th
-        # percentile is accuracy's 90th, which is not among the eight
-        # statistics at all, so a derived one printed a number that
-        # disagreed with the same run's basic report.
-        ber = 1.0 - arr / 100.0
-        stats["ber"] = {
-            "mean": float(np.mean(ber)),
-            "std": float(np.std(ber, ddof=1)) if len(ber) > 1 else 0.0,
-            "median": float(np.median(ber)),
-            "p5": float(np.percentile(ber, 5)),
-            "p10": float(np.percentile(ber, 10)),
-            "p95": float(np.percentile(ber, 95)),
-            "p99": float(np.percentile(ber, 99)),
-            "worst_case": worst_case_of(ber, "ber"),
-        }
+        # From BER's own samples: its p10 is accuracy's p90, which no
+        # accuracy statistic holds.
+        stats["ber"] = compute_statistics(1.0 - arr / 100.0, metric="ber")
     return stats
 
 
 def _ber_statistic(accuracy_stats, statistic):
     """One BER statistic, computed over the BER samples by ``_statistics``."""
     return (accuracy_stats.get("ber") or {}).get(statistic)
-
-
-def _matches_any(attack_name, base_names):
-    """Whether ``attack_name`` is one of ``base_names`` or an expansion of one.
-
-    Covers ``Codec2VocoderAttack_700`` and ``EchoAttack (mild)``.
-    """
-    for base in base_names:
-        if attack_name == base or attack_name.startswith(f"{base}_") \
-                or attack_name.startswith(f"{base} ("):
-            return True
-    return False
 
 
 def _silent_note(metrics):

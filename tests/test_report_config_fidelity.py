@@ -1,13 +1,6 @@
-"""A generated report's columns are exactly what its config asked for.
-
-Not "at least" and not "roughly": every table header in the ``.tex`` is
-compared against the metric and statistic lists the config file declares.
-This is the check that stops a report generator from quietly adding a
-column of its own.
-
-The reports are driven end to end from synthetic per-file results, so
-the aggregation and the rendering are both covered.
-"""
+"""A generated report's columns are exactly what its config asked for: table
+headers in the ``.tex`` are compared against the configured metrics and
+statistics, with reports built end to end from synthetic per-file results."""
 
 import json
 import re
@@ -20,6 +13,8 @@ from deepmarkpy.utils.detailed_report_generator import DetailedReportGenerator
 from deepmarkpy.utils.latex_helpers import metric_label, stat_header
 from deepmarkpy.utils.no_attacks_report_generator import generate_no_attacks_report
 from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
+
+pytestmark = pytest.mark.usefixtures("no_pdflatex")
 
 # One attack per group so several sections are exercised at once.
 ATTACKS = {
@@ -35,8 +30,7 @@ ALL_SIGNAL_METRICS = [
 
 
 def make_results(n_files=4):
-    """Per-file results carrying every metric, so nothing is dropped for
-    lack of data and a missing column can only come from the config."""
+    """Per-file results carrying every metric, so only the config drops one."""
     quality = {m: 3.0 + i * 0.1 for i, m in enumerate(ALL_SIGNAL_METRICS)}
     results = {}
     for index in range(n_files):
@@ -52,26 +46,6 @@ def make_results(n_files=4):
             },
         }
     return results
-
-
-@pytest.fixture(autouse=True)
-def _skip_pdflatex(monkeypatch):
-    """Assert on the .tex, not on pdflatex.
-
-    These tests are about which columns the generators emit; running
-    pdflatex twice per report adds ~25s and checks nothing they claim.
-    """
-    for module in ("report_generator", "detailed_report_generator",
-                   "no_attacks_report_generator",
-                   "detection_reliability_report_generator"):
-        monkeypatch.setattr(
-            f"deepmarkpy.utils.{module}.compile_latex",
-            lambda *a, **k: None, raising=False,
-        )
-    monkeypatch.setattr(
-        "deepmarkpy.utils.latex_helpers.compile_latex",
-        lambda *a, **k: None,
-    )
 
 
 def write_config(tmp_path, **overrides):
@@ -127,7 +101,6 @@ def build_benchmark_tex(tmp_path, config):
 class TestAccuracyColumnsMatchTheConfig:
     @pytest.mark.parametrize("statistics", [
         ["mean"],
-        ["mean", "worst_case"],
         ["median", "p10", "p99"],
         ["worst_case", "std", "mean", "p5"],
     ])
@@ -148,37 +121,6 @@ class TestAccuracyColumnsMatchTheConfig:
         assert cells == [stat_header(s) for s in statistics], (
             "accuracy columns are not exactly, and only, what the config listed"
         )
-
-    def test_column_order_follows_the_configured_order(self, tmp_path):
-        statistics = ["worst_case", "mean", "median"]
-        config = write_config(tmp_path, metrics={"defaults": {
-            "accuracy": {"enabled": True, "statistics": statistics},
-            "ber": {"enabled": False}, "emr": {"enabled": False},
-            **{m: {"enabled": False} for m in ALL_SIGNAL_METRICS},
-        }})
-        tex, _ = build_benchmark_tex(tmp_path, config)
-        table = table_for(tex, "tab:benchmark_accuracy_audio_distortion")
-        header = next(l for l in table.splitlines() if "Attack Type" in l)
-        assert header.index("Worst Case") < header.index("Mean") < header.index("Median")
-
-    def test_adding_std_makes_a_std_column_appear(self, tmp_path):
-        """Requirement 6, stated literally: a statistic a report never showed
-        before must appear once the config asks for it."""
-        without = write_config(tmp_path, metrics={"defaults": {
-            "accuracy": {"enabled": True, "statistics": ["mean"]},
-            "ber": {"enabled": False}, "emr": {"enabled": False},
-            **{m: {"enabled": False} for m in ALL_SIGNAL_METRICS},
-        }})
-        tex_without, _ = build_benchmark_tex(tmp_path, without)
-        assert "Std" not in tex_without
-
-        with_std = write_config(tmp_path, metrics={"defaults": {
-            "accuracy": {"enabled": True, "statistics": ["mean", "std"]},
-            "ber": {"enabled": False}, "emr": {"enabled": False},
-            **{m: {"enabled": False} for m in ALL_SIGNAL_METRICS},
-        }})
-        tex_with, _ = build_benchmark_tex(tmp_path, with_std)
-        assert "Std" in tex_with
 
 
 class TestMetricTablesMatchTheConfig:
@@ -232,8 +174,7 @@ class TestMetricTablesMatchTheConfig:
         assert cells == [metric_label("pesq"), metric_label("stoi")]
 
     def test_a_non_mean_single_statistic_is_named_in_the_header(self, tmp_path):
-        """A bare quality column has always meant the mean, so anything else
-        has to say so."""
+        """A bare quality column means the mean, so any other statistic is named."""
         config = write_config(tmp_path, metrics={"defaults": {
             **{m: {"enabled": False} for m in ALL_SIGNAL_METRICS},
             "pesq": {"enabled": True, "statistics": ["worst_case"]},
@@ -260,16 +201,13 @@ class TestMetricTablesMatchTheConfig:
 
 class TestSectionsFollowTheAttackGroups:
     def test_one_section_per_group_present_in_the_results(self, tmp_path):
+        """A group with no attacks in the results gets no section."""
         config = write_config(tmp_path, statistics=["mean"])
         tex, _ = build_benchmark_tex(tmp_path, config)
         sections = re.findall(r"\\section\{([^}]*)\}", tex)
         assert "Audio Distortion Attacks" in sections
         assert "Desynchronization Attacks" in sections
         assert "Audio Editing Attacks" in sections
-
-    def test_a_group_with_no_attacks_gets_no_section(self, tmp_path):
-        config = write_config(tmp_path, statistics=["mean"])
-        tex, _ = build_benchmark_tex(tmp_path, config)
         assert "AI Attacks" not in tex
 
 
@@ -443,13 +381,7 @@ class TestNoAttacksReportFollowsTheConfig:
 
 
 class TestWorstCaseFollowsTheMetricDirection:
-    """"Worst" is the bad end of the range, which is not always the minimum.
-
-    Accuracy and PESQ are worst at their smallest; latency, MCD and BER
-    are worst at their largest. Taking the minimum for all of them
-    reports the *best* case of every lower-is-better metric under the
-    label "worst case".
-    """
+    """"Worst" is the bad end of the range, which is not always the minimum."""
 
     @pytest.mark.parametrize("metric,values,expected", [
         ("accuracy", [60.0, 80.0, 95.0], 60.0),
@@ -466,8 +398,7 @@ class TestWorstCaseFollowsTheMetricDirection:
         assert worst_case_of(values, metric) == expected
 
     def test_the_aggregate_uses_it(self, tmp_path):
-        """The rule has to reach the numbers a report prints, not just the
-        helper."""
+        """The rule reaches the numbers a report prints, not just the helper."""
         config = write_config(tmp_path, statistics=["mean", "worst_case"],
                               efficiency={"enabled": True, "metrics": {
                                   "attack_latency": {

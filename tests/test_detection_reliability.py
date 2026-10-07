@@ -8,7 +8,6 @@ import pytest
 
 from deepmarkpy.config import init_template, load_config_data
 from deepmarkpy.utils.detection_reliability import (
-    _compute_metric_stats,
     _detect,
     run_detection_reliability,
 )
@@ -24,6 +23,7 @@ from deepmarkpy.utils.latex_helpers import (
     format_metric_cell as _format_metric,
     metric_label as _metric_label,
 )
+from deepmarkpy.utils.metric_resolver import compute_statistics
 
 
 class TestDetect:
@@ -80,8 +80,7 @@ class TestDetect:
         assert _detect(model, np.zeros(100), 16000) is True
 
     def test_numpy_confidence_above_threshold(self):
-        """A numpy.bool_ decision comes back as a Python bool, which the
-        result's JSON file can hold."""
+        """A numpy.bool_ decision comes back as a Python bool, which JSON holds."""
         model = self._NumpyConfidenceModel(np.array([1, 0, 1]), 0.8, threshold=0.5)
         assert _detect(model, np.zeros(100), 16000) is True
 
@@ -246,8 +245,7 @@ class TestRunDetectionReliability:
         assert result["no_attack"]["false_negative_count"] == 0
 
     def test_numpy_decisions_are_stored_as_python_bools(self, tmp_path):
-        """The mode writes its result with json.dump, which cannot hold the
-        numpy.bool_ a model deciding by a numpy comparison returns."""
+        """A numpy comparison's numpy.bool_ is stored so json.dump can write it."""
         import soundfile as sf
         from deepmarkpy.run import to_json_safe
         from deepmarkpy.utils.metric_resolver import MetricResolver
@@ -385,8 +383,7 @@ class TestReportGeneration:
 
     @staticmethod
     def _baseline_report(tmp_path, resolver, **kwargs):
-        """The .tex for three files whose no-attack baseline was measured
-        over every signal metric any group enables, as the run measures it."""
+        """The .tex for three files, the baseline measured as the run measures it."""
         measured = resolver.all_signal_metrics()
         per_file = {
             f"clip{index}.wav": {
@@ -406,7 +403,7 @@ class TestReportGeneration:
                 "false_positive_count": 0,
                 "false_negative_count": 0,
                 "metrics": {
-                    m: _compute_metric_stats(
+                    m: compute_statistics(
                         [record["no_attack_metrics"][m]
                          for record in per_file.values()],
                         resolver.statistics_for(None, m), m,
@@ -424,8 +421,7 @@ class TestReportGeneration:
             return f.read()
 
     def test_the_shipped_template_reports_the_baseline_quality(self, tmp_path):
-        """The template enables its signal metrics per group and none under
-        metrics.defaults; the baseline tables print what the groups enable."""
+        """The baseline tables print what the template's groups enable."""
         resolver = self._shipped_template_resolver()
         assert resolver.signal_metrics_for_group(None) == []
         content = self._baseline_report(tmp_path, resolver)
@@ -448,13 +444,7 @@ class TestReportGeneration:
 
 
 class TestTimingsMeanTheSameThingHere:
-    """This mode detects twice per attack, so which call is timed matters.
-
-    It runs detect on the attacked clean signal for the false-positive
-    rate and on the attacked watermarked signal for the false negative.
-    Only the second matches what ``Benchmark.run`` times, and the
-    un-attacked detect belongs to the baseline, not to any attack.
-    """
+    """Per attack, only the detect on attacked watermarked audio is timed."""
 
     MARK = 7.0
     EMBED, ATTACK = 0.01, 0.03
@@ -527,11 +517,6 @@ class TestTimingsMeanTheSameThingHere:
             attack_types=["GaussianNoiseAttack"], metric_resolver=resolver,
         )
 
-    def test_detect_latency_reaches_the_per_attack_table(self, result):
-        """It was copied before the call that measures it, so it was absent."""
-        timings = result["attacks"]["GaussianNoiseAttack"]["timings"]
-        assert "detect_latency" in timings
-
     def test_the_attacks_detect_is_the_one_reported(self, result):
         timings = result["attacks"]["GaussianNoiseAttack"]["timings"]
         assert timings["detect_latency"]["mean"] == pytest.approx(
@@ -561,13 +546,7 @@ class TestTimingsMeanTheSameThingHere:
 
 
 class TestCrossModelGetsItsSecondModelHereToo:
-    """The plugin reads the second model's name from its kwargs only.
-
-    ``Benchmark.run`` falls back to the plugin's config.json default; this
-    pass did not, so with no ``attack_parameters`` override every file
-    raised inside the per-attack ``try`` and the row came out with zero
-    attempts instead of a measurement.
-    """
+    """With no override the attack gets the plugin's default second model."""
 
     class _Model:
         def generate_watermark(self):

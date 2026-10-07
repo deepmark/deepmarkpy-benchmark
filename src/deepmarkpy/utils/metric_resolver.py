@@ -1,41 +1,14 @@
-"""Resolves which metrics and statistics apply to an attack group.
+"""Which metrics and statistics each attack group reports, as the config sets them.
 
-Every report generator asks this module rather than carrying its own
-constants, so a table's columns are exactly what the config file asked
-for. The rules, in full:
-
-**Enablement**, per ``(group, metric)`` pair -- first hit wins:
-
-1. ``metrics.per_group.<group>.<metric>.enabled``
-2. ``metrics.per_group.<parent>.<metric>.enabled`` (subgroups only)
-3. ``metrics.defaults.<metric>.enabled``
-4. disabled
-
-Inheritance is per *metric*, not per block: a group section listing only
-``pesq`` inherits every other metric from ``defaults`` untouched.
-
-**Statistics**, per ``(group, metric)`` pair -- first list that exists
-wins, and report columns appear in *that list's* order:
-
-1. ``metrics.per_group.<group>.<metric>.statistics``
-2. ``metrics.per_group.<parent>.<metric>.statistics`` (subgroups only)
-3. ``metrics.defaults.<metric>.statistics``
-4. the top-level ``statistics`` list
-5. all eight statistics
-
-Two metrics are special. ``accuracy`` is always enabled -- it is the
-measurement the benchmark exists to make. ``emr`` is a count and a rate,
-so it has no statistics.
-
-When ``calculate_quality_metrics`` is false, the enablement rules above
-are bypassed for the signal metrics: only accuracy and the always-on
-trio (PESQ/ViSQOL/STOI) are computed, uniformly across every group.
-``ber`` and ``emr`` are derived from accuracy at no extra cost, so they
-keep honouring their configured flags. Statistics resolve normally in
-both cases.
+Each ``metrics`` setting resolves per ``(group, metric)``, most specific
+first: ``metrics.per_group.<group>``, then the parent group's section for a
+subgroup, then ``metrics.defaults``. A metric nothing enables is off;
+statistics nothing configures fall back to the top-level ``statistics``
+list, then to all eight, and columns follow the list's order. ``accuracy``
+is always on and ``emr`` has no statistics. Efficiency metrics are set in
+the ``efficiency`` section, and with ``calculate_quality_metrics`` off the
+only signal metrics on are PESQ, ViSQOL and STOI.
 """
-
-import logging
 
 from deepmarkpy.utils.attack_groups import (
     ATTACK_GROUPS,
@@ -46,31 +19,22 @@ from deepmarkpy.utils.attack_groups import (
     group_parent,
 )
 
-logger = logging.getLogger(__name__)
-
 ALL_STATISTICS = (
     "mean", "std", "median", "p5", "p10", "p95", "p99", "worst_case",
 )
 
-# Metrics derived from the accuracy array rather than from a signal
-# comparison. They cost nothing extra and exist in every group.
+# Derived from the accuracy array; every group has them.
 ROBUSTNESS_METRICS = ("accuracy", "ber", "emr")
 
-# Signal metrics, split the way reports lay them out: NISQA's five
-# dimensions get their own table so the audio-quality table stays narrow
-# enough for the page.
+# Signal metrics, by the table the reports put them in.
 QUALITY_METRICS = ("pesq", "psnr", "si_sdr", "mcd", "visqol")
 INTELLIGIBILITY_METRICS = ("stoi", "sii", "ncm")
 NISQA_METRICS = (
     "nisqa_mos", "nisqa_noi", "nisqa_dis", "nisqa_col", "nisqa_loud",
 )
 
-# What the run cost in time and resources. Measured during the run like
-# the robustness metrics -- not by comparing two signals -- but unlike
-# every other family these do not reproduce: they describe the machine,
-# not the watermarking method. Kept in their own family so a report can
-# say so, and so memory and anything later joins here rather than being
-# mistaken for a property of the model.
+# What the run cost in time and memory. They describe the machine, not the
+# watermarking method, and do not reproduce across runs.
 EFFICIENCY_METRICS = (
     "embed_latency", "detect_latency", "attack_latency", "container_footprint",
 )
@@ -83,36 +47,25 @@ METRIC_BUCKETS = {
     "efficiency": EFFICIENCY_METRICS,
 }
 
-# Canonical display order. Reports iterate this so two tables built from
-# different code paths order their columns identically.
+# Canonical display order of every table's metrics.
 CANONICAL_METRIC_ORDER = (
     ROBUSTNESS_METRICS + QUALITY_METRICS + INTELLIGIBILITY_METRICS
     + NISQA_METRICS + EFFICIENCY_METRICS
 )
 
-# Metrics computed by ``metrics.compute_metrics`` -- i.e. everything except
-# the accuracy-derived ones.
+# Metrics ``metrics.compute_metrics`` computes by comparing two signals.
 SIGNAL_METRICS = frozenset(
     QUALITY_METRICS + INTELLIGIBILITY_METRICS + NISQA_METRICS
 )
 
-# Embedding happens once per file, whatever attacks follow, so its time
-# does not vary by attack. Listing it in a table whose rows are attacks
-# repeats one number down the column and implies a dependence that is not
-# there, so the reports state it once per run instead.
+# Measured once per file, so the reports state it once rather than per attack.
 PER_FILE_EFFICIENCY_METRICS = frozenset({"embed_latency"})
 
-# Measured once for the whole run, not per file and not per attack: it is
-# the memory the model's container holds, which does not move with the
-# audio. One number, so no statistic applies to it either.
+# Measured once per run, for the model's container; no statistic applies.
 PER_MODEL_EFFICIENCY_METRICS = frozenset({"container_footprint"})
 
-# Efficiency metrics are seconds, and every one of them is better small.
-LOWER_IS_BETTER_EFFICIENCY = frozenset(EFFICIENCY_METRICS)
-
-# Metrics a lower value is better on. Every other metric here improves as
-# it rises, so ``worst_case_of`` reads these at their maximum.
-LOWER_IS_BETTER_METRICS = frozenset({"mcd", "ber"}) | LOWER_IS_BETTER_EFFICIENCY
+# Metrics that are better low; ``worst_case_of`` reads them at their maximum.
+LOWER_IS_BETTER_METRICS = frozenset({"mcd", "ber"}) | frozenset(EFFICIENCY_METRICS)
 
 # Enabled regardless of the per-group matrix when quality metrics are off.
 ALWAYS_ON_METRICS = ("pesq", "visqol", "stoi")
@@ -120,19 +73,14 @@ ALWAYS_ON_METRICS = ("pesq", "visqol", "stoi")
 # accuracy is the point of the benchmark; it cannot be switched off.
 MANDATORY_METRICS = frozenset({"accuracy"})
 
-# emr reports "n of N files recovered exactly" -- a count and a rate, not a
-# distribution, so no statistic applies to it.
+# No statistic applies: emr is a count and a rate, container memory one number.
 STATISTICS_EXEMPT_METRICS = frozenset({"emr"}) | PER_MODEL_EFFICIENCY_METRICS
 
 
 def worst_case_of(values, metric):
-    """The worst value in ``values`` for ``metric``.
+    """The worst value in ``values`` for ``metric``, or None when empty.
 
-    "Worst" is the end of the range the metric calls bad, which is not
-    always the smallest number: accuracy and PESQ are worst at their
-    minimum, but latency, MCD and BER are worst at their maximum. Taking
-    the minimum for all of them reports the *best* case of every
-    lower-is-better metric under the label "worst case".
+    The maximum for a lower-is-better metric, the minimum otherwise.
     """
     import numpy as np
 
@@ -141,6 +89,34 @@ def worst_case_of(values, metric):
         return None
     return float(np.max(array) if metric in LOWER_IS_BETTER_METRICS
                  else np.min(array))
+
+
+def compute_statistics(values, statistics=None, metric="accuracy"):
+    """``statistics`` of ``values`` (all eight when None), in canonical order.
+
+    None when there are no values; ``metric`` decides which end is the worst
+    case. The values keep their own dtype.
+    """
+    import numpy as np
+
+    if len(values) == 0:
+        return None
+    wanted = set(ALL_STATISTICS if statistics is None else statistics)
+    array = np.array(values)
+    available = {
+        "mean": lambda: float(np.mean(array)),
+        "std": lambda: float(np.std(array, ddof=1)) if len(array) > 1 else 0.0,
+        "median": lambda: float(np.median(array)),
+        "p5": lambda: float(np.percentile(array, 5)),
+        "p10": lambda: float(np.percentile(array, 10)),
+        "p95": lambda: float(np.percentile(array, 95)),
+        "p99": lambda: float(np.percentile(array, 99)),
+        "worst_case": lambda: worst_case_of(array, metric),
+    }
+    return {
+        name: compute() for name, compute in available.items()
+        if name in wanted
+    }
 
 
 class MetricResolver:
@@ -162,12 +138,11 @@ class MetricResolver:
                 ``metrics.per_group``.
             statistics: the top-level ``statistics`` list, or None when the
                 config omits it (then all eight apply).
-            calculate_quality_metrics: see the module docstring.
+            calculate_quality_metrics: False leaves PESQ, ViSQOL and STOI
+                as the only signal metrics on.
             efficiency: the ``efficiency`` config section --
                 ``{"enabled": bool, "metrics": {name: {...}}}``. Absent or
-                disabled, the whole family is off no matter what its
-                metrics say, because the timings cost a measurement that a
-                run may not want taken.
+                disabled, every efficiency metric is off.
         """
         self.defaults = dict(defaults or {})
         self.per_group = {k: dict(v) for k, v in (per_group or {}).items()}
@@ -184,19 +159,14 @@ class MetricResolver:
 
     @classmethod
     def from_attack_groups(cls, calculate_quality_metrics=True):
-        """Build the resolver the shipped config templates encode.
+        """The resolver the shipped config templates encode.
 
-        Reproduces the metric matrix declared by ``ATTACK_GROUPS`` and
-        ``ATTACK_SUBGROUPS``, with PESQ, ViSQOL and STOI added to every
-        top-level group, so a run with no ``metrics`` block in its config
-        behaves the same as one using an unedited ``--init`` file. This is
-        also what report generators fall back to when constructed without a
-        config, which keeps them usable as a library.
+        The ``ATTACK_GROUPS`` and ``ATTACK_SUBGROUPS`` metric matrix, with
+        PESQ, ViSQOL and STOI on in every top-level group. It applies when a
+        config has no ``metrics`` block and when a generator gets no resolver.
         """
         defaults = {m: {"enabled": True} for m in ROBUSTNESS_METRICS}
-        # Everything on by default; the per-group sections below carry the
-        # exclusions, which is also how the shipped templates are written --
-        # a group that excludes nothing then needs no section at all.
+        # Everything on by default; the per-group sections carry the exclusions.
         for metric in SIGNAL_METRICS:
             defaults[metric] = {"enabled": True}
 
@@ -204,17 +174,12 @@ class MetricResolver:
         for key in list(ATTACK_GROUPS) + list(ATTACK_SUBGROUPS):
             enabled = cls._declared_metrics(key)
             if key in ATTACK_GROUPS:
-                # PESQ, ViSQOL and STOI are computed for every attack when
-                # quality metrics are off, so turning them on must not take
-                # the trio away.
                 enabled |= frozenset(ALWAYS_ON_METRICS)
             per_group[key] = {
                 metric: {"enabled": metric in enabled}
                 for metric in SIGNAL_METRICS
             }
-        # Attacks outside every declared group have no metric opinion
-        # attached to them, so they get the full signal set rather than
-        # silently none.
+        # Attacks outside every declared group get every signal metric.
         per_group[OTHER_GROUP_KEY] = {
             metric: {"enabled": True} for metric in SIGNAL_METRICS
         }
@@ -253,9 +218,7 @@ class MetricResolver:
     def is_enabled(self, group_key, metric):
         """Whether ``metric`` is on for ``group_key``."""
         if metric in EFFICIENCY_METRICS:
-            # Its own section, not the metrics block: a timing is a
-            # measurement of the machine, and a run asks for it or does
-            # not, independently of which quality metrics it wants.
+            # Set in the efficiency section, not the metrics block.
             if not self.efficiency_enabled:
                 return False
             entry = self.efficiency_metrics.get(metric)
@@ -287,8 +250,8 @@ class MetricResolver:
             group_key: group, subgroup, or ``"other"``. ``None`` resolves
                 against ``metrics.defaults`` alone.
             bucket: restrict to one of ``METRIC_BUCKETS`` (``"robustness"``,
-                ``"quality"``, ``"intelligibility"``, ``"nisqa"``). None
-                returns every bucket.
+                ``"quality"``, ``"intelligibility"``, ``"nisqa"``,
+                ``"efficiency"``). None returns every bucket.
         """
         candidates = (
             METRIC_BUCKETS[bucket] if bucket else CANONICAL_METRIC_ORDER
@@ -302,23 +265,16 @@ class MetricResolver:
     # Statistics
     # ------------------------------------------------------------------
 
-    def _efficiency_statistics(self, metric):
-        """Statistics for an efficiency metric, from its own section."""
-        entry = self.efficiency_metrics.get(metric) or {}
-        configured = entry.get("statistics")
-        return list(configured) if configured else None
-
     def statistics_for(self, group_key, metric):
         """Statistics for ``(group_key, metric)``, in report-column order."""
         if metric in STATISTICS_EXEMPT_METRICS:
             return []
 
         if metric in EFFICIENCY_METRICS:
-            configured = self._efficiency_statistics(metric)
-            if configured is not None:
-                return configured
-            # Falls through to the top-level list, so a config that sets
-            # statistics once gets them here too.
+            entry = self.efficiency_metrics.get(metric) or {}
+            if entry.get("statistics"):
+                return list(entry["statistics"])
+            # Unset there, it resolves like any other metric.
 
         for section in self._lookup_chain(group_key):
             entry = self.per_group.get(section, {}).get(metric)
@@ -345,13 +301,6 @@ class MetricResolver:
             if metric in SIGNAL_METRICS
         ]
 
-    def statistics_by_metric(self, group_key):
-        """``{metric: [statistics]}`` for every metric enabled in a group."""
-        return {
-            metric: self.statistics_for(group_key, metric)
-            for metric in self.metrics_for_group(group_key)
-        }
-
     # ------------------------------------------------------------------
     # Attack-oriented views (used by the run loop)
     # ------------------------------------------------------------------
@@ -361,12 +310,11 @@ class MetricResolver:
         return get_group_for_attack(attack_name) or OTHER_GROUP_KEY
 
     def metrics_for_attack(self, attack_name):
-        """Signal metrics that must be computed for ``attack_name``.
+        """Signal metrics to compute for ``attack_name``.
 
-        An attack is rendered under its group in the basic and
-        detection-reliability reports and under its subgroup in the
-        detailed report, and those two sections can enable different
-        metrics. Computing the union means neither report has a hole.
+        The union of its group's and its subgroup's, since the detailed
+        report shows an attack under its subgroup and the others under its
+        group.
         """
         group_key = self.group_for_attack(attack_name)
         needed = set(self.metrics_for_group(group_key)) & SIGNAL_METRICS
@@ -378,11 +326,7 @@ class MetricResolver:
         return [m for m in CANONICAL_METRIC_ORDER if m in needed]
 
     def all_signal_metrics(self):
-        """Every signal metric enabled anywhere -- the watermark-only baseline set.
-
-        The "no attack (watermark only)" row appears in every group's table,
-        so it has to carry any metric that any group might display.
-        """
+        """Every signal metric any group enables: the no-attack baseline's set."""
         needed = set()
         for group_key in list(self.per_group) + [None]:
             needed |= set(self.metrics_for_group(group_key)) & SIGNAL_METRICS

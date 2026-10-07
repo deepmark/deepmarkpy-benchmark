@@ -54,16 +54,11 @@ _COMMON_KEYS = frozenset({
     "calculate_quality_metrics",
     "statistics",
     "metrics",
-    # Its own section in every mode: whether to time the run is a separate
-    # decision from which quality metrics to compute.
     "efficiency",
     "duration_groups",
 })
 
-# Keys accepted per mode. Anything else is rejected by name, with a note
-# saying which mode does accept it when one does -- that turns "unknown
-# key" into "wrong file" and is the single most common mistake this split
-# is meant to prevent.
+# Keys accepted per mode. A key another mode accepts is reported as E008.
 MODE_KEYS = {
     "benchmark": _COMMON_KEYS | {
         "attacks", "attack_parameters", "comparison", "crop_before_attack",
@@ -72,21 +67,16 @@ MODE_KEYS = {
     "detection_reliability": _COMMON_KEYS | {"attacks", "attack_parameters"},
 }
 
-# ``metrics.per_group`` only means something where attacks run.
-MODES_WITHOUT_GROUPS = frozenset({"no_attacks"})
-
-# Bit error rate is the complement of bit agreement. Detection reliability
-# scores a binary per-file outcome, so there are no bits to disagree.
-MODE_FORBIDDEN_METRICS = {
-    "detection_reliability": frozenset({"ber"}),
-}
-
 _GENERAL_KEYS = frozenset({
     "wav_files_dir", "report_dir", "seed", "verbose", "save_audio",
     "plugins_dir",
 })
 
 _METRIC_ENTRY_KEYS = frozenset({"enabled", "statistics"})
+
+# The metrics block takes every metric but the efficiency ones (E043).
+_CONFIGURABLE_METRICS = tuple(m for m in CANONICAL_METRIC_ORDER
+                              if m not in EFFICIENCY_METRICS)
 
 # Every statistic but std, which is a spread: the ones accuracy can be
 # reported and ranked at.
@@ -146,10 +136,7 @@ class ConfigError(Exception):
 def _suggest(value: Any, candidates: Sequence[str]) -> Optional[str]:
     """Closest valid spelling of ``value``, or None when nothing is close.
 
-    Tries case, then prefixes, before edit distance. An abbreviation is a
-    common way to get a long key wrong -- "desync" for
-    "desynchronization" -- and it scores far below difflib's threshold
-    because the strings differ mostly in length.
+    Tries case, then prefixes ("desync"), then edit distance.
     """
     if not isinstance(value, str) or not value:
         return None
@@ -232,12 +219,15 @@ def _json_syntax_help(text: str, exc: json.JSONDecodeError) -> str:
     return "\n" + "\n".join(parts) if parts else ""
 
 
+_TYPE_NAMES = {
+    dict: "an object", list: "an array", str: "a string",
+    bool: "a boolean", int: "a number", float: "a number",
+    type(None): "null",
+}
+
+
 def _type_name(value: Any) -> str:
-    return {
-        dict: "an object", list: "an array", str: "a string",
-        bool: "a boolean", int: "a number", float: "a number",
-        type(None): "null",
-    }.get(type(value), type(value).__name__)
+    return _TYPE_NAMES.get(type(value), type(value).__name__)
 
 
 def _real_keys(mapping: Dict[str, Any]) -> List[str]:
@@ -263,15 +253,14 @@ class ModeConfig:
     models: List[str] = field(default_factory=list)
     attack_groups: List[str] = field(default_factory=list)
     attack_list: List[str] = field(default_factory=list)
-    # {(attack, version): params} -- version is the resolved preset name,
-    # or None for an attack that declares no presets.
+    # {(attack, version): params} -- a bare attack name is stored under
+    # its "default" version.
     parameter_overrides: Dict[Any, Dict[str, Any]] = field(default_factory=dict)
     # {attack: {version: params}} -- versions this config defines, which the
     # plugin's own config.json does not declare.
     synthetic_versions: Dict[str, Dict[str, Dict[str, Any]]] = field(
         default_factory=dict)
     calculate_quality_metrics: bool = False
-    statistics: Optional[List[str]] = None
     resolver: MetricResolver = field(default_factory=MetricResolver)
     comparison_primary_statistic: str = "mean"
     crop_before_attack: Optional[float] = None
@@ -284,10 +273,8 @@ class ModeConfig:
     def selected_attack_specs(self) -> Optional[List[str]]:
         """Attack specs this config asks for, or None meaning "every attack".
 
-        Groups are expanded to the attacks they *declare*, not to the ones
-        that happen to have imported. A group whose plugin failed to load
-        must fail loudly rather than measure a smaller set, which is what
-        ``Benchmark.run`` raises on.
+        Groups expand to every attack they declare, imported or not, so
+        ``Benchmark.run`` raises on an attack whose plugin failed to load.
         """
         if not self.attack_groups and not self.attack_list:
             return None
@@ -310,17 +297,8 @@ class ModeConfig:
         defined = self.synthetic_versions.get(attack_name, {})
         if version in defined:
             return dict(defined[version])
-
-        found = self.parameter_overrides.get((attack_name, version))
-        if found is None and version in (None, "default"):
-            # The two spellings are one target, but which key each side
-            # uses depends on facts they do not share: the validator keys
-            # a bare name by how many versions the plugin declares, the
-            # run loop asks by how ``attacks.list`` spelled the attack.
-            # Without this the override is dropped without a word.
-            alias = "default" if version is None else None
-            found = self.parameter_overrides.get((attack_name, alias))
-        return dict(found or {})
+        key = "default" if version is None else version
+        return dict(self.parameter_overrides.get((attack_name, key), {}))
 
     # -- duration groups -----------------------------------------------
 
@@ -356,14 +334,10 @@ def load_configs(
 
     Args:
         paths: config file paths, in the order their modes should run.
-        attacks_registry: ``Benchmark.attacks``. When given, attack names,
-            versions and parameter keys are checked against the discovered
-            plugins. When None those checks are skipped, so the validator
-            is usable without loading plugins -- which is how the CLI
-            catches a broken file before the noisy plugin import runs.
-        models_registry: ``Benchmark.models``, used the same way.
-        quiet: skip logging the warnings. Set on the pre-flight pass so
-            they are not printed twice.
+        attacks_registry, models_registry: ``Benchmark.attacks`` and
+            ``Benchmark.models``; they enable the checks against discovered
+            plugins, and None skips them.
+        quiet: skip logging the warnings.
 
     Raises:
         ConfigError: with every blocking issue found across every file.
@@ -381,27 +355,9 @@ def load_config_data(
     models_registry: Optional[Dict[str, Any]] = None,
     quiet: bool = False,
 ) -> ModeConfig:
-    """Validate an already-built config mapping, without touching disk.
+    """``load_configs`` for one mapping shaped like the JSON file.
 
-    The same checks, codes and messages ``load_configs`` applies to a
-    file. For an application that assembles the configuration itself --
-    from a form, a database, its own settings file -- this is how it
-    finds out whether what it built is runnable, and what to tell its
-    user when it is not, before writing anything.
-
-    Args:
-        data: the config mapping, shaped exactly like the JSON file.
-        source: what to name this configuration in error messages.
-        attacks_registry: ``Benchmark.attacks``; see ``load_configs``.
-        models_registry: ``Benchmark.models``; see ``load_configs``.
-        quiet: skip logging the warnings.
-
-    Returns:
-        The validated ``ModeConfig``, ready to hand to a mode runner or to
-        serialise to a file with ``json.dump``.
-
-    Raises:
-        ConfigError: with every blocking issue found.
+    ``source`` names the mapping in issues.
     """
     return _validate_all(
         [(source, data)], attacks_registry, models_registry, quiet,
@@ -496,14 +452,9 @@ class _Validator:
 
     def __init__(self, path, attacks_registry=None, models_registry=None,
                  data=_UNSET):
-        """
-        Args:
-            path: the config file to read, or the name to report issues
-                under when ``data`` is given.
-            data: an already-parsed config mapping. Given, the file is
-                never opened -- an embedding application can validate the
-                configuration it built from its own UI before writing it
-                anywhere, and show the same error codes the CLI prints.
+        """Validate the file at ``path``, or the parsed mapping ``data``.
+
+        With ``data`` given, ``path`` only names it in issues.
         """
         self.path = path
         self.attacks_registry = attacks_registry
@@ -542,18 +493,27 @@ class _Validator:
         ):
             self.error(
                 "E009", path,
-                f"must be {_TYPE_LABELS[expected]}, but is {_type_name(value)}.",
+                f"must be {_TYPE_NAMES[expected]}, but is {_type_name(value)}.",
                 value=value,
             )
             return default
         return value
 
+    def _check_keys(self, mapping, path, allowed, hint=""):
+        """Record E007 for each key of ``mapping`` not in ``allowed``."""
+        allowed = sorted(allowed)
+        for key in _real_keys(mapping):
+            if key not in allowed:
+                self.error(
+                    "E007", f"{path}.{key}",
+                    f"unknown key. Accepted: {', '.join(allowed)}.{hint}",
+                    suggestion=_suggest(key, allowed),
+                )
+
     # -- entry point ---------------------------------------------------
 
     def run(self) -> Optional[ModeConfig]:
         if not self._read():
-            return None
-        if not self._check_not_old_format():
             return None
 
         self.mode = self._check_mode()
@@ -573,9 +533,9 @@ class _Validator:
             "calculate_quality_metrics", bool, False,
         )
         statistics = self._check_statistics()
-        defaults, per_group = self._check_metrics(statistics, calculate)
+        defaults, per_group = self._check_metrics(calculate)
         self._check_accuracy_level(statistics, defaults, per_group)
-        efficiency = self._check_efficiency(statistics)
+        efficiency = self._check_efficiency()
         crop = self._check_crop()
         boundaries, include_overall = self._check_duration_groups()
 
@@ -609,7 +569,6 @@ class _Validator:
             parameter_overrides=parameter_overrides,
             synthetic_versions=synthetic_versions,
             calculate_quality_metrics=calculate,
-            statistics=statistics,
             resolver=resolver,
             comparison_primary_statistic=comparison,
             crop_before_attack=crop,
@@ -676,45 +635,6 @@ class _Validator:
         self.raw = raw
         return True
 
-    def _check_not_old_format(self) -> bool:
-        """Reject the pre-2.1 single-file format explicitly.
-
-        Its ``modes`` block and positional ``"mean:T std:F"`` statistic
-        strings would otherwise be read as unknown keys and wrong types,
-        producing a pile of errors that never says what actually happened.
-        """
-        old_signals = []
-        if "modes" in self.raw:
-            old_signals.append("a 'modes' block")
-        if isinstance(self.raw.get("attacks"), dict) and \
-                "source" in self.raw["attacks"]:
-            old_signals.append("'attacks.source'")
-        metrics = self.raw.get("metrics")
-        if isinstance(metrics, dict):
-            positional = [
-                key for key, entry in metrics.items()
-                if isinstance(entry, dict) and isinstance(
-                    entry.get("statistics"), str)
-            ]
-            if positional:
-                old_signals.append(
-                    f"positional statistic strings "
-                    f"(metrics.{positional[0]}.statistics)"
-                )
-
-        if not old_signals:
-            return True
-
-        self.error(
-            "E038", "(root)",
-            f"this is a pre-2.1 config file ({', '.join(old_signals)}). The "
-            f"format changed: one file per mode, each declaring \"mode\", with "
-            f"metrics under 'metrics.defaults'/'metrics.per_group' and "
-            f"statistics written as JSON arrays. Run "
-            f"'deepmark-benchmark --init benchmark' for a fresh file.",
-        )
-        return False
-
     # -- mode ----------------------------------------------------------
 
     def _check_mode(self) -> Optional[str]:
@@ -763,18 +683,13 @@ class _Validator:
 
     def _check_general(self) -> Dict[str, Any]:
         general = self._typed(self.raw, "general", "general", dict, {})
-        clean = {}
-        for key in _real_keys(general):
-            if key not in _GENERAL_KEYS:
-                self.error(
-                    "E039", f"general.{key}",
-                    f"unknown key. Accepted: {', '.join(sorted(_GENERAL_KEYS))}. "
-                    f"Measurement settings (models, attacks, metrics, "
-                    f"statistics) are top-level keys, not 'general' ones.",
-                    suggestion=_suggest(key, sorted(_GENERAL_KEYS)),
-                )
-                continue
-            clean[key] = general[key]
+        self._check_keys(
+            general, "general", _GENERAL_KEYS,
+            " Measurement settings (models, attacks, metrics, statistics) "
+            "are top-level keys, not 'general' ones.",
+        )
+        clean = {key: general[key] for key in _real_keys(general)
+                 if key in _GENERAL_KEYS}
 
         for key in ("wav_files_dir", "report_dir", "plugins_dir"):
             if clean.get(key) is not None and not isinstance(clean[key], str):
@@ -871,20 +786,13 @@ class _Validator:
 
     # -- attacks -------------------------------------------------------
 
-    def _check_attacks(self, synthetic_versions=None):
+    def _check_attacks(self, synthetic_versions):
         if "attacks" not in MODE_KEYS[self.mode]:
             return [], []
-        synthetic_versions = synthetic_versions or {}
 
         attacks = self._typed(self.raw, "attacks", "attacks", dict, {})
-        for key in _real_keys(attacks):
-            if key not in ("groups", "list"):
-                self.error(
-                    "E007", f"attacks.{key}",
-                    "unknown key. 'attacks' accepts 'groups' and 'list'; "
-                    "leaving both empty runs every discovered attack.",
-                    suggestion=_suggest(key, ["groups", "list"]),
-                )
+        self._check_keys(attacks, "attacks", ("groups", "list"),
+                         " Leaving both empty runs every discovered attack.")
 
         groups = self._check_attack_groups(
             self._typed(attacks, "groups", "attacks.groups", list, []))
@@ -1000,20 +908,10 @@ class _Validator:
         )
 
     def _check_attack_parameters(self):
-        """Validate ``attack_parameters`` and resolve what each key targets.
+        """Validate ``attack_parameters`` into ``(overrides, synthetic)``.
 
-        A key is ``AttackName`` (the default version) or
-        ``AttackName:version``. A version the plugin does not declare is
-        *defined* by the entry when every parameter is supplied, and
-        skipped with a warning when only some are -- a partly-specified
-        version would silently inherit the rest from the default preset,
-        which is not a version so much as a mislabelled default.
-
-        Returns:
-            ``(overrides, synthetic)`` where ``overrides`` maps
-            ``(attack, version)`` to the parameters to apply, and
-            ``synthetic`` maps an attack to the versions this config
-            defines for it.
+        A version the plugin does not declare goes to ``synthetic`` when
+        every parameter is given, and is skipped with W010 when only some are.
         """
         if "attack_parameters" not in MODE_KEYS[self.mode]:
             return {}, {}
@@ -1069,19 +967,14 @@ class _Validator:
                 continue
             targets[target] = spec
 
-            if self.attacks_registry is None:
-                overrides[(attack_name, version)] = resolved
-                continue
-
-            declared = self._versions_of(attack_name)
-            if version is None or version in declared:
-                overrides[self._version_key(attack_name, version, declared)] = resolved
+            if self.attacks_registry is None or version is None \
+                    or version in self._versions_of(attack_name):
+                overrides[target] = resolved
                 continue
 
             # A version the plugin does not declare. Only real parameters
-            # count: a config.json may carry ``_``-prefixed documentation
-            # keys, and demanding those be "set" would make the version
-            # impossible to define.
+            # count, not the ``_``-prefixed documentation keys a
+            # config.json may carry.
             real = _real_keys(defaults or {})
             missing = [key for key in real if key not in resolved]
             if missing:
@@ -1098,17 +991,6 @@ class _Validator:
             synthetic.setdefault(attack_name, {})[version] = resolved
 
         return overrides, synthetic
-
-    @staticmethod
-    def _version_key(attack_name, version, declared):
-        """Normalise a target so the run loop can look it up by resolved version.
-
-        A bare attack name means its default version; for a single-version
-        attack there is no version to name, so the key carries None.
-        """
-        if version is not None:
-            return (attack_name, version)
-        return (attack_name, "default" if len(declared) > 1 else None)
 
     def _check_parameter_values(self, path, attack_name, params, defaults):
         """Check every parameter name and type against the plugin's defaults."""
@@ -1174,10 +1056,9 @@ class _Validator:
         """The top-level list, or None when omitted (all eight then apply)."""
         if "statistics" not in self.raw:
             return None
-        return self._check_statistic_list(
-            self.raw["statistics"], "statistics", allow_empty=False)
+        return self._check_statistic_list(self.raw["statistics"], "statistics")
 
-    def _check_statistic_list(self, value, path, allow_empty):
+    def _check_statistic_list(self, value, path):
         if not isinstance(value, list):
             self.error("E009", path,
                        f"must be an array of statistic names, e.g. "
@@ -1185,7 +1066,7 @@ class _Validator:
                        f"{_type_name(value)}.", value=value)
             return None
 
-        if not value and not allow_empty:
+        if not value:
             self.error(
                 "E022", path,
                 f"is empty. A metric with no statistic has nothing to report; "
@@ -1221,7 +1102,7 @@ class _Validator:
 
     # -- metrics -------------------------------------------------------
 
-    def _check_metrics(self, statistics, calculate):
+    def _check_metrics(self, calculate):
         if "metrics" not in self.raw:
             if calculate:
                 self.warn(
@@ -1235,20 +1116,14 @@ class _Validator:
             return builtin.defaults, builtin.per_group
 
         metrics = self._typed(self.raw, "metrics", "metrics", dict, {})
-        for key in _real_keys(metrics):
-            if key not in ("defaults", "per_group"):
-                self.error(
-                    "E007", f"metrics.{key}",
-                    "unknown key. 'metrics' accepts 'defaults' (applies to "
-                    "every attack group) and 'per_group' (overrides for one "
-                    "group). Metric names go one level deeper, inside those.",
-                    suggestion=_suggest(key, ["defaults", "per_group"]),
-                )
+        self._check_keys(
+            metrics, "metrics", ("defaults", "per_group"),
+            " 'defaults' applies to every attack group and 'per_group' "
+            "overrides one group; metric names go one level deeper.",
+        )
 
         if "defaults" not in metrics:
-            # A metric named nowhere is off, so a metrics block that only
-            # narrows per group silently switches every other one off --
-            # a very quiet way to get an almost-empty report.
+            # A metric named nowhere is off.
             self.warn(
                 "W012", "metrics.defaults",
                 "missing, so every metric not named under 'per_group' is "
@@ -1256,14 +1131,11 @@ class _Validator:
                 "or delete 'metrics' entirely to use the built-in matrix.",
             )
 
-        defaults = self._check_metric_map(
-            self._typed(metrics, "defaults", "metrics.defaults", dict, {}),
-            "metrics.defaults",
-        )
+        raw_defaults = self._typed(metrics, "defaults", "metrics.defaults",
+                                   dict, {})
+        defaults = self._check_metric_map(raw_defaults, "metrics.defaults")
 
-        if not calculate and _real_keys(
-            self._typed(metrics, "defaults", "metrics.defaults", dict, {})
-        ):
+        if not calculate and _real_keys(raw_defaults):
             self.warn(
                 "W002", "calculate_quality_metrics",
                 "is false (or absent), so the 'metrics' enable flags are "
@@ -1279,7 +1151,7 @@ class _Validator:
         if "per_group" not in metrics:
             return {}
 
-        if self.mode in MODES_WITHOUT_GROUPS:
+        if self.mode == "no_attacks":
             self.error(
                 "E028", "metrics.per_group",
                 f"mode '{self.mode}' applies no attacks, so there are no "
@@ -1321,30 +1193,15 @@ class _Validator:
                 clean[group_key] = resolved
         return clean
 
-    def _check_metric_map(self, mapping, path):
+    def _check_metric_map(self, mapping, path, allowed=_CONFIGURABLE_METRICS):
         """Validate a ``{metric: {enabled, statistics}}`` mapping."""
-        forbidden = MODE_FORBIDDEN_METRICS.get(self.mode, frozenset())
         clean = {}
 
         for metric in _real_keys(mapping):
             metric_path = f"{path}.{metric}"
-            if metric not in CANONICAL_METRIC_ORDER:
-                # The efficiency names are listed as a suggestion source
-                # but not as available here, so a typo for one is still
-                # recognised and answered by E043 on the next attempt.
-                available = [m for m in CANONICAL_METRIC_ORDER
-                             if m not in EFFICIENCY_METRICS]
-                self.error(
-                    "E024", metric_path,
-                    f"unknown metric. Available: {', '.join(available)}.",
-                    value=metric,
-                    suggestion=_suggest(metric, CANONICAL_METRIC_ORDER),
-                )
-                continue
-            if metric in EFFICIENCY_METRICS:
-                # It is in CANONICAL_METRIC_ORDER, so it would be accepted
-                # here and then read from the efficiency section anyway --
-                # the 'enabled' flag silently doing nothing. Say so.
+            if metric in EFFICIENCY_METRICS and metric not in allowed:
+                # Its flags are read from the efficiency section, so here
+                # they would silently do nothing.
                 self.error(
                     "E043", metric_path,
                     f"'{metric}' is an efficiency metric and is configured "
@@ -1354,7 +1211,18 @@ class _Validator:
                     value=metric,
                 )
                 continue
-            if metric in forbidden:
+            if metric not in allowed:
+                # The efficiency names stay a suggestion source, so a typo
+                # for one is answered by E043 on the next attempt.
+                self.error(
+                    "E024", metric_path,
+                    f"unknown metric. Available: {', '.join(allowed)}.",
+                    value=metric,
+                    suggestion=_suggest(
+                        metric, list(allowed) + list(EFFICIENCY_METRICS)),
+                )
+                continue
+            if metric == "ber" and self.mode == "detection_reliability":
                 self.error(
                     "E025", metric_path,
                     f"metric '{metric}' does not apply to mode '{self.mode}'. "
@@ -1369,14 +1237,7 @@ class _Validator:
                 continue
 
             resolved = {}
-            for key in _real_keys(entry):
-                if key not in _METRIC_ENTRY_KEYS:
-                    self.error(
-                        "E007", f"{metric_path}.{key}",
-                        f"unknown key. A metric accepts "
-                        f"{' and '.join(sorted(_METRIC_ENTRY_KEYS))}.",
-                        suggestion=_suggest(key, sorted(_METRIC_ENTRY_KEYS)),
-                    )
+            self._check_keys(entry, metric_path, _METRIC_ENTRY_KEYS)
 
             if "enabled" in entry:
                 enabled = entry["enabled"]
@@ -1400,14 +1261,13 @@ class _Validator:
                     self.error(
                         "E029", f"{metric_path}.statistics",
                         f"'{metric}' takes no statistics: it reports a count "
-                        f"of exactly-recovered files and the matching rate, "
-                        f"not a distribution. Remove this key.",
+                        f"or a single reading, not a distribution. Remove "
+                        f"this key.",
                         value=entry["statistics"],
                     )
                 else:
                     stats = self._check_statistic_list(
                         entry["statistics"], f"{metric_path}.statistics",
-                        allow_empty=False,
                     )
                     if stats is not None:
                         resolved["statistics"] = stats
@@ -1448,65 +1308,26 @@ class _Validator:
 
     # -- crop, duration, comparison ------------------------------------
 
-    def _check_efficiency(self, statistics):
+    def _check_efficiency(self):
         """Validate the ``efficiency`` section.
 
         Its own section rather than a bucket inside ``metrics``: these
         measure the machine, not the watermark, and a run decides whether
         to take the measurement at all separately from which quality
-        metrics it wants. Memory and any later efficiency measure will be
-        listed here beside latency.
+        metrics it wants.
         """
         if "efficiency" not in self.raw:
             return {}
 
         block = self._typed(self.raw, "efficiency", "efficiency", dict, {})
-        for key in _real_keys(block):
-            if key not in ("enabled", "metrics"):
-                self.error(
-                    "E040", f"efficiency.{key}",
-                    "unknown key. The efficiency section takes 'enabled' "
-                    "and 'metrics'.",
-                    value=key, suggestion=_suggest(key, ["enabled", "metrics"]),
-                )
-
+        self._check_keys(block, "efficiency", ("enabled", "metrics"))
         enabled = self._typed(block, "enabled", "efficiency.enabled", bool,
                               False)
-
         metrics = self._typed(block, "metrics", "efficiency.metrics", dict, {})
-        clean = {}
-        for name in _real_keys(metrics):
-            path = f"efficiency.metrics.{name}"
-            if name not in EFFICIENCY_METRICS:
-                self.error(
-                    "E041", path,
-                    f"unknown efficiency metric. Available: "
-                    f"{', '.join(EFFICIENCY_METRICS)}.",
-                    value=name,
-                    suggestion=_suggest(name, list(EFFICIENCY_METRICS)),
-                )
-                continue
-            entry = self._typed(metrics, name, path, dict, {})
-            for key in _real_keys(entry):
-                if key not in _METRIC_ENTRY_KEYS:
-                    self.error(
-                        "E042", f"{path}.{key}",
-                        "unknown key. A metric entry takes 'enabled' and "
-                        "'statistics'.",
-                        value=key,
-                        suggestion=_suggest(key, sorted(_METRIC_ENTRY_KEYS)),
-                    )
-            cleaned = {}
-            if "enabled" in entry:
-                cleaned["enabled"] = self._typed(
-                    entry, "enabled", f"{path}.enabled", bool, True)
-            if "statistics" in entry:
-                cleaned["statistics"] = self._check_statistic_list(
-                    entry["statistics"], f"{path}.statistics",
-                    allow_empty=False)
-            clean[name] = cleaned
+        clean = self._check_metric_map(metrics, "efficiency.metrics",
+                                       allowed=EFFICIENCY_METRICS)
 
-        if not enabled and clean:
+        if not enabled and _real_keys(metrics):
             # Info, not a warning: the shipped templates carry this section
             # switched off with its metrics listed as documentation, so a
             # warning here would fire on every default run.
@@ -1546,14 +1367,8 @@ class _Validator:
     def _check_duration_groups(self):
         block = self._typed(self.raw, "duration_groups", "duration_groups",
                             dict, {})
-        for key in _real_keys(block):
-            if key not in ("boundaries", "include_overall"):
-                self.error(
-                    "E007", f"duration_groups.{key}",
-                    "unknown key. 'duration_groups' accepts 'boundaries' and "
-                    "'include_overall'.",
-                    suggestion=_suggest(key, ["boundaries", "include_overall"]),
-                )
+        self._check_keys(block, "duration_groups",
+                         ("boundaries", "include_overall"))
 
         boundaries = self._typed(block, "boundaries",
                                  "duration_groups.boundaries", list, [])
@@ -1602,13 +1417,7 @@ class _Validator:
             return "mean"
 
         block = self._typed(self.raw, "comparison", "comparison", dict, {})
-        for key in _real_keys(block):
-            if key != "primary_statistic":
-                self.error(
-                    "E007", f"comparison.{key}",
-                    "unknown key. 'comparison' accepts 'primary_statistic'.",
-                    suggestion=_suggest(key, ["primary_statistic"]),
-                )
+        self._check_keys(block, "comparison", ("primary_statistic",))
 
         configured = resolver.statistics_for(None, "accuracy")
         # Unset means "whichever statistic accuracy leads with", not a hard
@@ -1812,12 +1621,6 @@ class _Validator:
                 f"{', '.join(missing)} makes the tables narrower but costs the "
                 f"same to run.", severity="info",
             )
-
-
-_TYPE_LABELS = {
-    dict: "a JSON object", list: "an array", str: "a string",
-    bool: "true or false", int: "a number", float: "a number",
-}
 
 
 def _compatible_type(value, default) -> bool:
