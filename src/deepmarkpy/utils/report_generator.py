@@ -35,6 +35,7 @@ from deepmarkpy.utils.attack_groups import (
     group_label,
 )
 from deepmarkpy.utils.latex_helpers import (
+    MetricCaveats,
     build_longtable,
     container_section,
     display_attack_name,
@@ -50,7 +51,6 @@ from deepmarkpy.utils.latex_helpers import (
 )
 from deepmarkpy.utils.metric_resolver import (
     EFFICIENCY_METRICS,
-    LOWER_IS_BETTER_METRICS,
     PER_FILE_EFFICIENCY_METRICS,
     MetricResolver,
 )
@@ -113,8 +113,7 @@ class BenchmarkReportGenerator:
         carry different accuracy statistics, and ``compute_mean_accuracy``
         writes each attack under the statistic *its own group* asked for.
         Reading the report-wide default off an attack whose group dropped
-        it finds nothing, so the group decides the key here exactly as it
-        does in ``_metric_value``.
+        it finds nothing, so the attack's group decides the key here.
         """
         group_key = (self.resolver.group_for_attack(attack_name)
                      if attack_name else None)
@@ -197,42 +196,6 @@ class BenchmarkReportGenerator:
             chance_floor=self._chance_floor,
         )
 
-    def _quality_metric_for_charts(self, stats, group_key=None):
-        """The quality metric to plot accuracy against, or ``None``.
-
-        Preference runs from the most perceptual measure to the least, but
-        only metrics this group enabled are considered, and only one that
-        actually produced values is chosen -- so the figure always has a
-        table of its own in the same section to sit under.
-        """
-        preference = ("visqol", "pesq", "nisqa_mos", "stoi", "mcd",
-                      "si_sdr", "psnr")
-        # The section's own resolution, ``None`` included -- never
-        # ``all_signal_metrics()``, which is the union across every group
-        # and can name a metric this section's tables leave out.
-        enabled = self.resolver.signal_metrics_for_group(group_key)
-        for metric in preference:
-            if metric not in enabled:
-                continue
-            if any(self._metric_value(value, name, metric) is not None
-                   for name, value in stats.items()):
-                return metric
-        return None
-
-    def _metric_value(self, entry, attack_name, metric):
-        """One metric value for an attack, in that group's first statistic."""
-        group_key = self.resolver.group_for_attack(attack_name)
-        statistics = self.resolver.statistics_for(group_key, metric)
-        if not statistics:
-            return None
-        return self._stat_of(entry, f"{metric}_{statistics[0]}")
-
-
-    # Each figure sits directly under the table whose numbers it draws --
-    # the strength curves under the accuracy table, the scatter under the
-    # quality table -- rather than collected at the end of the document,
-    # where the reader has to carry a section's numbers to them.
-
     def _strength_figure(self, stats, name_key):
         """Accuracy across the versions of this section's ladder attacks."""
         series = report_charts.version_series(
@@ -256,45 +219,6 @@ class BenchmarkReportGenerator:
             "where a curve crosses the chance line is the strength at which "
             "the watermark stops surviving.",
             f"fig:attack_strength_{name_key}",
-        )
-
-    def _quality_scatter_figure(self, stats, name_key, group_key=None):
-        """This section's accuracy against the audio quality it cost.
-
-        Returns ``(metric, latex)`` so the caller can place the figure
-        directly under the table for *that* metric, rather than after
-        whichever quality table happens to come last.
-        """
-        metric = self._quality_metric_for_charts(stats, group_key)
-        if not metric:
-            return None, ""
-
-        higher_is_better = metric not in LOWER_IS_BETTER_METRICS
-        points = [
-            (display_attack_name(name),
-             self._metric_value(value, name, metric),
-             self._accuracy_of(value, name))
-            for name, value in stats.items()
-        ]
-        filename = f"robustness_quality_{name_key}.png"
-        drawn = report_charts.robustness_quality_scatter(
-            points, os.path.join(self.report_dir, filename),
-            metric_label=report_charts.direction_hint(
-                metric_label(metric), higher_is_better,
-            ),
-            higher_is_better=higher_is_better,
-            chance_floor=self._chance_floor,
-        )
-        if not drawn:
-            return None, ""
-        return metric, "\n\n" + figure_block(
-            filename,
-            f"Detection accuracy against {metric_label(metric)} of the "
-            f"attacked audio, for the attacks tabled above. An attack in the "
-            f"shaded corner removed the watermark while leaving the recording "
-            f"usable, which is the case that matters; one in the opposite "
-            f"corner paid for it with the audio.",
-            f"fig:robustness_quality_{name_key}",
         )
 
     # ------------------------------------------------------------------
@@ -329,24 +253,14 @@ class BenchmarkReportGenerator:
         name_key = f"{group_name}{suffix}"
 
         # The strength curves read the accuracy column, so they follow the
-        # accuracy table; the scatter reads a quality column, so it follows
-        # the quality tables at the end. Neither is collected at the foot of
-        # the document, where the reader would have to carry the section's
-        # numbers to it.
+        # accuracy table rather than the foot of the document, where the
+        # reader would have to carry the section's numbers to them.
         tables = [
             self._accuracy_table(
                 sorted_attacks, group_key, caption_word,
                 f"tab:benchmark_accuracy_{group_name}{suffix}",
             ) + self._strength_figure(stats, name_key)
         ]
-
-        # The scatter plots one quality metric, so it belongs under that
-        # metric's own table -- not after the last quality table in the
-        # section, which is a different metric entirely.
-        scatter_metric, scatter = self._quality_scatter_figure(
-            stats, name_key, group_key,
-        )
-        scatter_placed = False
 
         enabled = self.resolver.metrics_for_group(group_key)
         compact = []
@@ -367,14 +281,10 @@ class BenchmarkReportGenerator:
                 continue
             statistics = self.resolver.statistics_for(group_key, metric)
             if len(statistics) > 1:
-                table = self._metric_table(
+                tables.append(self._metric_table(
                     sorted_attacks, metric, statistics, caption_word,
                     f"tab:benchmark_{metric}_{group_name}{suffix}",
-                )
-                if metric == scatter_metric:
-                    table += scatter
-                    scatter_placed = True
-                tables.append(table)
+                ))
             elif statistics:
                 compact.append((metric, statistics[0]))
 
@@ -390,16 +300,10 @@ class BenchmarkReportGenerator:
                 ))
 
         if compact:
-            table = self._compact_metric_table(
+            tables.append(self._compact_metric_table(
                 sorted_attacks, compact, caption_word,
                 f"tab:benchmark_metrics_{group_name}{suffix}",
-            )
-            # A single-statistic metric has no table of its own; the compact
-            # one carries its column, so the figure follows that.
-            if scatter and not scatter_placed:
-                table += scatter
-                scatter_placed = True
-            tables.append(table)
+            ))
 
         efficiency = self._efficiency_table(
             sorted_attacks, group_key, caption_word,
@@ -409,8 +313,6 @@ class BenchmarkReportGenerator:
             tables.append(efficiency)
 
         body = "\n\n".join(t for t in tables if t)
-        if scatter and not scatter_placed:
-            body += scatter
         return body + self._footnotes(sorted_attacks, silent)
 
     def _efficiency_table(self, sorted_attacks, group_key, caption_word, label):
@@ -556,6 +458,7 @@ class BenchmarkReportGenerator:
         headers = ["Attack Type"] + [stat_header(s) for s in statistics]
 
         rows = []
+        caveats = MetricCaveats()
         for attack_name, value in sorted_attacks:
             cells = [display_attack_name(attack_name)]
             n_files = self._stat_of(value, "accuracy_n")
@@ -566,8 +469,11 @@ class BenchmarkReportGenerator:
                     cells.append("N/A")
                     continue
                 cell = format_metric_cell(metric, raw)
-                # Say once per row, not once per column, that this metric
-                # scored fewer files than the accuracy beside it.
+                # Say once per row, not once per column, that the attack
+                # makes this metric unreadable, or that it scored fewer
+                # files than the accuracy beside it.
+                if statistic == statistics[0]:
+                    cell += caveats.mark(attack_name, metric)
                 if (statistic == statistics[0] and metric_n is not None
                         and n_files is not None and metric_n < n_files):
                     cell += f" ($n$={int(metric_n)})"
@@ -580,7 +486,7 @@ class BenchmarkReportGenerator:
             rows,
             f"{metric_label(metric)} statistics for {caption_word}.",
             label,
-        )
+        ) + caveats.footnote()
 
     def _compact_metric_table(self, sorted_attacks, metric_statistics,
                               caption_word, label):
@@ -595,6 +501,7 @@ class BenchmarkReportGenerator:
             headers.append(header)
 
         rows = []
+        caveats = MetricCaveats()
         for attack_name, value in sorted_attacks:
             cells = [display_attack_name(attack_name)]
             n_files = self._stat_of(value, "accuracy_n")
@@ -604,6 +511,7 @@ class BenchmarkReportGenerator:
                     cells.append("N/A")
                     continue
                 cell = format_metric_cell(metric, raw)
+                cell += caveats.mark(attack_name, metric)
                 metric_n = self._stat_of(value, f"{metric}_n")
                 if metric_n is not None and n_files is not None and metric_n < n_files:
                     cell += f" ($n$={int(metric_n)})"
@@ -616,7 +524,7 @@ class BenchmarkReportGenerator:
             rows,
             f"Audio quality and intelligibility for {caption_word}.",
             label,
-        )
+        ) + caveats.footnote()
 
     def _footnotes(self, sorted_attacks, silent_metrics=()):
         """Coverage notes for the tables just built."""
@@ -1011,8 +919,6 @@ class BenchmarkReportGenerator:
                 + "\n\n".join(sections)
             )
 
-        trend = self._duration_trend_figure(grouped_stats)
-
         # The crop applies to every bin, so it is stated once above them
         # rather than repeated in each part.
         crop_note = self._crop_note(crop_before_attack)
@@ -1020,7 +926,7 @@ class BenchmarkReportGenerator:
             crop_note = f"\\noindent {crop_note}\n\n"
 
         latex_content = (
-            f"{preamble}\n\n" + crop_note + trend + "\n\n".join(parts)
+            f"{preamble}\n\n" + crop_note + "\n\n".join(parts)
             + "\n\n" + container_section(containers or [])
             + "\n\n\\end{document}"
         )
@@ -1039,45 +945,6 @@ class BenchmarkReportGenerator:
 
         self._compile(latex_path)
         return latex_path, chart_path
-
-    def _duration_trend_figure(self, grouped_stats):
-        """Every attack's accuracy across the duration bins, in one figure.
-
-        The parts below are self-contained, so nothing else in the report
-        lets the bins be compared; without this, a reader asking whether
-        robustness depends on clip length has to page between sections and
-        hold six numbers in their head.
-        """
-        bins = [(label, data["stats"]) for label, data in grouped_stats.items()
-                if label != "Overall"]
-        if len(bins) < 2:
-            return ""
-
-        series = {}
-        for label, group_stats in bins:
-            for attack, value in group_stats.items():
-                series.setdefault(display_attack_name(attack), []).append(
-                    (label, self._accuracy_of(value, attack))
-                )
-
-        filename = "duration_trend.png"
-        drawn = report_charts.duration_trend(
-            series, os.path.join(self.report_dir, filename),
-            statistic_label=self._accuracy_label_for(
-                {a: v for _, s in bins for a, v in s.items()},
-            ),
-            chance_floor=self._chance_floor,
-        )
-        if not drawn:
-            return ""
-        return figure_block(
-            filename,
-            "Detection accuracy per attack across the duration groups. A "
-            "line that slopes means the attack's effect depends on how long "
-            "the file is; a flat one means the per-group sections below "
-            "repeat the same result.",
-            "fig:duration_trend",
-        ) + "\n\n"
 
 
 def generate_benchmark_report(stats_file: str = "benchmark_stats.json",

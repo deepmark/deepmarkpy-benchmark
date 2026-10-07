@@ -164,18 +164,18 @@ class BaseModel(abc.ABC):
         return self._config
 
 
-def implements_is_watermarked(model_instance) -> bool:
-    """Whether ``model_instance`` overrides ``is_watermarked()``.
+def implements_is_watermarked(model) -> bool:
+    """Whether a model instance or class overrides ``is_watermarked()``.
 
-    Inheriting the base implementation is not support: it raises. Both the
-    detection_reliability mode and the no-attacks report ask this before
-    relying on the model's detection decision.
+    Inheriting the base implementation is not support: it raises. Config
+    validation asks it of the registered class; the detection_reliability
+    mode and the no-attacks report ask it of the instance.
     """
-    if not hasattr(model_instance, "is_watermarked"):
+    if not hasattr(model, "is_watermarked"):
         return False
-    if isinstance(model_instance, type):
-        return (not issubclass(model_instance, BaseModel)
-                or model_instance.is_watermarked is not BaseModel.is_watermarked)
-    if not isinstance(model_instance, BaseModel):
+    if isinstance(model, type):
+        return (not issubclass(model, BaseModel)
+                or model.is_watermarked is not BaseModel.is_watermarked)
+    if not isinstance(model, BaseModel):
         return True
-    return type(model_instance).is_watermarked is not BaseModel.is_watermarked
+    return type(model).is_watermarked is not BaseModel.is_watermarked

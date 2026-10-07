@@ -25,11 +25,11 @@ lower bound in ``requirements.txt``; it resolved to 4.1.1 at record time.
 
 Every attack registers in the canonical environment: all import-time
 dependencies are declared, so the full set of 45 attacks is expected from a
-clean install and the exact-set assertion binds unconditionally. (``wavelet``,
-``time_stretch``, ``pitch_shift`` and ``inverted_time_stretch`` were formerly
-absent because ``PyWavelets``/``pyrubberband`` were undeclared.) Note
-``pyrubberband`` additionally needs the ``rubberband`` CLI on PATH to take its
-primary code path; without it those attacks fall back to librosa.
+clean install and the exact-set assertion binds unconditionally. (``wavelet``
+needs ``PyWavelets``; ``time_stretch``, ``pitch_shift`` and
+``inverted_time_stretch`` need ``pyrubberband``.) Note ``pyrubberband``
+additionally needs the ``rubberband`` CLI on PATH to take its primary code
+path; without it those attacks fall back to librosa.
 
 The asserted sets below are load-bearing: change them only as a deliberate,
 reviewed decision.
@@ -106,11 +106,10 @@ CANONICAL_ATTACK_DIRS = {
 }
 CANONICAL_ATTACKS = frozenset(CANONICAL_ATTACK_DIRS)
 
-# Previously this held the four attacks whose import-time dependencies were
-# undeclared, so they vanished from a clean install. pyrubberband and
-# PyWavelets are now declared dependencies and all 45 attacks register in
-# the canonical environment; the mapping stays (empty) so a future optional
-# dependency has an obvious home.
+# Attacks whose import-time dependency is optional, so a clean install may
+# lack them: {class: (directory, dependency)}. Every dependency is declared
+# and all 45 attacks register in the canonical environment; the mapping
+# stays (empty) so a future optional dependency has an obvious home.
 OPTIONAL_DEP_ATTACKS = {}
 
 # Attack sample for the config.json-content assertions. Each entry maps a

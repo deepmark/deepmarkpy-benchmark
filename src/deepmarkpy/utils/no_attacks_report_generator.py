@@ -11,22 +11,6 @@ read its own watermark back with nothing in between:
 * one table per configured quality metric, with the statistics that
   metric's configuration asks for.
 
-Figures appear only when two or more models are compared, and are left
-out of a single-model run. Every quality metric here is already a
-before/after measurement -- original against watermarked -- so there is
-no separate "before" number to plot one against; the only axis left is
-the model, and one model is one bar, which the table states better.
-
-Each metric's figure sits under that metric's own table and is drawn on
-that metric's declared range (``METRIC_RANGES``), so a PESQ of 2.0 shows
-as a bar reaching a third of the way up rather than filling the axis the
-way an auto-fitted scale would.
-
-Accuracy is the exception to "one figure per configured statistic": only
-mean and worst case are charted, and only when the configuration lists
-them (``CHARTED_ACCURACY_STATISTICS``). A config that names all eight
-would otherwise turn one table into eight figures.
-
 No attacks run in this mode, so there are no attack groups: every metric
 and statistic comes from ``metrics.defaults`` via the resolver.
 """
@@ -36,14 +20,11 @@ import os
 
 import numpy as np
 
-from deepmarkpy.utils import report_charts
 from deepmarkpy.utils.latex_helpers import (
-    NARROW_FIGURE_WIDTH,
     build_longtable,
     compile_latex,
     container_section,
     duration_label_tex,
-    figure_block,
     format_emr_cell,
     format_metric_cell,
     make_preamble,
@@ -55,7 +36,6 @@ from deepmarkpy.utils.latex_helpers import (
 from deepmarkpy.utils.metric_resolver import (
     ALL_STATISTICS,
     INTELLIGIBILITY_METRICS,
-    LOWER_IS_BETTER_METRICS,
     PER_MODEL_EFFICIENCY_METRICS,
     MetricResolver,
     NISQA_METRICS,
@@ -122,10 +102,6 @@ def _summarize_model(results, resolver):
         "returns_confidence": returns_confidence,
         "n_files": len(files),
         "accuracy_stats": accuracy_stats,
-        # The raw list, kept for the distribution figure: the statistics
-        # above are whichever ones the config asked for, and a box plot
-        # needs the values themselves.
-        "accuracy_values": [float(a) for a in accuracies],
     }
 
     # "Was a watermark found" is the model's own answer, recorded per file
@@ -342,190 +318,6 @@ def _compact_metric_table(models_data, resolver, metrics, caption, label):
     )
 
 
-def _accuracy_spread_figure(models_data, resolver, report_dir, is_zero_bit,
-                            suffix):
-    """How each model's files split by outcome, before any attack.
-
-    A model that reads its own watermark back on 99 files out of 100 and
-    fails on the hundredth has almost the same mean as one that scores
-    99\\% on every file, and a very different failure mode.
-    """
-    if report_dir is None:
-        return ""
-    distributions = {
-        _short_model_name(name): data.get("accuracy_values") or []
-        for name, data in models_data.items()
-    }
-    family = "zerobit" if is_zero_bit else "multibit"
-    filename = f"no_attacks_accuracy_{family}{suffix}.png"
-    drawn = report_charts.per_file_outcome_bars(
-        distributions, os.path.join(report_dir, filename),
-        title="Baseline outcome with no attack applied",
-        chance_floor=0.0 if is_zero_bit else 50.0,
-        is_zero_bit=is_zero_bit,
-    )
-    if not drawn:
-        return ""
-    return figure_block(
-        filename,
-        "Share of files by detection outcome before any attack, with file "
-        "counts inside the bars. Anything outside the best band is a file "
-        "the model could not fully read back from its own untouched output, "
-        "which bounds everything the attack results can show.",
-        f"fig:no_attacks_accuracy_{family}{suffix}",
-    )
-
-
-def _family_figures(models_data, resolver, report_dir, is_zero_bit, suffix):
-    """The outcome figure belonging under one model family's accuracy table."""
-    if len(models_data) < 2:
-        return ""
-    figure = _accuracy_spread_figure(
-        models_data, resolver, report_dir, is_zero_bit, suffix,
-    )
-    return f"\n\n{figure}" if figure else ""
-
-
-# The only accuracy statistics worth a chart: the typical case and the
-# floor under it. The percentiles between them describe a distribution,
-# which the table states more precisely than bars can, and a standard
-# deviation is a spread that does not belong on the 0--100 axis at all.
-# A config naming all eight therefore still gets one figure of two bars.
-CHARTED_ACCURACY_STATISTICS = ("mean", "worst_case")
-
-
-def _accuracy_figures(summaries, resolver, report_dir, suffix):
-    """Accuracy per model, for whichever of mean and worst case is configured.
-
-    One figure over every model, not one per family. The tables split
-    zero-bit from multi-bit because the two score different things, but
-    splitting the figure the same way leaves a run of one model per
-    family -- the common case -- with no figure at all. Following the
-    comparative report, the zero-bit bars are marked rather than hidden,
-    and the caption says what the marker means.
-    """
-    if report_dir is None or len(summaries) < 2:
-        return ""
-
-    # The configuration's order, not this module's, as everywhere else.
-    statistics = [
-        statistic for statistic in resolver.statistics_for(None, "accuracy")
-        if statistic in CHARTED_ACCURACY_STATISTICS
-    ]
-    if not statistics:
-        return ""
-
-    models = list(summaries)
-    zero_bit = [bool(summaries[name].get("is_zero_bit")) for name in models]
-    labels = [
-        _short_model_name(name) + ("\\textsuperscript{0}" if zb else "")
-        for name, zb in zip(models, zero_bit)
-    ]
-
-    series = [
-        (stat_header(statistic),
-         [(summaries[name].get("accuracy_stats") or {}).get(statistic)
-          for name in models])
-        for statistic in statistics
-    ]
-
-    # The floor is a multi-bit notion: a failed zero-bit detection scores
-    # 0, which is the axis origin and needs no line.
-    floor = 50.0 if not all(zero_bit) else None
-    filename = f"no_attacks_accuracy_values{suffix}.png"
-    drawn = report_charts.accuracy_by_model(
-        series, os.path.join(report_dir, filename), models=labels,
-        statistic_labels=statistics, chance_floor=floor,
-        title="Baseline accuracy by model",
-    )
-    if not drawn:
-        return ""
-
-    named = ", ".join(stat_header(s).lower() for s in statistics)
-    marker = (
-        " \\textsuperscript{0}Zero-bit model: the score is the share of files "
-        "in which a watermark was detected, so its floor is 0\\%. Multi-bit "
-        "scores are bit agreement, whose floor is chance ($\\sim$50\\%). The "
-        "two families are not comparable with each other."
-        if any(zero_bit) and not all(zero_bit) else ""
-    )
-    others = [
-        s for s in resolver.statistics_for(None, "accuracy")
-        if s not in CHARTED_ACCURACY_STATISTICS
-    ]
-    note = (
-        " The remaining statistics the configuration asks for are in the "
-        "tables above; they describe the distribution rather than the level, "
-        "and are read more precisely as numbers."
-        if others else ""
-    )
-    return "\n\n" + figure_block(
-        filename,
-        f"Baseline detection accuracy by model before any attack ({named}). "
-        f"The axis is the full 0--100\\% range.{marker}{note}",
-        f"fig:no_attacks_accuracy_values{suffix}",
-    )
-
-
-def _metric_figure(summaries, resolver, metric, report_dir, suffix):
-    """One metric, one bar per model, drawn on that metric's own scale.
-
-    Emitted next to that metric's table rather than collected into one
-    panel of many: a figure of PESQ read three tables away from the PESQ
-    numbers is a figure the reader has to re-anchor.
-    """
-    if report_dir is None:
-        return ""
-
-    statistics = resolver.statistics_for(None, metric)
-    if not statistics:
-        return ""
-    statistic = statistics[0]
-
-    values = {
-        _short_model_name(name):
-            (data.get("quality_metrics_stats") or {}).get(metric, {})
-            .get(statistic)
-        for name, data in summaries.items()
-    }
-    if not any(v is not None for v in values.values()):
-        return ""
-
-    higher_is_better = metric not in LOWER_IS_BETTER_METRICS
-    filename = f"no_attacks_{metric}{suffix}.png"
-    drawn = report_charts.metric_by_model(
-        values, os.path.join(report_dir, filename), metric,
-        metric_label=report_charts.direction_hint(
-            metric_label(metric), higher_is_better,
-        ),
-        higher_is_better=higher_is_better,
-    )
-    if not drawn:
-        return ""
-
-    from deepmarkpy.utils.metrics import METRIC_RANGES
-    if metric in METRIC_RANGES:
-        low, high = METRIC_RANGES[metric]
-        scale_note = (
-            f" The axis spans the metric's full range ({low:g}--{high:g}), so "
-            f"the bar height is the share of the scale the model reached."
-        )
-    else:
-        scale_note = (
-            " This metric has no defined ceiling, so the axis is fitted to "
-            "the values and bar heights compare the models to each other, "
-            "not to an absolute best."
-        )
-
-    return figure_block(
-        filename,
-        f"{metric_label(metric)} of the watermarked signal against the "
-        f"original ({stat_header(statistic).lower()}).{scale_note}",
-        f"fig:no_attacks_{metric}{suffix}",
-        width=NARROW_FIGURE_WIDTH,
-    )
-
-
 def _efficiency_table(summaries, resolver, label):
     """What embedding and detection cost in time, per model.
 
@@ -591,7 +383,7 @@ def _timing_table(summaries, columns, headers, caption, label):
     )
 
 
-def _build_body(summaries, resolver, label_suffix="", report_dir=None):
+def _build_body(summaries, resolver, label_suffix=""):
     """Build the report body for a set of model summaries."""
     suffix = f"_{label_suffix}" if label_suffix else ""
     zero_bit = {m: s for m, s in summaries.items() if s["is_zero_bit"]}
@@ -601,7 +393,7 @@ def _build_body(summaries, resolver, label_suffix="", report_dir=None):
     if multi_bit:
         tables.append(_accuracy_table(
             multi_bit, resolver, False, f"tab:no_attacks_multibit{suffix}",
-        ) + _family_figures(multi_bit, resolver, report_dir, False, suffix))
+        ))
         if resolver.is_enabled(None, "ber") and \
                 len(resolver.statistics_for(None, "ber")) > 1:
             tables.append(_ber_table(
@@ -610,21 +402,7 @@ def _build_body(summaries, resolver, label_suffix="", report_dir=None):
     if zero_bit:
         tables.append(_accuracy_table(
             zero_bit, resolver, True, f"tab:no_attacks_zerobit{suffix}",
-        ) + _family_figures(zero_bit, resolver, report_dir, True, suffix))
-
-    # One figure over every model, after the last accuracy table, because
-    # a run with one model per family would otherwise get none.
-    accuracy_figure = _accuracy_figures(summaries, resolver, report_dir, suffix)
-    if accuracy_figure and tables:
-        tables[-1] += accuracy_figure
-
-    # A bar chart of one bar is a table with worse resolution, so the
-    # per-metric figures wait until there are models to compare.
-    def show_figure(metric):
-        if len(summaries) < 2:
-            return ""
-        figure = _metric_figure(summaries, resolver, metric, report_dir, suffix)
-        return f"\n\n{figure}" if figure else ""
+        ))
 
     quality_tables = []
     silent = []
@@ -652,14 +430,12 @@ def _build_body(summaries, resolver, label_suffix="", report_dir=None):
                 f"tab:no_attacks_{metric}{suffix}",
             )
             if table:
-                quality_tables.append(table + show_figure(metric))
+                quality_tables.append(table)
         if single:
-            # A single-statistic metric has no table of its own, so its
-            # figure follows the compact table that carries its column.
             quality_tables.append(_compact_metric_table(
                 summaries, resolver, single, caption,
                 f"tab:no_attacks_{section_key}{suffix}",
-            ) + "".join(show_figure(m) for m in single))
+            ))
 
     body = "\n\n".join(tables)
     if quality_tables:
@@ -754,14 +530,13 @@ def generate_no_attacks_report(all_results, report_dir="report",
                 part_heading(safe_label, f"{n_group} files")
                 + "\\section{Baseline Detection Performance}\n\n"
                 + _build_body(group_summaries, resolver,
-                              label_suffix=slugify(group_label),
-                              report_dir=report_dir)
+                              label_suffix=slugify(group_label))
             )
         body = "\n\n".join(sections)
     else:
         body = (
             "\\section{Baseline Detection Performance}\n\n"
-            + _build_body(summaries, resolver, report_dir=report_dir)
+            + _build_body(summaries, resolver)
         )
 
     latex_content = (f"{preamble}\n\n" + abstract + body

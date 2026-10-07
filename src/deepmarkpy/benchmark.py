@@ -75,11 +75,10 @@ def resolve_cross_model_name(entry_kwargs, attacks_registry, models):
     """The second model ``CrossModelAttack`` re-embeds with.
 
     The attack reads this from its kwargs and, unlike every other plugin,
-    has no fallback to its own config.json. It used to arrive from the CLI;
-    parameters are config driven now, so both run loops resolve it here --
-    the entry's own kwargs first, the plugin's config.json default second --
-    and hand it over. Raises before any audio is touched when the name is
-    not a discovered model.
+    has no fallback to its own config.json, so both run loops resolve it
+    here -- the entry's own kwargs first, the plugin's config.json default
+    second -- and hand it over. Raises before any audio is touched when the
+    name is not a discovered model.
     """
     name = entry_kwargs.get(
         "different_model_name_cross_model",
@@ -101,10 +100,10 @@ def resolve_cross_model_name(entry_kwargs, attacks_registry, models):
 def require_attacks_available(attack_types, attacks_registry, plugin_failures=None):
     """Raise when a requested attack is absent from ``attacks_registry``.
 
-    A missing model already raises; a missing attack used to warn and skip, so
-    a run finished with exit 0 and a report whose attack count had silently
-    dropped. Most often the plugin failed to import because an optional
-    dependency is not installed, so the import error is quoted when known.
+    A missing model raises too. Skipping the attack would finish the run with
+    exit 0 and a report short of it. Most often the plugin failed to import
+    because an optional dependency is not installed, so the import error is
+    quoted when known.
     """
     missing = [
         name for name in attack_types
@@ -197,8 +196,7 @@ def expand_attacks(attack_types, attacks_registry, parameters=None,
         if ":" in atk_spec:
             # At the first colon, as config validation and availability
             # checks split it: a class name cannot hold one, a version name
-            # can. Splitting at the last made "FooAttack:v:2" resolve to a
-            # class "FooAttack:v" that validation never saw.
+            # can.
             atk_name, _, version = atk_spec.partition(":")
 
         if atk_name not in attacks_registry:
@@ -215,6 +213,7 @@ def expand_attacks(attack_types, attacks_registry, parameters=None,
         if bitrate_key:
             # Versions first, exactly as below, then one row per bitrate of
             # each: a bare name runs every version here too.
+            raw = attacks_registry[atk_name].get("_raw_config") or {}
             is_multi = is_multi_version(atk_name, attacks_registry)
             if version:
                 versions = [version]
@@ -229,9 +228,13 @@ def expand_attacks(attack_types, attacks_registry, parameters=None,
                     dict(added[name]) if name in added
                     else parameters(atk_name, name)
                 )
-                # An override may replace the bitrate list itself, in which case
-                # it decides how many runs there are.
-                bitrates = overrides.get(bitrate_key, config[bitrate_key])
+                # Each declared version runs at its own preset's bitrates. An
+                # override may replace the list itself, in which case it
+                # decides how many runs there are.
+                preset = raw.get(name) if isinstance(raw.get(name), dict) else config
+                bitrates = overrides.get(
+                    bitrate_key, preset.get(bitrate_key, config[bitrate_key]),
+                )
                 if not isinstance(bitrates, list):
                     bitrates = [bitrates]
                 for val in bitrates:
@@ -276,10 +279,9 @@ def instantiate_attack(attack_cls, class_name, version):
     """Construct an attack, passing ``version`` only when it accepts one.
 
     Decided by signature rather than by catching ``TypeError`` from the
-    call: that catch also swallowed a ``TypeError`` raised *inside* a
-    constructor that does take a version, and retried without it -- so a
-    broken plugin quietly ran its default preset under the requested
-    version's name, and the report labelled it as that version.
+    call: that catch would also swallow a ``TypeError`` raised *inside* a
+    constructor that does take a version and retry without it, so a broken
+    plugin would run its default preset under the requested version's name.
     """
     try:
         parameters = inspect.signature(attack_cls.__init__).parameters
@@ -293,9 +295,9 @@ def instantiate_attack(attack_cls, class_name, version):
         return attack_cls(version=version)
 
     if version and version != "default":
-        # Warning and carrying on ran the default preset under the
-        # requested version's display name, so the results would be
-        # labelled as data they are not.
+        # Warning and carrying on would run the default preset under the
+        # requested version's display name, labelling the results as data
+        # they are not.
         raise ValueError(
             f"{class_name} does not support versions, so version "
             f"'{version}' cannot be loaded: its constructor takes no "
@@ -636,8 +638,8 @@ class Benchmark:
             parameters=attack_parameters,
             extra_versions=extra_attack_versions,
         )
-        # Before any audio, as detection reliability does: an unknown
-        # second model otherwise surfaced partway through the first file.
+        # Before any audio, as detection reliability does, so an unknown
+        # second model stops the run before the first file is embedded.
         for class_name, _display, overrides, _version in expanded_attacks:
             if class_name == "CrossModelAttack":
                 resolve_cross_model_name(
@@ -770,7 +772,7 @@ class Benchmark:
 
                 if attack_class_name == "CrossModelAttack":
                     # Read the entry's own kwargs, not the run-level ones:
-                    # per-attack parameters travel per expanded entry now.
+                    # per-attack parameters travel with each expanded entry.
                     different_model_name = resolve_cross_model_name(
                         current_attack_kwargs, self.attacks, self.models,
                     )
@@ -873,8 +875,8 @@ class Benchmark:
                 if attack_class_name == "CrossModelAttack":
                     results[filepath]["attacks"][attack_name]["accuracy_cross_model"] = different_accuracy
 
-            # A long run used to hold every result in memory until the last
-            # file finished, so an interruption at file N of M kept nothing.
+            # Each file's results go out as soon as the file finishes, so
+            # an interruption at file N of M keeps the files already done.
             if on_file_complete is not None:
                 on_file_complete(filepath, results[filepath])
 

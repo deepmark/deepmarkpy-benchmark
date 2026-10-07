@@ -196,7 +196,7 @@ class TestRequirement3UnusedGroupsAreNotErrors:
 
 
 class TestRequirement4DefaultsReproduceTheTaxonomy:
-    def test_builtin_matrix_matches_attack_groups_exactly(self):
+    def test_builtin_matrix_is_attack_groups_plus_the_always_on_trio(self):
         resolver = MetricResolver.from_attack_groups()
         for group_key, definition in ATTACK_GROUPS.items():
             declared = set(

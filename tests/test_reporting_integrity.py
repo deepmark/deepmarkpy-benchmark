@@ -5,7 +5,12 @@ comparative table's handling of non-comparable model families."""
 import numpy as np
 import pytest
 
-from deepmarkpy.benchmark import Benchmark, apply_attack, expand_attacks
+from deepmarkpy.benchmark import (
+    Benchmark,
+    apply_attack,
+    audio_filename_label,
+    expand_attacks,
+)
 from deepmarkpy.utils.comparative_report_generator import (
     RANK_COLORS,
     ComparativeReportGenerator,
@@ -33,7 +38,7 @@ class TestSharedDispatcher:
         """The spliced-in reference must differ from the array being attacked.
 
         Passing the target as its own 'original' turns the attack into a
-        no-op, which previously fabricated a perfect reliability row.
+        no-op and fabricates a perfect reliability row.
         """
         attack = _Recorder()
         target = np.ones(16)
@@ -96,6 +101,25 @@ class TestExpandAttacks:
             ("Codec2VocoderAttack_3200 (hi)", {"bitrate_codec2": 3200}, None),
         ]
 
+    def test_each_declared_version_runs_at_its_own_bitrates(self):
+        """A preset's own bitrate list decides its rows, not the default's."""
+        registry = {"Codec2VocoderAttack": {
+            "config": {"bitrate_codec2": [700]},
+            "_raw_config": {
+                "default": {"bitrate_codec2": [700]},
+                "high": {"bitrate_codec2": [3200]},
+            },
+        }}
+        assert [(d, o, v) for _, d, o, v in expand_attacks(
+            ["Codec2VocoderAttack"], registry,
+        )] == [
+            ("Codec2VocoderAttack_700 (default)", {"bitrate_codec2": 700}, "default"),
+            ("Codec2VocoderAttack_3200 (high)", {"bitrate_codec2": 3200}, "high"),
+        ]
+        assert [d for _, d, _, _ in expand_attacks(
+            ["Codec2VocoderAttack:high"], registry,
+        )] == ["Codec2VocoderAttack_3200 (high)"]
+
     def test_plain_attack_passes_through(self):
         registry = {"GaussianNoiseAttack": {"config": {"snr_db_gaussian_noise": 35}}}
         assert expand_attacks(["GaussianNoiseAttack"], registry) == [
@@ -108,9 +132,9 @@ class TestExpandAttacks:
         ]
 
     def test_a_colon_inside_the_version_stays_in_the_version(self):
-        """Validation splits at the first colon. Splitting here at the last
-        made "GaussianNoiseAttack:v:2" a class "GaussianNoiseAttack:v",
-        which benchmark mode silently skipped."""
+        """Validation splits at the first colon, and so does expansion: at
+        the last, "GaussianNoiseAttack:v:2" would name a class
+        "GaussianNoiseAttack:v" that benchmark mode skips."""
         registry = {"GaussianNoiseAttack": {
             "config": {"snr_db_gaussian_noise": 35},
             "_raw_config": {
@@ -128,15 +152,11 @@ class TestExpandAttacks:
     def test_a_saved_audio_filename_replaces_what_a_path_cannot_hold(self):
         """A version name may hold a path separator or a character Windows
         reserves; in the saved-audio filename each becomes an underscore."""
-        from deepmarkpy.benchmark import audio_filename_label
-
         assert audio_filename_label("GaussianNoiseAttack (v:2)") == "GaussianNoiseAttack (v_2)"
         assert audio_filename_label("PresetNoiseAttack (lo/hi)") == "PresetNoiseAttack (lo_hi)"
 
     def test_a_safe_name_is_its_own_filename(self):
         """Spaces and parentheses are kept, so a safe name is unchanged."""
-        from deepmarkpy.benchmark import audio_filename_label
-
         for name in ("Codec2VocoderAttack_700", "GaussianNoiseAttack (mild)"):
             assert audio_filename_label(name) == name
 
@@ -387,6 +407,15 @@ class TestComparativeTableComparability:
 
         assert "standard deviation" in sentence, sentence
         assert "uncoloured" in sentence, sentence
+
+    def test_the_further_statistics_name_std_only_when_it_is_among_them(self):
+        """With std in the main table, every table below it is ranked."""
+        gen = self._gen({}, ("std", "mean"))
+        tex = gen.generate_latex_report(self.STEADY_VS_ERRATIC, include_radar=False)
+        further = tex.split("Further Statistics", 1)[1]
+        sentence = further[further.index("Every other statistic"):].split("\n\n", 1)[0]
+
+        assert "standard deviation" not in sentence, sentence
 
 
 class TestMultiModelPath:

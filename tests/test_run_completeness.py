@@ -1,8 +1,8 @@
 """A run must not quietly do less than it was asked to.
 
-Covers the two ways that used to happen: a port set in .env never reaching
-the host clients, and a requested attack whose plugin failed to import being
-warned about and skipped while the run still exited 0.
+Covers two ways it could: a port set in .env not reaching the host clients,
+and a requested attack whose plugin failed to import being skipped with a
+warning while the run exits 0.
 """
 
 import os
@@ -96,8 +96,9 @@ class TestMissingAttacksAreFatal:
     def test_run_refuses_an_empty_explicit_request(self):
         """An explicitly empty set must not fall back to the whole registry.
 
-        This is what a group whose plugins all failed to import used to
-        produce: asking for one group and silently getting every attack.
+        Filtered against the registry, a group whose plugins all failed to
+        import would be one, and the fallback would turn asking for that
+        group into silently getting every attack.
         """
         bench = self._benchmark()
         with pytest.raises(ValueError, match="empty"):
@@ -116,13 +117,13 @@ class TestMissingAttacksAreFatal:
 class TestAttackGroupsReachTheGuard:
     """--attack_groups must hand its resolved list over unfiltered.
 
-    Filtering unavailable attacks out in run.py left the guard with nothing to
-    catch, so a group ran short silently; when every plugin in a group failed,
-    the empty list fell through to "run everything".
+    Filtering unavailable attacks out in run.py would leave the guard with
+    nothing to catch, so a group would run short silently; when every plugin
+    in a group failed, the empty list would fall through to "run everything".
     """
 
     def test_config_group_resolution_does_not_filter_against_the_registry(self):
-        """Group expansion happens in the config layer now, and must not filter.
+        """Group expansion happens in the config layer, and must not filter.
 
         Dropping unavailable attacks here would leave the guard in
         Benchmark.run with nothing to catch: a group whose plugins failed
@@ -176,9 +177,8 @@ class TestCrossModelReceivesItsSecondModel:
     """The attack reads the second model's name from its kwargs only.
 
     Every other plugin falls back to its own ``config.json``; this one does
-    not. The name used to arrive from the CLI, and once parameters became
-    config driven nothing set it, so the run died with "Model 'None' not
-    found" the moment process_disruption was selected.
+    not, so unless the run loop hands it the name the run dies with "Model
+    'None' not found" as soon as process_disruption is selected.
     """
 
     def test_the_resolved_name_is_handed_to_the_attack(self):
@@ -265,11 +265,11 @@ class TestCrossModelReceivesItsSecondModel:
 class TestAVersionIsNeverSilentlyDropped:
     """An attack either takes the requested version or says it cannot.
 
-    Both run loops used to call the constructor with ``version=`` inside
-    a bare ``except TypeError``, which also swallowed a ``TypeError``
-    raised *inside* a constructor that does take one -- so a broken
-    plugin quietly ran its default preset while the report labelled the
-    row with the version that was asked for.
+    Calling the constructor with ``version=`` inside a bare ``except
+    TypeError`` would also swallow a ``TypeError`` raised *inside* a
+    constructor that does take one -- so a broken plugin would run its
+    default preset while the report labels the row with the version that
+    was asked for.
     """
 
     class _TakesVersion:

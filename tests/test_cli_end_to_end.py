@@ -174,7 +174,8 @@ def _skip_pdflatex(monkeypatch):
     )
     for module in ("report_generator", "detailed_report_generator",
                    "no_attacks_report_generator",
-                   "detection_reliability_report_generator"):
+                   "detection_reliability_report_generator",
+                   "comparative_report_generator"):
         monkeypatch.setattr(
             f"deepmarkpy.utils.{module}.compile_latex",
             lambda *a, **k: None, raising=False,
@@ -206,16 +207,15 @@ UNSAFE_VERSION_NAMES = {f"{ATTACK_CLASS} (lo/hi)", f"{ATTACK_CLASS} (v:2)"}
 UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
 
 
-def saved_audio(report_dir, mode):
-    """The files --save_audio wrote, checked to sit where the mode puts them.
+def saved_audio(report_dir):
+    """The files a single-mode run saved, checked to sit directly in audio/.
 
-    That is directly in audio/ or in the mode's folder under it, never in
-    a directory a version name created.
+    Not in a folder per mode, which only a run of several modes uses, and
+    never in a directory a version name created.
     """
-    saved = [path for path in (report_dir / "audio").rglob("*") if path.is_file()]
-    assert {path.parent for path in saved} <= {
-        report_dir / "audio", report_dir / "audio" / mode,
-    }, saved
+    audio = report_dir / "audio"
+    saved = [path for path in audio.rglob("*") if path.is_file()]
+    assert {path.parent for path in saved} == {audio}, saved
     return saved
 
 
@@ -445,7 +445,7 @@ class TestBenchmarkMode:
         attacks = next(iter(json.loads(
             (report_dir / "benchmark_results.json").read_text()).values()))["attacks"]
         assert set(attacks) == UNSAFE_VERSION_NAMES
-        saved = saved_audio(report_dir, "benchmark")
+        saved = saved_audio(report_dir)
         # Per clip: the watermarked audio, and the attacked audio of each
         # version.
         assert len(saved) == 3 * (1 + len(UNSAFE_VERSION_NAMES))
@@ -504,8 +504,9 @@ class TestBenchmarkMode:
     ):
         """The flat stats the comparative report ranks are over every file.
 
-        Without "Overall" this used to take the first bin, so a multi-model
-        comparison quietly left out every file in the later bins.
+        Without "Overall" they are computed from every file's results, not
+        taken from the first bin, which would leave the later bins' files
+        out of a multi-model comparison.
         """
         returned = []
         original = run_module.run_single_model
@@ -604,7 +605,7 @@ class TestDetectionReliabilityMode:
 
         data = json.loads((report_dir / "detection_reliability.json").read_text())
         assert set(data["attacks"]) == UNSAFE_VERSION_NAMES
-        saved = saved_audio(report_dir, "detection_reliability")
+        saved = saved_audio(report_dir)
         # Per clip: the watermarked audio, and each version applied to the
         # clean and to the watermarked audio.
         assert len(saved) == 3 * (1 + 2 * len(UNSAFE_VERSION_NAMES))
@@ -612,10 +613,13 @@ class TestDetectionReliabilityMode:
 
 
 class TestSeveralModesInOneInvocation:
+    @pytest.mark.parametrize("repeated", [False, True])
     def test_both_modes_run_and_neither_erases_the_other(
-        self, tmp_path, plugins_dir, audio_dir,
+        self, tmp_path, plugins_dir, audio_dir, repeated,
     ):
-        """The capability the per-mode config split had to preserve."""
+        """Both reports are written and each mode saves its audio in
+        audio/<mode>/, whether one --config names both files or the flag
+        is repeated."""
         benchmark = write_config(tmp_path, "benchmark.json")
 
         dr_raw = json.loads(open(write_config(tmp_path, "dr.json")).read())
@@ -624,40 +628,21 @@ class TestSeveralModesInOneInvocation:
         dr_path = tmp_path / "dr.json"
         dr_path.write_text(json.dumps(dr_raw))
 
+        configs = (["--config", benchmark, "--config", str(dr_path)] if repeated
+                   else ["--config", benchmark, str(dr_path)])
         report_dir = tmp_path / "report"
         assert run_cli(
-            "--config", benchmark, str(dr_path),
+            *configs,
             "--wav_files_dir", audio_dir,
             "--report_dir", str(report_dir),
             "--plugins_dir", plugins_dir,
+            "--save_audio",
         ) == run_module.EXIT_OK
 
         assert (report_dir / "benchmark_report.tex").exists()
         assert (report_dir / "detection_reliability_report.tex").exists()
-
-    def test_a_repeated_config_flag_adds_its_files(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        """--config a.json --config b.json asks for both files, as one
-        --config naming both does."""
-        benchmark = write_config(tmp_path, "benchmark.json")
-        reliability = pathlib.Path(write_config(
-            tmp_path, "dr.json", mode="detection_reliability",
-        ))
-        raw = json.loads(reliability.read_text())
-        raw["metrics"]["defaults"].pop("ber")
-        reliability.write_text(json.dumps(raw))
-
-        report_dir = tmp_path / "report"
-        assert run_cli(
-            "--config", benchmark, "--config", str(reliability),
-            "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir),
-            "--plugins_dir", plugins_dir,
-        ) == run_module.EXIT_OK
-
-        assert (report_dir / "benchmark_report.tex").exists()
-        assert (report_dir / "detection_reliability_report.tex").exists()
+        for mode in ("benchmark", "detection_reliability"):
+            assert (report_dir / "audio" / mode / "clip0_watermarked.wav").exists()
 
 
 class TestFailureModes:
@@ -1302,8 +1287,8 @@ class TestEfficiencySection:
         stats = json.loads((report_dir / "benchmark_stats.json").read_text())
         row = next(iter(stats.values()))
 
-        # The raw results too, not only the aggregate: the timings used to
-        # be taken regardless and merely filtered out when reduced.
+        # The raw results too, not only the aggregate: with efficiency off
+        # no timing is taken at all, rather than taken and filtered out.
         assert not [k for k in entry if "latency" in k], entry
         assert not [k for k in row if "latency" in k], row
         tex = (report_dir / "benchmark_report.tex").read_text()
@@ -1468,7 +1453,8 @@ class TestReliabilityModeTimings:
     def test_the_section_no_longer_warns_that_the_mode_ignores_it(
         self, tmp_path,
     ):
-        """W014 said the mode did not record timings. It does now."""
+        """Detection reliability records timings, so enabling them there
+        draws no warning that the mode ignores them."""
         from deepmarkpy.config import load_config_data
 
         config = load_config_data(
@@ -1569,12 +1555,13 @@ class TestContainerMemorySection:
 
 
 class TestContainerSectionCoversTheWholeRun:
-    """The section is the deployment, not the report's own model.
+    """The section lists every service the report's run used.
 
-    Two bugs sat here: each model's report listed only itself, and NISQA
-    was looked up in ``metrics.defaults`` alone, so a config that enables
-    it per attack group -- which is how the shipped templates are written
-    -- reported it as unused while the service was being called.
+    That is the run's model, the dockerized attacks its mode applies, and
+    NISQA wherever the config enables it, per attack group included, as
+    the shipped templates do. Each model's report in a multi-model
+    benchmark covers that model's run, so it lists only that model's
+    container.
     """
 
     class _DockerAttack:
@@ -1644,6 +1631,35 @@ class TestContainerSectionCoversTheWholeRun:
         # detection_reliability measures one model per config.
         entries = self._rows_for(tmp_path, mode=mode, models=["AudioSealModel"])
         assert not any(kind == "Attack" for kind, _, _ in entries), entries
+
+    def test_each_model_report_asks_for_its_own_model_alone(
+        self, tmp_path, plugins_dir, audio_dir, monkeypatch,
+    ):
+        write_model_plugin(
+            plugins_dir,
+            MODEL_SOURCE.replace("class DummyWatermarkModel",
+                                 "class SecondWatermarkModel"),
+            "second",
+        )
+        asked = []
+
+        def record(_benchmark, _config, model_names):
+            asked.append(list(model_names))
+            return []
+
+        monkeypatch.setattr(run_module, "_container_rows", record)
+        config = write_config(
+            tmp_path, "two_models.json",
+            models=["DummyWatermarkModel", "SecondWatermarkModel"],
+            efficiency=TestContainerMemorySection.ENABLED,
+        )
+        assert run_cli(
+            "--config", config, "--wav_files_dir", audio_dir,
+            "--report_dir", str(tmp_path / "report"),
+            "--plugins_dir", plugins_dir,
+        ) == run_module.EXIT_OK
+
+        assert asked == [["DummyWatermarkModel"], ["SecondWatermarkModel"]]
 
 
 class TestTheFlagInterfaceStillWorks:

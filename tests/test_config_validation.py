@@ -23,6 +23,7 @@ from deepmarkpy.config import (
 )
 from deepmarkpy.core.base_model import BaseModel
 from deepmarkpy.plugin_manager import PluginManager
+from deepmarkpy.run import _peek_plugins_dir
 from deepmarkpy.utils.attack_groups import ATTACK_GROUPS
 
 
@@ -123,6 +124,16 @@ class TestFileLevelCodes:
         found, error = codes(str(path))
         assert "E002" in found
         assert "UTF-8" in issue_for(error, "E002").message
+
+    def test_a_utf8_byte_order_mark_is_accepted(self, tmp_path):
+        """What 'Out-File -Encoding utf8', the fix E002 suggests, writes in
+        PowerShell 5.1. The plugins_dir peek before discovery reads it too."""
+        path = tmp_path / "bom.json"
+        path.write_bytes(json.dumps(
+            {**BASE, "general": {"plugins_dir": "plugins"}}
+        ).encode("utf-8-sig"))
+        assert load_configs([str(path)], ATTACKS, MODELS)[0].mode == "benchmark"
+        assert _peek_plugins_dir([str(path)]) == "plugins"
 
     def test_E003_root_not_an_object(self, tmp_path):
         path = tmp_path / "list.json"
@@ -569,6 +580,32 @@ class TestStatisticCodes:
         found, _ = codes(write(tmp_path, {"statistics": ["mean", "mean"]}))
         assert "E023" in found
 
+    @pytest.mark.parametrize("overrides,path", [
+        ({"statistics": ["std"]}, "statistics"),
+        ({"metrics": {"defaults": {"accuracy": {"statistics": ["std"]}}}},
+         "metrics.defaults.accuracy.statistics"),
+        ({"metrics": {"defaults": {}, "per_group": {
+            "audio_editing": {"accuracy": {"statistics": ["std"]}}}}},
+         "metrics.per_group.audio_editing.accuracy.statistics"),
+    ])
+    def test_E046_accuracy_needs_more_than_std(self, tmp_path, overrides, path):
+        """Given only the spread, the basic report prints it as the accuracy."""
+        found, error = codes(write(tmp_path, overrides))
+        assert "E046" in found
+        issue = issue_for(error, "E046")
+        assert issue.path == path
+        assert "spread" in issue.message
+
+    def test_no_E046_for_a_subsection_no_table_reads(self, tmp_path):
+        """No table reads a subsection's accuracy statistics, so W016 says
+        so and E046 does not apply."""
+        config = load_configs([write(tmp_path, {"metrics": {
+            "defaults": {"accuracy": {"enabled": True}},
+            "per_group": {"temporal_editing": {
+                "accuracy": {"statistics": ["std"]}}},
+        }})], ATTACKS, MODELS)[0]
+        assert [w.code for w in config.warnings if w.code == "W016"] == ["W016"]
+
 
 class TestMetricCodes:
     def test_E024_unknown_metric_suggests_closest(self, tmp_path):
@@ -674,6 +711,15 @@ class TestComparisonCodes:
         assert "E035" in found
         assert issue_for(error, "E035").suggestion == "median"
 
+    def test_E035_std_cannot_be_the_primary_statistic(self, tmp_path):
+        """A spread has no better end for the main table to rank toward."""
+        found, error = codes(write(tmp_path, {
+            "statistics": ["mean", "std"],
+            "comparison": {"primary_statistic": "std"},
+        }))
+        assert "E035" in found
+        assert "spread" in issue_for(error, "E035").message
+
     def test_E036_primary_statistic_is_never_computed(self, tmp_path):
         found, error = codes(write(tmp_path, {
             "statistics": ["mean"],
@@ -714,6 +760,40 @@ class TestComparisonCodes:
                               ATTACKS, MODELS)[0]
         assert [w.path for w in config.warnings if w.code == "W015"] == \
             ["metrics.per_group.audio_editing.accuracy.statistics"]
+
+    def test_W015_names_only_the_tables_that_rank(self, tmp_path):
+        """A std table is shown uncoloured, so no row is ranked in it."""
+        config = load_configs([write(tmp_path, {
+            **self.NARROWED,
+            "metrics": {
+                "defaults": {"accuracy": {"statistics": ["mean", "median"]}},
+                "per_group": {"audio_editing": {
+                    "accuracy": {"statistics": ["median", "std"]}}},
+            },
+        })], ATTACKS, MODELS)[0]
+
+        note = next(w for w in config.warnings if w.code == "W015")
+        assert "ranked only in the median table(s)" in note.message
+
+    def test_W015_covers_an_ungrouped_attack_when_every_attack_runs(
+            self, tmp_path):
+        """With no selection every discovered attack runs, and an ungrouped
+        one's rows sit under 'other'."""
+        path = write(tmp_path, {
+            "models": ["AudioSealModel", "PerthModel"],
+            "metrics": {
+                "defaults": {"accuracy": {"statistics": ["mean", "median"]}},
+                "per_group": {"other": {"accuracy": {"statistics": ["median"]}}},
+            },
+        })
+
+        def noted(registry):
+            config = load_configs([path], registry, MODELS)[0]
+            return [w.path for w in config.warnings if w.code == "W015"]
+
+        assert noted(ATTACKS) == []
+        assert noted({**ATTACKS, "UngroupedAttack": {"config": {}}}) == \
+            ["metrics.per_group.other.accuracy.statistics"]
 
     def test_no_W015_without_a_comparison(self, tmp_path):
         """A single model has no comparison table to leave rows out of."""
@@ -1213,11 +1293,11 @@ class TestValidatingWithoutAFile:
 
 
 class TestEfficiencyMetricsBelongToTheirOwnSection:
-    """Naming one under ``metrics`` used to be accepted and then ignored.
+    """Naming one under ``metrics`` is an error, not a flag that does nothing.
 
-    They are in the canonical metric order, so the metrics block took
+    They are in the canonical metric order, so the metrics block would take
     them without complaint -- but ``is_enabled`` reads them from the
-    efficiency section, so the flag did nothing.
+    efficiency section, so the flag would have no effect.
     """
 
     def test_E043_efficiency_metric_in_the_metrics_block(self, tmp_path):
@@ -1331,11 +1411,11 @@ class TestABareAttackNameAndItsDefaultVersionAreOneTarget:
 
 
 class TestDefiningAVersionIgnoresDocumentationKeys:
-    """W010 counted ``_``-prefixed comment keys as unset parameters.
+    """W010 does not count ``_``-prefixed comment keys as unset parameters.
 
-    A plugin whose config.json carries one could then never have a
-    version defined for it: every parameter was given and the entry was
-    still skipped as partial.
+    Counted, a plugin whose config.json carries one could never have a
+    version defined for it: every parameter given, and the entry still
+    skipped as partial.
     """
 
     DOCUMENTED = {"Codec2VocoderAttack": {

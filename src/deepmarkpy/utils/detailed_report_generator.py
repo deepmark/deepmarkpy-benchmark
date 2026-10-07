@@ -13,12 +13,6 @@ order it listed them.
 
 Every metric table carries a "No Attack (watermark only)" baseline row,
 so a value is read against what embedding alone already cost.
-
-Two figures per section carry what the tables cannot. This report
-aggregates from the raw per-file results, so it is the only one that
-still holds the distributions: a box plot shows the spread of per-file
-accuracy behind each mean, and a bar chart puts the section's leading
-quality metric against that same no-attack baseline.
 """
 
 import logging
@@ -26,7 +20,6 @@ import os
 
 import numpy as np
 
-from deepmarkpy.utils import report_charts
 from deepmarkpy.utils.attack_groups import (
     GROUP_ORDER,
     OTHER_GROUP_KEY,
@@ -36,12 +29,12 @@ from deepmarkpy.utils.attack_groups import (
     ATTACK_SUBGROUPS,
 )
 from deepmarkpy.utils.latex_helpers import (
+    MetricCaveats,
     build_longtable,
     compile_latex,
     container_section,
     display_attack_name,
     duration_label_tex,
-    figure_block,
     format_emr_cell,
     format_metric_cell,
     make_preamble,
@@ -52,7 +45,6 @@ from deepmarkpy.utils.latex_helpers import (
 )
 from deepmarkpy.utils.metric_resolver import (
     INTELLIGIBILITY_METRICS,
-    LOWER_IS_BETTER_METRICS,
     PER_FILE_EFFICIENCY_METRICS,
     MetricResolver,
     NISQA_METRICS,
@@ -217,12 +209,6 @@ class DetailedReportGenerator:
         for attack_name, data in attack_data.items():
             entry = {
                 "accuracy": _statistics(data["accuracy"], zero_bit=is_zero_bit),
-                # Kept alongside the statistics because a box plot needs the
-                # distribution itself, and this report is the only one that
-                # still holds the per-file values.
-                "accuracy_values": [
-                    float(v) for v in data["accuracy"] if v is not None
-                ],
                 "metrics": {
                     m: _statistics(data["metrics"][m], metric=m) for m in metrics
                 },
@@ -363,6 +349,7 @@ class DetailedReportGenerator:
             rows.append("    " + " & ".join(cells) + " \\\\")
             rows.append("    \\midrule")
 
+        caveats = MetricCaveats()
         for attack in available:
             data = aggregated["attacks"][attack]["metrics"].get(metric) or {}
             cells = [self._display_name(attack)]
@@ -371,9 +358,16 @@ class DetailedReportGenerator:
                 if value is None:
                     cells.append("N/A")
                     continue
-                cells.append(format_metric_cell(metric, value))
+                cell = format_metric_cell(metric, value)
+                # Once per row: the attack makes the metric unreadable,
+                # not one statistic of it.
+                if statistic == statistics[0]:
+                    cell += caveats.mark(attack, metric)
+                cells.append(cell)
             rows.append("    " + " & ".join(cells) + " \\\\")
 
+        if caveats.any_flagged:
+            caption += " " + caveats.footnote().strip()
         return build_longtable(
             "l" + "c" * len(statistics), " & ".join(headers), rows,
             caption, label,
@@ -411,6 +405,7 @@ class DetailedReportGenerator:
             )
             rows.append("    \\midrule")
 
+        caveats = MetricCaveats()
         for attack in available:
             attack_metrics = aggregated["attacks"][attack]["metrics"]
             cells = [self._display_name(attack)]
@@ -420,9 +415,12 @@ class DetailedReportGenerator:
                 if value is None:
                     cells.append("N/A")
                     continue
-                cells.append(format_metric_cell(metric, value))
+                cells.append(format_metric_cell(metric, value)
+                             + caveats.mark(attack, metric))
             rows.append("    " + " & ".join(cells) + " \\\\")
 
+        if caveats.any_flagged:
+            caption += " " + caveats.footnote().strip()
         return build_longtable(
             "l" + "c" * len(metrics), " & ".join(headers), rows, caption, label,
         )
@@ -534,21 +532,11 @@ class DetailedReportGenerator:
         )
 
     def _metric_tables(self, aggregated, attacks, group_key, label_text,
-                       label_key, figure_for=None):
-        """Every metric table for one group or subgroup.
-
-        ``figure_for`` is ``(metric, latex)``: the block is emitted right
-        after that metric's table, because a figure of one metric read
-        after a table of another is a figure the reader has to re-anchor.
-        A metric shown only as a column of the compact table gets its
-        figure after that table instead.
-        """
+                       label_key):
+        """Every metric table for one group or subgroup."""
         available = sorted(a for a in attacks if a in aggregated["attacks"])
         if not available:
             return "", []
-
-        figure_metric, figure = figure_for or (None, "")
-        figure_placed = False
 
         blocks = []
         silent = []
@@ -583,216 +571,16 @@ class DetailedReportGenerator:
                     f"tab:{section_key}_{label_key}_{metric}",
                 )
                 if table:
-                    if metric == figure_metric:
-                        table += "\n\n" + figure
-                        figure_placed = True
                     blocks.append(table)
 
-            if single and figure and not figure_placed \
-                    and figure_metric in single:
-                figure_placed = True
-                blocks.append(self._compact_metric_table(
-                    aggregated, available, single, group_key,
-                    f"{section_title} --- {label_text}.",
-                    f"tab:{section_key}_{label_key}",
-                ) + "\n\n" + figure)
-            elif single:
+            if single:
                 blocks.append(self._compact_metric_table(
                     aggregated, available, single, group_key,
                     f"{section_title} --- {label_text}.",
                     f"tab:{section_key}_{label_key}",
                 ))
 
-        body = "\n\n".join(blocks)
-        if figure and not figure_placed:
-            body += "\n\n" + figure
-        return body, silent
-
-    # ------------------------------------------------------------------
-    # Figures
-    # ------------------------------------------------------------------
-
-
-    def _distribution_figure(self, aggregated, attacks, label_text, label_key):
-        """How each attack's files split by outcome.
-
-        This report aggregates from the raw per-file results, so it is the
-        only one that can say what is behind a mean: every file degraded a
-        little, or half of them destroyed. Counting files into outcome
-        bands answers that for a graded score and keeps working for a
-        zero-bit detector, whose per-file score is only ever 0 or 100.
-        """
-        is_zero_bit = bool(aggregated.get("is_zero_bit"))
-        distributions = {
-            self._display_name(attack): aggregated["attacks"][attack].get(
-                "accuracy_values", []
-            )
-            for attack in attacks if attack in aggregated["attacks"]
-        }
-        filename = f"accuracy_spread_{label_key}.png"
-        drawn = report_charts.per_file_outcome_bars(
-            distributions, os.path.join(self.report_dir, filename),
-            title=f"Per-file outcome --- {label_text}",
-            chance_floor=0.0 if is_zero_bit else 50.0,
-            is_zero_bit=is_zero_bit,
-        )
-        if not drawn:
-            return ""
-        reading = (
-            "each file either yielded a detection or did not"
-            if is_zero_bit else
-            "a file is bit-exact, still above the random-guess floor, or at "
-            "or below it"
-        )
-        return figure_block(
-            filename,
-            f"Share of files by detection outcome for {label_text.lower()}, "
-            f"worst first --- {reading}. Numbers inside the bars are file "
-            f"counts. Two attacks with the same mean can split very "
-            f"differently here.",
-            f"fig:spread_{label_key}",
-        )
-
-    # The remaining figures are the benchmark report's, drawn from this
-    # report's own aggregate so a section shows the same three views of its
-    # attacks: how they rank, how a ladder degrades, and what the watermark
-    # cost in audio quality.
-
-    def _accuracy_of(self, aggregated, attack, group_key):
-        """An attack's headline accuracy, in the statistic its group configured."""
-        statistics = self.resolver.statistics_for(group_key, "accuracy")
-        statistic = next((s for s in statistics if s != "std"), "mean")
-        value = (aggregated["attacks"][attack].get("accuracy") or {}).get(statistic)
-        return None if value is None else float(value)
-
-    def _chance_floor(self, aggregated):
-        return 0.0 if aggregated.get("is_zero_bit") else 50.0
-
-    def _ranking_figure(self, aggregated, attacks, group_key, label_text,
-                        label_key):
-        """The accuracy table above, ranked worst-first and coloured by tier."""
-        available = [a for a in attacks if a in aggregated["attacks"]]
-        if len(available) < 3:
-            # With one or two bars the table above already reads as a
-            # ranking, and the figure only repeats it.
-            return ""
-
-        values = {}
-        for attack in available:
-            score = self._accuracy_of(aggregated, attack, group_key)
-            if score is not None:
-                values[self._display_name(attack)] = score
-        if len(values) < 3:
-            return ""
-
-        statistics = self.resolver.statistics_for(group_key, "accuracy")
-        statistic = next((s for s in statistics if s != "std"), "mean")
-        filename = f"ranking_{label_key}.png"
-        drawn = report_charts.accuracy_ranking(
-            values, os.path.join(self.report_dir, filename),
-            statistic_label=stat_header(statistic),
-            chance_floor=self._chance_floor(aggregated),
-            title=f"{label_text} ranked by accuracy "
-                  f"({stat_header(statistic)})",
-        )
-        if not drawn:
-            return ""
-        return figure_block(
-            filename,
-            f"Attacks in {label_text.lower()} ranked by detection accuracy "
-            f"({stat_header(statistic).lower()}), worst first. Bar colour is "
-            f"the robustness tier; the dashed line is what a failed detection "
-            f"already scores.",
-            f"fig:ranking_{label_key}",
-        )
-
-    def _strength_figure(self, aggregated, attacks, group_key, label_key):
-        """Accuracy across the versions of this section's ladder attacks."""
-        available = [a for a in attacks if a in aggregated["attacks"]]
-        series = report_charts.version_series(
-            available,
-            lambda name: self._accuracy_of(aggregated, name, group_key),
-        )
-        if not series:
-            return ""
-
-        statistics = self.resolver.statistics_for(group_key, "accuracy")
-        statistic = next((s for s in statistics if s != "std"), "mean")
-        filename = f"strength_{label_key}.png"
-        drawn = report_charts.attack_strength_curves(
-            series, os.path.join(self.report_dir, filename),
-            statistic_label=stat_header(statistic),
-            chance_floor=self._chance_floor(aggregated),
-        )
-        if not drawn:
-            return ""
-        return figure_block(
-            filename,
-            "Detection accuracy across the configured versions of the same "
-            "attack, in the order the configuration declares them. The point "
-            "where a curve crosses the chance line is the strength at which "
-            "the watermark stops surviving.",
-            f"fig:strength_{label_key}",
-        )
-
-    def _scatter_figure(self, aggregated, attacks, group_key, label_key):
-        """This section's accuracy against the audio quality it cost.
-
-        Which quality metric this is comes from the configuration, not from
-        a constant: the first of a perceptual-first preference order that
-        the group enabled and that produced values.
-
-        Returns ``(metric, latex)`` so the caller can place the figure
-        under the table for *that* metric.
-        """
-        preference = ("visqol", "pesq", "nisqa_mos", "stoi", "mcd",
-                      "si_sdr", "psnr")
-        enabled = self.resolver.signal_metrics_for_group(group_key)
-        available = [a for a in attacks if a in aggregated["attacks"]]
-
-        for metric in preference:
-            if metric not in enabled:
-                continue
-            statistics = self.resolver.statistics_for(group_key, metric)
-            if not statistics:
-                continue
-            statistic = statistics[0]
-
-            points = []
-            for attack in available:
-                quality = (
-                    aggregated["attacks"][attack]["metrics"].get(metric) or {}
-                ).get(statistic)
-                points.append((
-                    self._display_name(attack), quality,
-                    self._accuracy_of(aggregated, attack, group_key),
-                ))
-            if not any(q is not None for _, q, _ in points):
-                continue
-
-
-            higher_is_better = metric not in LOWER_IS_BETTER_METRICS
-            filename = f"scatter_{metric}_{label_key}.png"
-            drawn = report_charts.robustness_quality_scatter(
-                points, os.path.join(self.report_dir, filename),
-                metric_label=report_charts.direction_hint(
-                    metric_label(metric), higher_is_better,
-                ),
-                higher_is_better=higher_is_better,
-                chance_floor=self._chance_floor(aggregated),
-            )
-            if not drawn:
-                return None, ""
-            return metric, figure_block(
-                filename,
-                f"Detection accuracy against {metric_label(metric)} of the "
-                f"attacked audio, for the attacks tabled above. An attack in "
-                f"the shaded corner removed the watermark while leaving the "
-                f"recording usable, which is the case that matters; one in "
-                f"the opposite corner paid for it with the audio.",
-                f"fig:scatter_{metric}_{label_key}",
-            )
-        return None, ""
+        return "\n\n".join(blocks), silent
 
     # ------------------------------------------------------------------
     # Section builders
@@ -818,17 +606,6 @@ class DetailedReportGenerator:
             subject=f"{label_text}.",
         )
         section += "\n\n"
-        # The three views of the accuracy table above, then the per-file
-        # split behind it.
-        section += self._ranking_figure(
-            aggregated, available, group_key, label_text, label_key,
-        )
-        section += self._strength_figure(
-            aggregated, available, group_key, label_key,
-        )
-        section += self._distribution_figure(
-            aggregated, available, label_text, label_key,
-        )
 
         subgroups = subgroups_of(group_key)
         if subgroups:
@@ -845,9 +622,6 @@ class DetailedReportGenerator:
 
         body, silent = self._metric_tables(
             aggregated, available, group_key, label_text, label_key,
-            figure_for=self._scatter_figure(
-                aggregated, available, group_key, label_key,
-            ),
         )
         section += body
         section += _silent_note(silent)
@@ -879,9 +653,6 @@ class DetailedReportGenerator:
             body, silent = self._metric_tables(
                 aggregated, members, subgroup, definition["label"],
                 f"{label_key}_{subgroup}",
-                figure_for=self._scatter_figure(
-                    aggregated, members, subgroup, f"{label_key}_{subgroup}",
-                ),
             )
             if body:
                 sections += body + "\n\n"
@@ -910,9 +681,8 @@ class DetailedReportGenerator:
         """Per-group sections, in the taxonomy's order.
 
         ``label_suffix`` distinguishes one duration part from another: the
-        parts repeat the same groups, so without it every part's figures
-        would be written to the same filenames and only the last would
-        survive.
+        parts repeat the same groups, so without it every part would emit
+        the same ``\\label`` names.
         """
         grouped = group_attacks(list(aggregated["attacks"]))
         ordered = [k for k in GROUP_ORDER if k in grouped]

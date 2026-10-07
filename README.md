@@ -241,7 +241,7 @@ names it rather than quietly measuring a smaller set.
 | `--wav_files_dir DIR` | Directory of `.wav`/`.mp3` files. Overrides `general.wav_files_dir`; required if neither sets it |
 | `--report_dir DIR` | Where reports and saved audio go (default `./report`). **Its contents are deleted at the start of every run**, so do not point it at a directory holding anything else |
 | `--seed N` | Seed the host-side RNGs so a run can be repeated. Off by default, which keeps the watermark payload and attack noise fresh per run. Does not reach the diffusion, VAE, speech_enhancement_2 or network_transmission services, which stay stochastic server-side |
-| `--save_audio` | Write watermarked and attacked audio to `<report_dir>/audio/` |
+| `--save_audio` | Write watermarked and attacked audio to `<report_dir>/audio/`, or to `<report_dir>/audio/<mode>/` when one invocation runs several modes |
 | `--verbose` | Per-file and per-attack progress logging |
 | `--plugins_dir DIR` | Load third-party plugins from this directory (also `DEEPMARK_PLUGINS_DIR`) |
 | `--version` | Print the installed version and exit |
@@ -271,17 +271,18 @@ one is left ungrouped.
 Metrics that compare the two signals sample by sample (PSNR, SI-SDR, STOI,
 MCD, NCM) report an attack's timing shift as if it were quality loss, and the
 benchmark does not resynchronize — a desynchronization attack is meant to move
-the time axis. Which is why the shipped default disables them for the
-`desynchronization` group, leaving MCD, ViSQOL and the reference-free NISQA
-dimensions. Enable them there if you want them, in which case they are printed
-like any other metric: a metric appears in a report because the config asked
-for it, and the report adds no commentary of its own about whether the value
-is worth reading.
+the time axis. By default PESQ, ViSQOL and STOI are measured for every attack,
+as they are when `calculate_quality_metrics` is false, and the
+`desynchronization` group adds MCD and the reference-free NISQA dimensions;
+PSNR, SI-SDR, SII and NCM are off there. A sample-aligned value under a
+desynchronization attack is still reported, but marked with a dagger and a
+footnote saying why: read it as evidence the attack shifted the signal, not
+as a quality score. `SignInversionAttack`'s SI-SDR is marked the same way,
+because SI-SDR is scale-invariant and cannot see a polarity flip.
 
-The same choice is available per group for every metric. `SignInversionAttack`
-is the other classic case: SI-SDR is scale-invariant, so a polarity flip leaves
-its score exactly at the no-attack value even though detection collapses.
-Disable `si_sdr` for `audio_distortion` if that reading is unhelpful.
+Every metric can be switched off per group: disable `stoi` and `mcd` for
+`desynchronization`, or `si_sdr` for `audio_distortion`, to drop the marked
+values instead.
 
 **Codec2 Vocoder Attack:**
 
@@ -397,7 +398,7 @@ Set it `false` for a fast robustness-only pass.
 #### Per-group metrics and statistics
 
 Which metrics make sense depends on the attack family. A time-stretch
-moves the time axis, so PESQ and STOI report the shift rather than a
+moves the time axis, so PSNR and SI-SDR report the shift rather than a
 quality change; a length-changing crop cannot be compared to the
 original at all. Those exclusions used to be hardcoded in the report
 generators, where no config could reach them. They are now yours to set.
@@ -668,14 +669,15 @@ Results are saved to `report/detection_reliability.json` and a dedicated `detect
 > **Note:** Only models that implement `is_watermarked()` support this mode.
 > Each model defines its own detection logic — zero-bit models check the
 > binary output directly, while confidence-based models compare against a
-> threshold. If a model does not implement this method, a clear error is
-> raised at runtime.
+> threshold. A model without it is refused by validation (`E044`) before
+> anything runs.
 
 ### 5. Save Audio (Optional)
 
 Use `--save_audio` (or `"save_audio": true` under `general`) to write
 intermediate audio files to disk for manual inspection. Files are saved
-to `<report_dir>/audio/`.
+to `<report_dir>/audio/`, or to `<report_dir>/audio/<mode>/` when one
+invocation runs several modes.
 
 ```bash
 deepmark-benchmark --config configs/detection_reliability.json \

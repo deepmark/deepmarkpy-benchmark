@@ -89,7 +89,7 @@
         "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
       },
 
-      "_desynchronization": "The time axis moves, so only mcd, visqol and the reference-free NISQA survive; the sample-aligned ones would report the shift as damage.",
+      "_desynchronization": "The time axis moves. pesq, visqol and stoi are on, as in every family, with mcd and the reference-free NISQA; psnr, si_sdr, sii and ncm are off. stoi and mcd compare samples by index, so reports mark them with a dagger and a footnote: here they measure the shift, not quality.",
       "desynchronization": {
         "pesq": { "enabled": true }, "mcd": { "enabled": true }, "visqol": { "enabled": true },
         "stoi": { "enabled": true },

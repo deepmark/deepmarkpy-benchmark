@@ -26,8 +26,8 @@ import numpy as np
 import soundfile as sf
 
 from deepmarkpy.benchmark import (
-    audio_filename_label,
     apply_attack,
+    audio_filename_label,
     expand_attacks,
     instantiate_attack,
     require_attacks_available,
@@ -384,10 +384,11 @@ def run_detection_reliability(
                 )
                 continue
 
+            label = audio_filename_label(attack_name)
             if save_audio and output_dir:
                 base = os.path.splitext(os.path.basename(filepath))[0]
                 sf.write(
-                    os.path.join(output_dir, f"{base}_{audio_filename_label(attack_name)}_clean.wav"),
+                    os.path.join(output_dir, f"{base}_{label}_clean.wav"),
                     attacked_clean, sr,
                 )
 
@@ -411,7 +412,7 @@ def run_detection_reliability(
             if save_audio and output_dir:
                 base = os.path.splitext(os.path.basename(filepath))[0]
                 sf.write(
-                    os.path.join(output_dir, f"{base}_{audio_filename_label(attack_name)}.wav"),
+                    os.path.join(output_dir, f"{base}_{label}.wav"),
                     attacked_wm, sr,
                 )
 

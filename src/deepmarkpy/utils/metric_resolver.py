@@ -111,8 +111,7 @@ PER_MODEL_EFFICIENCY_METRICS = frozenset({"container_footprint"})
 LOWER_IS_BETTER_EFFICIENCY = frozenset(EFFICIENCY_METRICS)
 
 # Metrics a lower value is better on. Every other metric here improves as
-# it rises. Tables print the number either way; a chart has to know which
-# end of the axis is the good one before it can sort or shade anything.
+# it rises, so ``worst_case_of`` reads these at their maximum.
 LOWER_IS_BETTER_METRICS = frozenset({"mcd", "ber"}) | LOWER_IS_BETTER_EFFICIENCY
 
 # Enabled regardless of the per-group matrix when quality metrics are off.
@@ -188,10 +187,11 @@ class MetricResolver:
         """Build the resolver the shipped config templates encode.
 
         Reproduces the metric matrix declared by ``ATTACK_GROUPS`` and
-        ``ATTACK_SUBGROUPS``, so a run with no ``metrics`` block in its
-        config behaves the same as one using an unedited ``--init`` file.
-        This is also what report generators fall back to when constructed
-        without a config, which keeps them usable as a library.
+        ``ATTACK_SUBGROUPS``, with PESQ, ViSQOL and STOI added to every
+        top-level group, so a run with no ``metrics`` block in its config
+        behaves the same as one using an unedited ``--init`` file. This is
+        also what report generators fall back to when constructed without a
+        config, which keeps them usable as a library.
         """
         defaults = {m: {"enabled": True} for m in ROBUSTNESS_METRICS}
         # Everything on by default; the per-group sections below carry the
@@ -204,8 +204,9 @@ class MetricResolver:
         for key in list(ATTACK_GROUPS) + list(ATTACK_SUBGROUPS):
             enabled = cls._declared_metrics(key)
             if key in ATTACK_GROUPS:
-                # The trio has always been computed for every attack, so
-                # turning quality metrics on must not take it away.
+                # PESQ, ViSQOL and STOI are computed for every attack when
+                # quality metrics are off, so turning them on must not take
+                # the trio away.
                 enabled |= frozenset(ALWAYS_ON_METRICS)
             per_group[key] = {
                 metric: {"enabled": metric in enabled}

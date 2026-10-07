@@ -108,6 +108,8 @@ class RunSettings:
     seed: Optional[int]
     verbose: bool
     save_audio: bool
+    # Whether this invocation runs more than one mode.
+    several_modes: bool = False
 
 
 def _resolve_settings(args, config) -> RunSettings:
@@ -154,7 +156,7 @@ def _build_parser():
         type=str,
         nargs="+",
         # Repeating the flag adds files rather than replacing the earlier
-        # ones, which silently skipped a requested mode.
+        # ones, so every requested mode runs.
         action="extend",
         default=None,
         metavar="PATH",
@@ -229,8 +231,9 @@ def _build_parser():
         action="store_true",
         default=None,
         help=(
-            "Save watermarked and attacked audio to <report_dir>/audio/ for "
-            "manual inspection. Overrides general.save_audio."
+            "Save watermarked and attacked audio for manual inspection: to "
+            "<report_dir>/audio/, or to <report_dir>/audio/<mode>/ when one "
+            "invocation runs several modes. Overrides general.save_audio."
         ),
     )
     parser.add_argument(
@@ -343,7 +346,8 @@ def _peek_plugins_dir(paths):
     found = {}
     for path in paths:
         try:
-            with open(path, encoding="utf-8") as fh:
+            # As validation reads it, so a byte order mark is accepted.
+            with open(path, encoding="utf-8-sig") as fh:
                 raw = json.load(fh)
             value = (raw.get("general") or {}).get("plugins_dir")
         except (OSError, json.JSONDecodeError, AttributeError):
@@ -559,8 +563,7 @@ def main(argv=None):
         plugins_dir = args.plugins_dir or _peek_plugins_dir(args.config)
         benchmark = Benchmark(external_plugins_dir=plugins_dir)
 
-        # Second pass, now that names can be checked against what was
-        # discovered.
+        # Second pass, checking names against what was discovered.
         try:
             configs = load_configs(args.config, benchmark.attacks,
                                    benchmark.models)
@@ -571,6 +574,7 @@ def main(argv=None):
     plans = []
     for config in configs:
         settings = _resolve_settings(args, config)
+        settings.several_modes = len(configs) > 1
         # CLI overrides do not pass through config validation. Reject an
         # unusable NumPy seed before validation succeeds or output is cleared.
         if settings.seed is not None and not 0 <= settings.seed < 2**32:
@@ -633,6 +637,7 @@ def main(argv=None):
     # One shared report directory, cleared once. Each mode writes distinct
     # filenames into it, so running several in one invocation does not make
     # them overwrite each other -- but a *previous* run's output still goes.
+    # Saved audio goes in audio/, or in audio/<mode>/ when several modes run.
     for report_dir in dict.fromkeys(s.report_dir for _, s in plans):
         _clean_report_dir(report_dir)
 
@@ -1008,6 +1013,19 @@ def _duration_partitions(config, filepaths):
     return partitions
 
 
+def _saved_audio_dir(directory, config, settings):
+    """Where saved audio goes, or None when it is not saved.
+
+    ``<directory>/audio/``, with a folder per mode under it when the
+    invocation runs several modes.
+    """
+    if not settings.save_audio:
+        return None
+    if settings.several_modes:
+        return os.path.join(directory, "audio", config.mode)
+    return os.path.join(directory, "audio")
+
+
 # ---------------------------------------------------------------------------
 # Mode: no_attacks
 # ---------------------------------------------------------------------------
@@ -1028,13 +1046,10 @@ def run_no_attacks_mode(benchmark, filepaths, config, settings):
     all_results = {}
     for model_name in model_names:
         logger.info(f"Running no-attacks baseline for: {model_name}")
-        audio_dir = None
-        if settings.save_audio:
-            audio_dir = (
-                os.path.join(report_dir, model_name, "audio", config.mode)
-                if multi_model
-                else os.path.join(report_dir, "audio", config.mode)
-            )
+        audio_dir = _saved_audio_dir(
+            os.path.join(report_dir, model_name) if multi_model else report_dir,
+            config, settings,
+        )
         try:
             results = benchmark.run_no_attacks(
                 filepaths=filepaths,
@@ -1101,8 +1116,7 @@ def run_detection_reliability_mode(benchmark, filepaths, config, settings):
     # expand to "all".
     attack_types = config.selected_attack_specs() or []
 
-    audio_dir = (os.path.join(report_dir, "audio", config.mode)
-                 if settings.save_audio else None)
+    audio_dir = _saved_audio_dir(report_dir, config, settings)
 
     logger.info(
         f"Running detection-reliability for {model_name} on "
@@ -1250,13 +1264,12 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
     # Keep audio files in a dedicated subfolder so they don't clutter
     # the report directory next to .tex/.pdf/.json outputs.
     if settings.save_audio:
-        run_kwargs["output_dir"] = os.path.join(report_dir, "audio", config.mode)
+        run_kwargs["output_dir"] = _saved_audio_dir(report_dir, config, settings)
 
     results_path = os.path.join(report_dir, "benchmark_results.json")
 
-    # Rewrite the results file after every file rather than once at the end.
-    # A long run used to keep everything in memory until the last file
-    # finished, so interrupting it discarded all the work done so far.
+    # Rewrite the results file after every file rather than once at the end,
+    # so interrupting a long run keeps the work done so far.
     completed = {}
 
     def _persist(filepath, file_results):
@@ -1301,8 +1314,8 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
 
         # The comparative report needs one flat table over every file.
         # "Overall" is exactly that when the config asked for it; otherwise
-        # it is computed here. Falling back to the first bin, as this once
-        # did, silently dropped every file in the later bins.
+        # it is computed here, because any one bin leaves out the files of
+        # the others.
         if "Overall" in all_group_stats:
             stats = all_group_stats["Overall"]["stats"]
         else:
@@ -1325,8 +1338,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
     write_run_metadata(
         report_dir, settings, benchmark, [model_name],
         extra={
-            # The rate actually used, resolved from the model's config —
-            # previously this was only logged to stderr and then lost.
+            # The rate actually used, resolved from the model's config.
             "sampling_rate": (benchmark.models.get(model_name, {}).get("config") or {}).get(
                 "sampling_rate"
             ),

@@ -88,6 +88,10 @@ _GENERAL_KEYS = frozenset({
 
 _METRIC_ENTRY_KEYS = frozenset({"enabled", "statistics"})
 
+# Every statistic but std, which is a spread: the ones accuracy can be
+# reported and ranked at.
+_LEVEL_STATISTICS = tuple(s for s in ALL_STATISTICS if s != "std")
+
 _TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "config_templates")
 
@@ -570,6 +574,7 @@ class _Validator:
         )
         statistics = self._check_statistics()
         defaults, per_group = self._check_metrics(statistics, calculate)
+        self._check_accuracy_level(statistics, defaults, per_group)
         efficiency = self._check_efficiency(statistics)
         crop = self._check_crop()
         boundaries, include_overall = self._check_duration_groups()
@@ -628,7 +633,9 @@ class _Validator:
             )
             return False
         try:
-            with open(self.path, encoding="utf-8") as fh:
+            # utf-8-sig also reads the byte order mark PowerShell 5.1's
+            # 'Out-File -Encoding utf8' writes, which E002 suggests.
+            with open(self.path, encoding="utf-8-sig") as fh:
                 text = fh.read()
             raw = json.loads(text)
         except json.JSONDecodeError as exc:
@@ -639,8 +646,9 @@ class _Validator:
             )
             return False
         except UnicodeDecodeError as exc:
-            # A ValueError, so neither clause around it caught it, and the
-            # user got a traceback instead of a coded error.
+            # UnicodeDecodeError is a ValueError but neither a
+            # JSONDecodeError nor an OSError, so it needs its own clause to
+            # become a coded error.
             self.error(
                 "E002", "--config",
                 f"file is not UTF-8 text ({exc.reason} at byte {exc.start}). "
@@ -1072,8 +1080,8 @@ class _Validator:
 
             # A version the plugin does not declare. Only real parameters
             # count: a config.json may carry ``_``-prefixed documentation
-            # keys, and demanding those be "set" made the version
-            # impossible to define at all.
+            # keys, and demanding those be "set" would make the version
+            # impossible to define.
             real = _real_keys(defaults or {})
             missing = [key for key in real if key not in resolved]
             if missing:
@@ -1306,10 +1314,8 @@ class _Validator:
                         "W016", f"{path}.{metric}",
                         f"is not used by any table: '{group_key}' is a report "
                         f"subsection of '{parent}', and accuracy, BER and EMR "
-                        f"are computed and tabled for '{parent}' as a whole "
-                        f"(a subsection's accuracy statistics only choose what "
-                        f"its quality scatter plot draws). Set it under "
-                        f"metrics.per_group.{parent} instead.",
+                        f"are computed and tabled for '{parent}' as a whole. "
+                        f"Set it under metrics.per_group.{parent} instead.",
                     )
             if resolved:
                 clean[group_key] = resolved
@@ -1409,6 +1415,36 @@ class _Validator:
             if resolved:
                 clean[metric] = resolved
         return clean
+
+    def _check_accuracy_level(self, statistics, defaults, per_group):
+        """Refuse an accuracy statistics list that holds only ``std``.
+
+        Reports read accuracy at a level statistic, and given only the
+        spread the basic report prints it as the accuracy. Checks each list
+        accuracy reads: a group's own, the defaults', and the top-level one
+        when the defaults set none. No table reads a subsection's (W016).
+        """
+        def listed(section):
+            return (section.get("accuracy") or {}).get("statistics")
+
+        lists = [
+            (f"metrics.per_group.{group_key}.accuracy.statistics", listed(entry))
+            for group_key, entry in per_group.items()
+            if group_parent(group_key) is None
+        ]
+        lists.append(("metrics.defaults.accuracy.statistics", listed(defaults)))
+        if listed(defaults) is None:
+            lists.append(("statistics", statistics))
+
+        for path, configured in lists:
+            if configured == ["std"]:
+                self.error(
+                    "E046", path,
+                    f"accuracy reads this list, and std is a spread, not a "
+                    f"level: list at least one of "
+                    f"{', '.join(_LEVEL_STATISTICS)}.",
+                    value=configured,
+                )
 
     # -- crop, duration, comparison ------------------------------------
 
@@ -1581,15 +1617,24 @@ class _Validator:
             return next((s for s in configured if s != "std"), "mean")
 
         primary = block["primary_statistic"]
+        if primary == "std":
+            self.error(
+                "E035", "comparison.primary_statistic",
+                f"std is a spread, not a level, so the main comparison table "
+                f"cannot rank by it. Pick one of: "
+                f"{', '.join(_LEVEL_STATISTICS)}.",
+                value=primary,
+            )
+            return "mean"
         if not isinstance(primary, str) or primary not in ALL_STATISTICS:
             self.error(
                 "E035" if isinstance(primary, str) else "E009",
                 "comparison.primary_statistic",
-                f"must be one of: {', '.join(ALL_STATISTICS)}. It selects the "
-                f"statistic shown in the colour-ranked multi-model table; the "
-                f"others each get their own table below it.",
+                f"must be one of: {', '.join(_LEVEL_STATISTICS)}. It selects "
+                f"the statistic shown in the colour-ranked multi-model table; "
+                f"the others each get their own table below it.",
                 value=primary,
-                suggestion=_suggest(primary, ALL_STATISTICS),
+                suggestion=_suggest(primary, _LEVEL_STATISTICS),
             )
             return configured[0] if configured else "mean"
 
@@ -1618,22 +1663,32 @@ class _Validator:
         """
         if "comparison" not in MODE_KEYS[self.mode] or len(models) < 2:
             return
-        from deepmarkpy.utils.attack_groups import OTHER_GROUP_KEY
+        from deepmarkpy.utils.attack_groups import (
+            OTHER_GROUP_KEY, get_group_for_attack,
+        )
 
         reachable = self._groups_in_run(groups, attack_list)
         candidates = [g for g in ATTACK_GROUPS
                       if reachable is None or g in reachable]
-        if reachable is not None and OTHER_GROUP_KEY in reachable:
+        if reachable is None:
+            # Every discovered attack runs, an ungrouped one included.
+            ungrouped = any(get_group_for_attack(name) is None
+                            for name in self.attacks_registry or ())
+        else:
+            ungrouped = OTHER_GROUP_KEY in reachable
+        if ungrouped:
             candidates.append(OTHER_GROUP_KEY)
         for group_key in candidates:
             statistics = resolver.statistics_for(group_key, "accuracy")
             if primary not in statistics:
+                # A std table is shown uncoloured, so it ranks nothing.
+                ranked = [s for s in statistics if s != "std"]
                 self.warn(
                     "W015", f"metrics.per_group.{group_key}.accuracy.statistics",
                     f"leaves out '{primary}', the statistic the main "
                     f"comparison table ranks, so this group's rows read N/A "
                     f"there and are ranked only in the "
-                    f"{', '.join(statistics)} table(s) below it. Add "
+                    f"{', '.join(ranked)} table(s) below it. Add "
                     f"'{primary}' to this list if they should be ranked in "
                     f"the main table.",
                 )

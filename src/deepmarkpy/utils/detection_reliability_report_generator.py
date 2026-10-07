@@ -15,12 +15,6 @@ configurable group like any other.
 
 False positives and false negatives are counts over attempts, not
 distributions, so no statistic applies to them and none is configurable.
-
-Each attack section carries a figure putting both error rates side by
-side against the no-attack rates. The two failures trade off against each
-other, and the point of the mode is whether an attack moves the detector
-off the operating point it already had -- which a two-column table makes
-the reader reconstruct.
 """
 
 from __future__ import annotations
@@ -29,7 +23,6 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from deepmarkpy.utils import report_charts
 from deepmarkpy.utils.attack_groups import (
     GROUP_ORDER,
     OTHER_GROUP_KEY,
@@ -37,12 +30,12 @@ from deepmarkpy.utils.attack_groups import (
     group_label,
 )
 from deepmarkpy.utils.latex_helpers import (
+    MetricCaveats,
     build_longtable,
     compile_latex,
     container_section,
     display_attack_name,
     duration_label_tex,
-    figure_block,
     format_emr_cell,
     format_metric_cell,
     make_preamble,
@@ -321,6 +314,7 @@ def _single_metric_table(attacks, present, metric, statistics, caption, label):
     """One metric, one column per configured statistic."""
     headers = ["Attack"] + [stat_header(s) for s in statistics]
     rows = []
+    caveats = MetricCaveats()
     for name in present:
         entry = (attacks[name].get("metrics") or {}).get(metric)
         cells = [display_attack_name(name)]
@@ -329,9 +323,16 @@ def _single_metric_table(attacks, present, metric, statistics, caption, label):
             if value is None:
                 cells.append("N/A")
                 continue
-            cells.append(format_metric_cell(metric, value))
+            cell = format_metric_cell(metric, value)
+            # Once per row: the attack makes the metric unreadable, not one
+            # statistic of it.
+            if statistic == statistics[0]:
+                cell += caveats.mark(name, metric)
+            cells.append(cell)
         rows.append("    " + " & ".join(cells) + " \\\\")
 
+    if caveats.any_flagged:
+        caption += " " + caveats.footnote().strip()
     return build_longtable(
         "l" + "c" * len(statistics), " & ".join(headers), rows, caption, label,
     )
@@ -349,6 +350,7 @@ def _compact_metric_table(attacks, present, metrics, group_key, resolver,
         headers.append(header)
 
     rows = []
+    caveats = MetricCaveats()
     for name in present:
         entry_metrics = attacks[name].get("metrics") or {}
         cells = [display_attack_name(name)]
@@ -364,9 +366,12 @@ def _compact_metric_table(attacks, present, metrics, group_key, resolver,
             if value is None:
                 cells.append("N/A")
                 continue
-            cells.append(format_metric_cell(metric, value))
+            cells.append(format_metric_cell(metric, value)
+                         + caveats.mark(name, metric))
         rows.append("    " + " & ".join(cells) + " \\\\")
 
+    if caveats.any_flagged:
+        caption += " " + caveats.footnote().strip()
     return build_longtable(
         "l" + "c" * len(metrics), " & ".join(headers), rows, caption, label,
     )
@@ -387,102 +392,6 @@ def _silent_note(metrics):
 # ---------------------------------------------------------------------------
 # Section builders
 # ---------------------------------------------------------------------------
-
-def _error_rate_figure(attacks, attack_names, n_files, label_text, label_key,
-                       report_dir, baseline) -> str:
-    """Both error rates per attack, against the rates before any attack.
-
-    This mode measures two failures that trade off against each other, and
-    a table asks the reader to hold both columns in their head while
-    scanning. Side by side, and against the no-attack line, the question
-    "did this attack move the detector, and in which direction" is one
-    look.
-    """
-    if report_dir is None:
-        return ""
-
-    rows = []
-    for name in attack_names:
-        data = attacks.get(name)
-        if not data:
-            continue
-        fp_n = int(data.get("false_positive_attempts", n_files) or 0)
-        fn_n = int(data.get("false_negative_attempts", n_files) or 0)
-        rows.append((
-            display_attack_name(name),
-            100.0 * int(data.get("false_positive_count", 0)) / fp_n if fp_n else None,
-            100.0 * int(data.get("false_negative_count", 0)) / fn_n if fn_n else None,
-        ))
-
-    filename = f"dr_error_rates_{label_key}.png"
-    drawn = report_charts.false_positive_negative_bars(
-        rows, os.path.join(report_dir, filename),
-        baseline_fp=baseline[0], baseline_fn=baseline[1],
-    )
-    if not drawn:
-        return ""
-
-    note = ""
-    if baseline[0] is not None or baseline[1] is not None:
-        note = (
-            " The dashed lines are the same two rates with no attack applied: "
-            "an attack matters insofar as it moves the detector off the "
-            "operating point it already had."
-        )
-    return figure_block(
-        filename,
-        f"Detector error rates --- {label_text}. A false negative is a "
-        f"watermark that was there and was missed; a false positive is one "
-        f"claimed on clean audio.{note}",
-        f"fig:dr_error_rates_{label_key}",
-    )
-
-
-def _baseline_rates(result: Dict[str, Any]):
-    """No-attack FP and FN as percentages, for the figure's reference lines."""
-    n = int(result.get("n_files", 0) or 0)
-    if n <= 0:
-        return (None, None)
-    no_attack = result.get("no_attack") or {}
-    return (
-        100.0 * int(no_attack.get("false_positive_count", 0)) / n,
-        100.0 * int(no_attack.get("false_negative_count", 0)) / n,
-    )
-
-
-def _accuracy_figure(attacks, attack_names, group_key, resolver, label_text,
-                     label_key, report_dir) -> str:
-    """The accuracy table above, ranked worst-first and coloured by tier."""
-    if report_dir is None or len(attack_names) < 3:
-        # With one or two bars the table already reads as a ranking.
-        return ""
-
-    statistics = resolver.statistics_for(group_key, "accuracy")
-    statistic = next((s for s in statistics if s != "std"), "mean")
-    values = {}
-    for name in attack_names:
-        value = attacks[name].get(f"accuracy_{statistic}")
-        if value is not None:
-            values[display_attack_name(name)] = float(value)
-    if len(values) < 3:
-        return ""
-
-    filename = f"dr_accuracy_{label_key}.png"
-    drawn = report_charts.accuracy_ranking(
-        values, os.path.join(report_dir, filename),
-        statistic_label=stat_header(statistic),
-        title=f"{label_text} ranked by accuracy ({stat_header(statistic)})",
-    )
-    if not drawn:
-        return ""
-    return figure_block(
-        filename,
-        f"Attacks in {label_text.lower()} ranked by detection accuracy "
-        f"({stat_header(statistic).lower()}), worst first. Bar colour is the "
-        f"robustness tier.",
-        f"fig:dr_accuracy_{label_key}",
-    )
-
 
 def _efficiency_tables(attacks, attack_names, group_key, resolver, label_text,
                        label_key) -> str:
@@ -574,8 +483,7 @@ def _embedding_cost_line(result, resolver) -> str:
 
 
 def _build_group_section(attacks, attack_names, group_key, label_text,
-                         n_files, resolver, report_dir=None, suffix="",
-                         baseline=(None, None)) -> str:
+                         n_files, resolver, suffix="") -> str:
     """Build a full section for one attack group."""
     present = [a for a in attack_names if a in attacks]
     if not present:
@@ -589,19 +497,12 @@ def _build_group_section(attacks, attack_names, group_key, label_text,
         label=f"tab:dr_fpfn_{label_key}",
     )
     section += "\n\n"
-    section += _error_rate_figure(
-        attacks, present, n_files, label_text, label_key, report_dir, baseline,
-    )
     section += _accuracy_table(
         attacks, present, group_key, resolver,
         caption=f"Detection accuracy statistics --- {label_text}.",
         label=f"tab:dr_acc_{label_key}",
     )
     section += "\n\n"
-    section += _accuracy_figure(
-        attacks, present, group_key, resolver, label_text, label_key,
-        report_dir,
-    )
     section += _metric_tables(
         attacks, present, group_key, resolver,
         caption=f"{label_text}.", label=f"tab:dr_{label_key}",
@@ -613,7 +514,6 @@ def _build_group_section(attacks, attack_names, group_key, label_text,
 
 
 def _build_sections(result: Dict[str, Any], resolver: MetricResolver,
-                    report_dir: Optional[str] = None,
                     suffix: str = "") -> List[str]:
     """Build report body sections from a result dict."""
     n_files = int(result.get("n_files", 0))
@@ -634,13 +534,11 @@ def _build_sections(result: Dict[str, Any], resolver: MetricResolver,
         if OTHER_GROUP_KEY in grouped:
             ordered.append(OTHER_GROUP_KEY)
 
-        rates = _baseline_rates(result)
         for group_key in ordered:
             section = _build_group_section(
                 attacks, grouped[group_key]["attacks"], group_key,
                 group_label(group_key, grouped[group_key]["label"]),
-                n_files, resolver, report_dir=report_dir, suffix=suffix,
-                baseline=rates,
+                n_files, resolver, suffix=suffix,
             )
             if section:
                 sections.append(section)
@@ -702,10 +600,10 @@ def generate_detection_reliability_report(
 
     if duration_partitions:
         sections = _build_grouped_dr_sections(
-            result, duration_partitions, resolver, report_dir,
+            result, duration_partitions, resolver,
         )
     else:
-        sections = _build_sections(result, resolver, report_dir)
+        sections = _build_sections(result, resolver)
 
     latex_content = (
         f"{preamble}\n\n" + abstract + "\n\n".join(sections)
@@ -726,7 +624,6 @@ def _build_grouped_dr_sections(
     result: Dict[str, Any],
     duration_partitions: List,
     resolver: MetricResolver,
-    report_dir: Optional[str] = None,
 ) -> List[str]:
     """Build per-duration-group sections for the detection reliability report.
 
@@ -756,7 +653,7 @@ def _build_grouped_dr_sections(
         sections.append(
             part_heading(safe_label, f"{len(group_per_file)} files")
             + "\n\n".join(_build_sections(
-                group_result, resolver, report_dir, suffix=f"_{slug}",
+                group_result, resolver, suffix=f"_{slug}",
             ))
         )
 

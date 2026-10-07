@@ -4,7 +4,6 @@ import logging
 import numpy as np
 import matplotlib.pyplot as plt
 
-from deepmarkpy.utils import report_charts
 from deepmarkpy.utils.latex_helpers import (
     build_longtable,
     compile_latex,
@@ -100,7 +99,7 @@ class ComparativeReportGenerator:
         return entry.get(f"accuracy_{statistic}")
 
     def _primary_value(self, entry, attack_name):
-        """The single number per attack the radar and the heatmap draw.
+        """The single number per attack the radar draws.
 
         Read in the statistic that attack's *own* group configured. The
         report-wide primary can be absent from the entry when a group
@@ -115,22 +114,6 @@ class ComparativeReportGenerator:
             if value is not None:
                 return float(value)
         return self._value(entry, "mean")
-
-    def _primary_label(self, all_stats):
-        """Axis label for the figures drawn over one number per attack.
-
-        Names the statistic only when every attack in the figure shares
-        one; groups configured differently have no single honest label.
-        """
-        statistics = {
-            next((s for s in self.resolver.statistics_for(
-                self.resolver.group_for_attack(attack), "accuracy",
-            ) if s != "std"), "mean")
-            for attack in self._attacks_in(all_stats)
-        }
-        if len(statistics) == 1:
-            return stat_header(statistics.pop())
-        return "per-group statistic"
 
     def _preamble(self, title, author):
         return make_preamble(
@@ -400,28 +383,6 @@ class ComparativeReportGenerator:
                            transform=legend_ax.transAxes,
                            verticalalignment="center")
 
-    def create_heatmap(self, all_stats, output_path):
-        """Draw the attack x model accuracy grid.
-
-        The radar is read through a legend of ``A1..An`` codes, which
-        works while there are a handful of attacks and stops working well
-        before the full set. The grid carries the same numbers, reads
-        directly, and keeps its shape as attacks are added -- so both are
-        drawn and the reader picks.
-        """
-        model_names, attacks = self.aggregate_stats(all_stats)
-        matrix = [
-            [self._primary_value(all_stats[m].get(attack), attack)
-             for m in model_names]
-            for attack in attacks
-        ]
-        return report_charts.accuracy_heatmap(
-            [self._display_name(a) for a in attacks],
-            [self._short_model_name(m) for m in model_names],
-            matrix, output_path,
-            statistic_label=self._primary_label(all_stats),
-        )
-
     def _draw_attack_legend(self, legend_ax, attacks, codes, n_models):
         """Draw the "Attack Legend" block below the model legend."""
         legend_entries = [
@@ -453,7 +414,7 @@ class ComparativeReportGenerator:
     # Full LaTeX report
     # ----------------------------------------------------------------
     def generate_latex_report(self, all_stats, include_radar=True,
-                             crop_before_attack=None, include_heatmap=False):
+                             crop_before_attack=None):
         """Generate complete comparative LaTeX document.
 
         The comparative report compares detection accuracy only. Per-
@@ -494,20 +455,9 @@ class ComparativeReportGenerator:
                 "configured for accuracy is tabled below, ranked the same way"
                 + (" -- except the standard deviation, a spread rather than "
                    "a level, which is left uncoloured"
-                   if "std" in statistics else "")
+                   if "std" in statistics[1:] else "")
                 + ".\n\n"
                 + "\n\n".join(blocks)
-            )
-
-        heatmap_figure = ""
-        if include_heatmap:
-            heatmap_figure = figure_block(
-                "accuracy_heatmap.png",
-                "Detection accuracy by attack and model. Read a row to "
-                "compare the models on one attack, a column to see one "
-                "model's profile across all of them. Grey cells are attacks "
-                "that model was not run on.",
-                "fig:comp_heatmap",
             )
 
         # Radar chart right after accuracy table
@@ -546,7 +496,6 @@ class ComparativeReportGenerator:
             f"\\section{{Accuracy Comparison}}\n\n"
             f"{accuracy_table}\n\n"
             f"{color_legend}\n\n"
-            f"{heatmap_figure}\n"
             f"{radar_figure}\n"
             f"{secondary}\n"
             f"\\end{{document}}"
@@ -570,13 +519,9 @@ class ComparativeReportGenerator:
         radar_path = os.path.join(self.report_dir, "radar_chart.png")
         include_radar = self.create_radar_chart(all_stats, radar_path)
 
-        heatmap_path = os.path.join(self.report_dir, "accuracy_heatmap.png")
-        include_heatmap = self.create_heatmap(all_stats, heatmap_path)
-
         latex_content = self.generate_latex_report(
             all_stats, include_radar=include_radar,
             crop_before_attack=crop_before_attack,
-            include_heatmap=include_heatmap,
         )
 
         latex_path = os.path.join(self.report_dir, "comparative_report.tex")
