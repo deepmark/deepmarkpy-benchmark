@@ -183,20 +183,6 @@
         16000
       ]
     },
-    "ReplacementAttack": {
-      "params": {},
-      "output_dtype": "float64",
-      "output_shape": [
-        16000
-      ]
-    },
-    "Replacement2Attack": {
-      "params": {},
-      "output_dtype": "float64",
-      "output_shape": [
-        16000
-      ]
-    },
     "ResamplingPolyAttack": {
       "params": {},
       "output_dtype": "float64",

@@ -97,8 +97,6 @@ GOLDEN_ATTACKS = {
     "PinkNoiseAttack": {},
     "PitchShiftAttack": {},
     "QuantizationAttack": {},
-    "ReplacementAttack": {},
-    "Replacement2Attack": {},
     "ResamplingPolyAttack": {},
     "SignInversionAttack": {},
     "SmoothingAttack": {},

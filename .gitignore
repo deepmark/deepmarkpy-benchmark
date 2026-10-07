@@ -10,7 +10,10 @@ __pycache__/
 # C extensions
 *.so
 
-benchmark*.json
+# Working config files made with --init. Anchored to the repo root, so
+# src/deepmarkpy/config_templates/benchmark.json stays tracked.
+/benchmark*.json
+/configs/
 
 *.DS_Store
 
@@ -41,10 +44,9 @@ trump/
 chinese-test/
 chinese-test-60s/
 chinese-test-combined/
-report_baseline_replacement/
 results/
-# scripts/ is tracked since P0.2/P0.3: it holds the committed fixture
-# and constraint helpers required by docs/REORG_PLAN.md §4.3/§6.
+# scripts/ is tracked: generate_native_goldens.py and contract_check.py record
+# the test fixtures, capture_image_constraints.py the per-image constraints.
 
 
 report/
