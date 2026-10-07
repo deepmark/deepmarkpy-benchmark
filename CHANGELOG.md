@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.0.0 — 2026-10-06
+## v3.0.0 — 2026-10-07
 
 **Measurement settings move from flags into one JSON config file per mode.**
 `--config` runs one or more of them, `--init <mode>` prints a commented
@@ -21,6 +21,17 @@ run: they are assembled into a config and validated the same way.
 - Attack-strength curves in the benchmark report: accuracy across an attack's
   versions.
 
+### Changed
+
+- `--save_audio` with several modes in one invocation, including
+  `--no_attacks --detection_reliability`, writes each mode to `audio/<mode>/`.
+- The detailed report is written on every run and holds tables only.
+- `no_attacks` and the reliability baseline measure PESQ, ViSQOL and STOI
+  without `--calculate_quality_metrics`, as benchmark mode always has.
+- An unknown CrossModel second model (`E011`) and a `detection_reliability`
+  model without `is_watermarked()` (`E044`) fail validation before anything
+  runs.
+
 ### Breaking
 
 - Removed `ReplacementAttack` and `Replacement2Attack`. No other attack's
@@ -29,10 +40,12 @@ run: they are assembled into a config and validated the same way.
   statistics rather than the mean.
 - Attack parameter flags (`--snr_db_gaussian_noise`) must be spelled in full;
   2.x accepted an unambiguous prefix.
-- The CLI now exits `1` when a run fails, and `2` when the configuration is
-  invalid or a model service is unreachable, in which case nothing runs.
-- Internal Python APIs of `deepmarkpy.run` and the report generators changed.
-  The engine API in `docs/CONSUMING.md` did not.
+- Exit codes: `1` when a mode produces no results, `2` for an invalid
+  configuration or an unreachable model service (nothing runs). A skipped model
+  or a report that fails to render is logged and still exits `0`.
+- Internal Python APIs of `deepmarkpy.run`, `deepmarkpy.benchmark`,
+  `attack_groups` and the report generators changed. The engine API in
+  `docs/CONSUMING.md` did not.
 - `tqdm` is no longer a package dependency.
 
 ## v2.0.0 — 2026-08-01

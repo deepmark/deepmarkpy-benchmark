@@ -178,9 +178,8 @@ class BenchmarkReportGenerator:
         return "\n\n" + figure_block(
             filename,
             "Detection accuracy across the configured versions of the same "
-            "attack, in the order the configuration declares them. The point "
-            "where a curve crosses the chance line is the strength at which "
-            "the watermark stops surviving.",
+            "attack, in the order the configuration declares them, which need "
+            "not be strength order.",
             f"fig:attack_strength_{name_key}",
         )
 
@@ -468,7 +467,8 @@ class BenchmarkReportGenerator:
         Args:
             stats: Dictionary with attack names as keys and per-attack stats
             model_name: Name of the watermarking model
-            chart_filename: Filename of the generated chart
+            chart_filename: Filename of the generated chart, or None to leave
+                the figure out
             crop_before_attack: If set, percentage cropped before attacks
 
         Returns:
@@ -493,14 +493,16 @@ class BenchmarkReportGenerator:
             crop = " " + crop
 
         statistic = self._accuracy_label_for(stats)
-        chart_block = figure_block(
-            chart_filename,
-            f"Attacks ranked by watermark detection accuracy ({statistic}), "
-            f"worst first. Bar colour is the robustness tier; the dashed line "
-            f"is the accuracy a failed detection already scores, so a bar "
-            f"reaching it carries no information.",
-            "fig:benchmark_chart",
-        )
+        chart_block = ""
+        if chart_filename:
+            chart_block = figure_block(
+                chart_filename,
+                f"Attacks ranked by watermark detection accuracy ({statistic}), "
+                f"worst first. Bar colour is the robustness tier; the dashed "
+                f"line is the accuracy a failed detection already scores, so a "
+                f"bar reaching it carries no information.",
+                "fig:benchmark_chart",
+            )
 
         summary = (
             "\\section{Summary}\n\n"
@@ -657,10 +659,10 @@ class BenchmarkReportGenerator:
             logger.info(f"Loaded benchmark statistics for {len(stats)} attacks")
 
             chart_path = os.path.join(self.report_dir, "benchmark_chart.png")
-            self.create_gradient_bar_chart(stats, chart_path)
+            drawn = self.create_gradient_bar_chart(stats, chart_path)
 
             latex_content = self.generate_latex_report(
-                stats, model_name, "benchmark_chart.png",
+                stats, model_name, "benchmark_chart.png" if drawn else None,
                 crop_before_attack=crop_before_attack, containers=containers,
             )
 

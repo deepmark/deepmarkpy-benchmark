@@ -166,14 +166,10 @@ class TestCrossModelReceivesItsSecondModel:
         assert 'current_attack_kwargs[\n' \
                '                        "different_model_name_cross_model"]' in source \
             or '"different_model_name_cross_model"] = different_model_name' in source, (
-                "the resolved name is no longer passed to the attack"
+                "the resolved name is not passed to the attack"
             )
 
-    def test_an_unknown_second_model_says_which_key_to_set(self):
-        import numpy as np
-
-        from deepmarkpy.benchmark import Benchmark
-
+    def test_the_plugin_default_second_model_is_discovered(self):
         benchmark = Benchmark()
         entry = benchmark.attacks["CrossModelAttack"]
         default = (entry.get("config") or {}).get(

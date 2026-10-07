@@ -1,8 +1,8 @@
 """DeepMark Benchmark command-line entry point.
 
 Measurement settings come from ``--config`` files, one per mode, run in the
-order given, or else from the 2.x flags, which are validated as a config
-file and run the same way. The remaining flags are operational.
+order given, or else from the measurement flags, which are validated as a
+config file and run the same way. The remaining flags are operational.
 """
 
 import argparse
@@ -130,8 +130,8 @@ def _build_parser():
         prog="deepmark-benchmark",
         description=(
             "Run the DeepMark audio-watermarking benchmark. Measurement "
-            "settings live in a JSON config file; the flags below are "
-            "operational only."
+            "settings come from --config, or else from the compatibility "
+            "flags; the other flags are operational."
         ),
         epilog=(
             "Start from a template:  deepmark-benchmark --init benchmark > "
@@ -150,8 +150,8 @@ def _build_parser():
         metavar="PATH",
         help=(
             "Config file(s) to run, one per mode, in the order given. Each "
-            "must declare a different \"mode\". Required unless --init is "
-            "used."
+            "must declare a different \"mode\". Required unless --init or a "
+            "compatibility flag is used."
         ),
     )
     parser.add_argument(
@@ -243,10 +243,10 @@ def _build_parser():
     return parser
 
 
-# The 2.x flags. They are assembled into a config mapping and handed to
-# the same validator and the same run loop, so there is no second code
-# path below this point -- a flag run and the config file it corresponds
-# to produce the same reports.
+# The measurement flags. They are assembled into a config mapping and
+# handed to the same validator and the same run loop, so there is no second
+# code path below this point -- a flag run and the config file it
+# corresponds to produce the same reports.
 _LEGACY_FLAGS = (
     "wm_model", "wm_models", "attack_types", "attack_groups",
     "no_attacks", "detection_reliability", "calculate_quality_metrics",
@@ -255,7 +255,7 @@ _LEGACY_FLAGS = (
 
 
 def _add_legacy_arguments(parser):
-    """Add the 2.x flags, which cover exactly what a 2.x script can express.
+    """Add the measurement flags, as the --help group "compatibility".
 
     Per-group metrics and statistics, the efficiency section, duration
     groups and per-version attack parameters have no flag.
@@ -278,8 +278,8 @@ def _add_legacy_arguments(parser):
     )
     group.add_argument(
         "--attack_types", type=str, nargs="*", default=None, metavar="ATTACK",
-        help="Attack class names to apply. Passing the flag with no names "
-             "runs them all, as it always did.",
+        help="Attack class names to apply. With no names and no "
+             "--attack_groups, benchmark mode runs every attack.",
     )
     group.add_argument(
         "--attack_groups", type=str, nargs="+", default=None, metavar="GROUP",
@@ -348,7 +348,7 @@ def _peek_plugins_dir(paths):
 
 
 def _legacy_flags_used(args):
-    """The 2.x flags this invocation actually set."""
+    """The measurement flags this invocation actually set."""
     used = []
     for name in _LEGACY_FLAGS:
         value = getattr(args, name, None)
@@ -362,12 +362,10 @@ def _legacy_flags_used(args):
 def _legacy_attack_parameters(leftovers, benchmark, parser):
     """Route ``--<param> <value>`` flags onto the attacks that declare them.
 
-    The old CLI built one flag per parameter found in any plugin's
-    config.json and passed them as a flat mapping, so a name shared by
-    two attacks reached both. That is reproduced here by keying the
-    parameter under every attack whose config declares it -- the config
-    file's own routing is per attack, and this is the only faithful way
-    to express a flat namespace in it.
+    A flag names a parameter, not an attack, so its value is keyed under
+    every attack whose config.json declares that name: a name two attacks
+    share reaches both. The config file routes per attack, and this is how
+    a flat flag namespace is expressed in it.
     """
     declared = {}
     for attack_name, entry in benchmark.attacks.items():
@@ -433,7 +431,7 @@ def _coerce_like(raw, default, key, parser):
 
 
 def _configs_from_flags(args, leftovers, benchmark, parser):
-    """Validate the 2.x flags as though they were a config file.
+    """Validate the measurement flags as though they were a config file.
 
     Returns one ``ModeConfig`` per mode asked for -- two when
     ``--no_attacks`` and ``--detection_reliability`` are combined.
@@ -445,8 +443,8 @@ def _configs_from_flags(args, leftovers, benchmark, parser):
 
     attacks = {}
     if args.attack_types is not None:
-        # The flag with no names has always meant "run them all", which in
-        # a config file is an empty selection rather than an empty list.
+        # The flag with no names means "run them all", which in a config
+        # file is an empty selection rather than an empty list.
         if args.attack_types or args.attack_groups:
             attacks["list"] = list(args.attack_types)
     if args.attack_groups:
@@ -477,8 +475,8 @@ def _configs_from_flags(args, leftovers, benchmark, parser):
             data["attack_parameters"] = {
                 name: dict(values) for name, values in parameters.items()
             }
-        # A crop of 0% crops nothing, which the old CLI accepted; the
-        # config file spells that null, so the flag's 0 means the same.
+        # A crop of 0% crops nothing. The config file rejects 0 (E031) and
+        # spells that null, so a flag value of 0 is left out.
         if "crop_before_attack" in MODE_KEYS[mode] \
                 and args.crop_before_attack not in (None, 0):
             data["crop_before_attack"] = args.crop_before_attack
@@ -496,9 +494,10 @@ def main(argv=None):
     load_env_file()
 
     parser = _build_parser()
-    # Unknown flags are the attack parameters the old CLI generated from
-    # the plugin configs, which cannot be declared before the plugins are
-    # imported. They stay an error whenever a config file is in play.
+    # Unknown flags are per-parameter attack flags (--<param> <value>),
+    # named after plugin config keys, which cannot be declared before the
+    # plugins are imported. They are an error whenever a config file is in
+    # play.
     args, leftovers = parser.parse_known_args(argv)
 
     if args.init:
@@ -576,11 +575,13 @@ def main(argv=None):
     if args.validate_only:
         # An unreachable service is reported but does not fail validation.
         for config, settings in plans:
+            audio = (settings.wav_files_dir
+                     or "not set (pass --wav_files_dir to run)")
             logger.info(
                 f"{config.source}: valid. mode={config.mode}, "
                 f"models={', '.join(config.models)}, "
                 f"attacks={_describe_attack_selection(config)}, "
-                f"audio={settings.wav_files_dir}, report={settings.report_dir}"
+                f"audio={audio}, report={settings.report_dir}"
             )
         for config, _settings in plans:
             _log_attack_parameters(benchmark, config, only_configured=False)
@@ -734,9 +735,11 @@ def _collect_audio_files(wav_files_dir):
 
 
 # A cold container loads its checkpoint on the first request, which takes
-# WavMark over ten seconds, so a waiting probe retries for up to the budget.
+# WavMark over ten seconds, so a waiting probe retries for up to the budget,
+# pausing between attempts: a refused port fails at once.
 _SERVICE_PROBE_TIMEOUT_S = 10
 _SERVICE_PROBE_BUDGET_S = 60
+_SERVICE_PROBE_INTERVAL_S = 1.0
 
 
 def _unreachable_model_services(benchmark, configs, wait=True):
@@ -779,6 +782,8 @@ def _unreachable_model_services(benchmark, configs, wait=True):
                         f"the first request)..."
                     )
                     announced = True
+                time.sleep(min(_SERVICE_PROBE_INTERVAL_S,
+                               max(0.0, deadline - time.monotonic())))
     return messages
 
 

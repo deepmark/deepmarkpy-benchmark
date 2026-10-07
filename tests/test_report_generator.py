@@ -33,7 +33,7 @@ class TestVersionNamesAreEscaped:
 
 
 # ---------------------------------------------------------------------------
-# Performance tier classification (the threshold bug fix)
+# Performance tier classification
 # ---------------------------------------------------------------------------
 class TestPerformanceTiers:
     def test_excellent_threshold(self, sample_stats):
@@ -55,7 +55,7 @@ class TestPerformanceTiers:
         assert "Fair Performance" in report
 
     def test_thresholds_are_percentage_not_decimal(self):
-        """Regression test: thresholds must be 95/85/70, not 0.95/0.85/0.70."""
+        """Thresholds are percentages, 95/85/70, not fractions, 0.95/0.85/0.70."""
         stats = {"PerfectAttack": 100.0, "TerribleAttack": 50.0}
         gen = BenchmarkReportGenerator()
         report = gen.generate_latex_report(stats)

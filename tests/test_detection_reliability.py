@@ -1,7 +1,7 @@
 """Tests for the detection_reliability module."""
 
 import json
-import time
+import types
 
 import numpy as np
 import pytest
@@ -272,6 +272,38 @@ class TestRunDetectionReliability:
         assert record["no_attack_fp"] is True
         assert record["attacks"]["GaussianNoiseAttack"]["fp"] is True
 
+    def test_an_attack_parameter_override_reaches_apply(self, tmp_path):
+        """On the clean audio and on the watermarked audio alike."""
+        import soundfile as sf
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+
+        audio_file = tmp_path / "test.wav"
+        sf.write(str(audio_file), np.zeros(16000), 16000)
+        received = {}
+
+        class _RecordingAttack:
+            def __init__(self, version=None):
+                self.config = {}
+
+            def apply(self, audio, **kwargs):
+                # The clip is silent, so only the watermarked audio is nonzero.
+                target = "watermarked" if np.any(audio) else "clean"
+                received[target] = kwargs.get("snr_db_gaussian_noise")
+                return np.array(audio, copy=True)
+
+        benchmark = self._MockBenchmark(model_cls=self._MockZeroBitModel)
+        benchmark.attacks = {
+            "GaussianNoiseAttack": {"class": _RecordingAttack, "config": {}},
+        }
+        run_detection_reliability(
+            benchmark, [str(audio_file)], "TestModel",
+            attack_types=["GaussianNoiseAttack"],
+            attack_parameters=lambda name, version: {"snr_db_gaussian_noise": 7},
+            metric_resolver=MetricResolver(),
+        )
+
+        assert received == {"clean": 7, "watermarked": 7}
+
     def test_rejects_unsupported_model(self, tmp_path):
         audio_file = tmp_path / "test.wav"
         import soundfile as sf
@@ -294,6 +326,7 @@ class TestRunDetectionReliability:
             )
 
 
+@pytest.mark.usefixtures("no_pdflatex")
 class TestReportGeneration:
     BASELINE_QUALITY_CAPTION = (
         "Audio quality of the watermarked audio compared to the original"
@@ -446,66 +479,70 @@ class TestReportGeneration:
 class TestTimingsMeanTheSameThingHere:
     """Per attack, only the detect on attacked watermarked audio is timed."""
 
-    MARK = 7.0
-    EMBED, ATTACK = 0.01, 0.03
-    CLEAN_DETECT, ATTACKED_DETECT = 0.05, 0.20
-
-    class _Model:
-        def __init__(self, outer):
-            self.outer = outer
-            self.config = {"is_zero_bit": True, "sampling_rate": 16000}
-
-        def generate_watermark(self):
-            return np.array([1])
-
-        def embed(self, audio, watermark_data, sampling_rate):
-            time.sleep(self.outer.EMBED)
-            return audio
-
-        def detect(self, audio, sampling_rate):
-            attacked = audio[0] == self.outer.MARK
-            time.sleep(self.outer.ATTACKED_DETECT if attacked
-                       else self.outer.CLEAN_DETECT)
-            return 1
-
-        def is_watermarked(self, detect_output):
-            return bool(detect_output)
-
-    class _Attack:
-        MARK = 7.0
-        PAUSE = 0.03
-
-        def __init__(self, version=None):
-            self.config = {}
-
-        def apply(self, audio, **kwargs):
-            time.sleep(self.PAUSE)
-            marked = np.array(audio, copy=True)
-            marked[0] = self.MARK
-            return marked
+    # Seconds each stub call advances the fake clock by: binary fractions,
+    # so the clock's sums and differences are exact.
+    EMBED = 0.03125
+    PAUSE = 0.375
+    # One cost per detect, keyed by (attacked, watermarked).
+    DETECT = {
+        (False, False): 0.0625,
+        (False, True): 0.125,
+        (True, False): 0.75,
+        (True, True): 0.25,
+    }
+    # The attack writes ATTACKED into sample 0, embed WATERMARKED into sample 1.
+    ATTACKED, WATERMARKED = 7.0, 9.0
 
     @pytest.fixture
-    def result(self, tmp_path):
+    def result(self, tmp_path, monkeypatch):
         import soundfile as sf
+        from deepmarkpy.utils import efficiency
         from deepmarkpy.utils.metric_resolver import MetricResolver
+
+        clock = [0.0]
+        monkeypatch.setattr(efficiency, "time", types.SimpleNamespace(
+            perf_counter=lambda: clock[0],
+        ))
+        outer = self
+
+        class _Model:
+            def generate_watermark(self):
+                return np.array([1])
+
+            def embed(self, audio, watermark_data, sampling_rate):
+                clock[0] += outer.EMBED
+                marked = np.array(audio, copy=True)
+                marked[1] = outer.WATERMARKED
+                return marked
+
+            def detect(self, audio, sampling_rate):
+                clock[0] += outer.DETECT[(bool(audio[0] == outer.ATTACKED),
+                                          bool(audio[1] == outer.WATERMARKED))]
+                return 1
+
+            def is_watermarked(self, detect_output):
+                return bool(detect_output)
+
+        class _Attack:
+            def __init__(self, version=None):
+                self.config = {}
+
+            def apply(self, audio, **kwargs):
+                clock[0] += outer.PAUSE
+                marked = np.array(audio, copy=True)
+                marked[0] = outer.ATTACKED
+                return marked
+
+        class _Benchmark:
+            models = {"TestModel": {
+                "class": _Model,
+                "config": {"is_zero_bit": True, "sampling_rate": 16000},
+            }}
+            attacks = {"GaussianNoiseAttack": {"class": _Attack, "config": {}}}
 
         path = tmp_path / "a.wav"
         sf.write(str(path),
                  np.sin(np.linspace(0, 1, 16000)).astype(np.float32), 16000)
-
-        outer = self
-        model_cls = lambda: TestTimingsMeanTheSameThingHere._Model(outer)
-
-        class _Benchmark:
-            models = {"TestModel": {
-                "class": model_cls,
-                "config": {"is_zero_bit": True, "sampling_rate": 16000},
-            }}
-            attacks = {"GaussianNoiseAttack": {
-                "class": TestTimingsMeanTheSameThingHere._Attack,
-                "config": {},
-            }}
-
         resolver = MetricResolver(efficiency={
             "enabled": True,
             "metrics": {m: {"enabled": True, "statistics": ["mean"]}
@@ -519,30 +556,26 @@ class TestTimingsMeanTheSameThingHere:
 
     def test_the_attacks_detect_is_the_one_reported(self, result):
         timings = result["attacks"]["GaussianNoiseAttack"]["timings"]
-        assert timings["detect_latency"]["mean"] == pytest.approx(
-            self.ATTACKED_DETECT, abs=0.05,
-        )
+        assert timings["detect_latency"]["mean"] == self.DETECT[(True, True)]
 
     def test_the_baseline_keeps_its_own_detect(self, result):
         """The un-attacked detect must not be overwritten by an attack's."""
         timings = result["no_attack"]["timings"]
-        assert timings["detect_latency"]["mean"] == pytest.approx(
-            self.CLEAN_DETECT, abs=0.05,
-        )
+        assert timings["detect_latency"]["mean"] == self.DETECT[(False, True)]
 
     def test_the_per_file_record_does_not_mix_the_two(self, result):
         record = next(iter(result["per_file"].values()))
-        assert record["detect_latency"] == pytest.approx(
-            self.CLEAN_DETECT, abs=0.05,
-        )
+        assert record["detect_latency"] == self.DETECT[(False, True)]
         assert record["attacks"]["GaussianNoiseAttack"]["detect_latency"] == \
-            pytest.approx(self.ATTACKED_DETECT, abs=0.05)
+            self.DETECT[(True, True)]
+
+    def test_the_attack_time_is_the_attack_alone(self, result):
+        timings = result["attacks"]["GaussianNoiseAttack"]["timings"]
+        assert timings["attack_latency"]["mean"] == self.PAUSE
 
     def test_embedding_is_carried_onto_the_attack_once_per_file(self, result):
         timings = result["attacks"]["GaussianNoiseAttack"]["timings"]
-        assert timings["embed_latency"]["mean"] == pytest.approx(
-            self.EMBED, abs=0.05,
-        )
+        assert timings["embed_latency"]["mean"] == self.EMBED
 
 
 class TestCrossModelGetsItsSecondModelHereToo:

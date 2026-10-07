@@ -5,6 +5,7 @@ import pytest
 from deepmarkpy.plugin_manager import PluginManager
 from deepmarkpy.utils.attack_groups import (
     ATTACK_GROUPS,
+    ATTACK_SUBGROUPS,
     get_attacks_for_groups,
     get_group_for_attack,
     group_attacks,
@@ -25,6 +26,18 @@ class TestGroupedAttacksMatchPlugins:
                 assert attack in self.available, (
                     f"{attack} in group '{group_key}' is not a discovered plugin"
                 )
+
+
+class TestAudioEditingSubgroups:
+    """The detailed report tables audio_editing's metrics only per subsection."""
+
+    def test_each_attack_sits_in_exactly_one_subgroup(self):
+        held = [attack for definition in ATTACK_SUBGROUPS.values()
+                for attack in definition["attacks"]]
+        assert sorted(held) == sorted(ATTACK_GROUPS["audio_editing"]["attacks"]), (
+            "every audio_editing attack must sit in exactly one subgroup, and "
+            "the subgroups must hold nothing else"
+        )
 
 
 class TestGetAttacksForGroups:

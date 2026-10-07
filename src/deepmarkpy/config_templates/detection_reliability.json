@@ -29,7 +29,7 @@
     "_TimeStretchAttack:subtle": { "stretch_rate_time_stretch": 1.05 }
   },
 
-  "_calculate_quality_metrics": "Master switch: true = the metrics block below decides what runs; false or absent = only pesq, visqol, stoi, and the enabled flags are IGNORED (statistics still apply). The quality tables describe the audio the detector was asked to judge, which separates a false negative caused by real damage from a fragile detector.",
+  "_calculate_quality_metrics": "Master switch: true = the metrics block below decides what runs; false or absent = accuracy plus pesq, visqol, stoi; the signal metrics' enabled flags are IGNORED, emr keeps its flag (statistics still apply). The quality tables describe the audio the detector was asked to judge, which separates a false negative caused by real damage from a fragile detector.",
   "calculate_quality_metrics": true,
 
   "_statistics": "Default statistics per metric, and the report column order. Any of: mean, std, median, p5, p10, p95, p99, worst_case. Delete this key to get all eight. FP/FN are counts over attempts, not distributions, so no statistic applies to them.",
@@ -37,7 +37,7 @@
 
   "_metrics": "Per metric: enabled (true/false) and statistics (a subset of the list above). Metrics - accuracy (always on, cannot be disabled), emr (a count, takes NO statistics), pesq, psnr, si_sdr, mcd, visqol, stoi, sii, ncm, nisqa_mos, nisqa_noi, nisqa_dis, nisqa_col, nisqa_loud. There is no ber in this mode. A metric named nowhere is off.",
   "metrics": {
-    "_defaults": "Baseline for every group. The signal metrics are OFF here and each group below switches on the ones that are meaningful for it, so a group section reads as a positive list of what it reports. accuracy/ber/emr are free (all three come from the accuracy array) and apply everywhere.",
+    "_defaults": "Baseline for every group. The signal metrics are OFF here and each group below switches on the ones that are meaningful for it, so a group section reads as a positive list of what it reports. accuracy and emr are free (both come from the accuracy array) and apply everywhere.",
     "defaults": {
       "accuracy": { "enabled": true, "statistics": ["mean", "std", "median", "p5", "p10", "p95", "p99", "worst_case"] },
       "emr": { "enabled": true },
@@ -116,7 +116,7 @@
         "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
       },
 
-      "_temporal_editing": "audio_editing subsection: cut, crop-beginning, crop-random. Signal length changes, so nothing can be compared to the original; accuracy, ber and emr still are.",
+      "_temporal_editing": "audio_editing subsection: cut, crop-beginning, crop-random. Signal length changes, so nothing can be compared to the original; accuracy and emr still are.",
       "temporal_editing": {
         "pesq": { "enabled": false }, "psnr": { "enabled": false },
         "si_sdr": { "enabled": false }, "mcd": { "enabled": false },
@@ -164,12 +164,12 @@
       "embed_latency": { "enabled": true, "statistics": ["mean", "worst_case"] },
       "detect_latency": { "enabled": true, "statistics": ["mean", "worst_case"] },
       "attack_latency": { "enabled": true, "statistics": ["mean", "p95", "worst_case"] },
-      "_container_footprint": "Resident memory of the model's container while warm, in MiB, read once per run via the docker CLI. It is the WHOLE service - weights, Python runtime, web server - not the size of the model, and the services load their weights at start so a container can never be measured empty. Absent, and simply omitted, when docker is unavailable or no container publishes the model's port.",
+      "_container_footprint": "Resident memory, in MiB, of each running container the run used (the model's, every dockerized attack's, and NISQA's when a NISQA metric is on), read via the docker CLI while warm. It is the WHOLE service - weights, Python runtime, web server - not the size of a model, and the services load their weights at start so a container can never be measured empty. A service is absent when docker is unavailable or no running container publishes its port.",
       "container_footprint": { "enabled": false }
     }
   },
 
-  "_duration_groups": "Report separately per audio length, which is how you see a detector whose false-positive rate climbs on short clips. boundaries: ascending seconds, e.g. [5, 10, 20, 30] gives <5s, 5-10s, 10-20s, 20-30s, >30s; an empty list disables grouping. include_overall adds a final all-files section.",
+  "_duration_groups": "Report separately per audio length, which is how you see a detector whose false-positive rate climbs on short clips. boundaries: ascending seconds, e.g. [5, 10, 20, 30] gives < 5.0s, 5.0-10.0s, 10.0-20.0s, 20.0-30.0s and >= 30.0s, each bin holding its lower boundary; an empty list disables grouping. include_overall adds a final all-files section.",
   "duration_groups": {
     "boundaries": [],
     "include_overall": false

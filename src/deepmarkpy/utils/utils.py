@@ -187,9 +187,8 @@ def duration_bin_labels(boundaries):
     """Human-readable labels for the bins ``boundaries`` define.
 
     Bins are half-open, ``[lower, upper)``: a file exactly on a boundary
-    belongs to the bin above it. So the first bin is ``< b0`` and the last
-    is ``≥ bN`` -- labelling it ``>`` described a population that left out
-    a file of exactly ``bN`` seconds, which it in fact holds.
+    belongs to the bin above it, so the first bin is ``< b0`` and the last
+    is ``≥ bN``, which holds a file of exactly ``bN`` seconds.
     """
     labels = [f"< {boundaries[0]}s"]
     for i in range(len(boundaries) - 1):

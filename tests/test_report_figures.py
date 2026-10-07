@@ -5,6 +5,7 @@ no_attacks and detection_reliability reports are tables only."""
 import json
 import re
 
+import matplotlib.pyplot as plt
 import pytest
 
 from deepmarkpy.benchmark import Benchmark
@@ -271,6 +272,22 @@ class TestStrengthLadder:
         )
         assert drawn == series
 
+    def test_the_axis_claims_no_strength_order(self, tmp_path, monkeypatch):
+        """Versions run in declaration order, which need not be strength order."""
+        labels = []
+        save = report_charts._save
+
+        def read_back(fig, path):
+            labels.append(fig.axes[0].get_xlabel())
+            return save(fig, path)
+
+        monkeypatch.setattr(report_charts, "_save", read_back)
+        assert report_charts.attack_strength_curves(
+            {"TimeStretch": [("default", 60.0), ("subtle", 95.0)]},
+            str(tmp_path / "strength.png"), chance_floor=50.0,
+        )
+        assert labels == ["Configured attack version"]
+
     def test_a_shorter_ladder_first_keeps_the_longer_one_in_order(
         self, tmp_path, monkeypatch,
     ):
@@ -314,6 +331,39 @@ class TestChartsNeverBreakAReport:
             {"Echo": [("mild", 90.0)]}, str(tmp_path / "b.png"),
         ) is False
 
+    def test_a_ranking_that_was_not_drawn_is_not_referenced(
+        self, tmp_path, monkeypatch,
+    ):
+        monkeypatch.setattr(report_charts, "accuracy_ranking",
+                            lambda *args, **kwargs: False)
+        tex = build_basic(tmp_path, write_config(tmp_path))
+        assert included_figures(tex) == [LADDER]
+        assert_figures_exist(tex, tmp_path)
+
+    def test_a_radar_that_fails_to_draw_is_left_out(
+        self, tmp_path, monkeypatch, caplog,
+    ):
+        """The comparative report is still written, without the figure."""
+        config = write_config(tmp_path)
+        stats = Benchmark.__new__(Benchmark).compute_mean_accuracy(
+            make_results(), resolver=config.resolver,
+        )
+        generator = ComparativeReportGenerator(
+            str(tmp_path), resolver=config.resolver,
+        )
+
+        def fail(*args, **kwargs):
+            raise RuntimeError("no renderer")
+
+        monkeypatch.setattr(generator, "_draw_radar_axes", fail)
+        with caplog.at_level("WARNING"):
+            generator.generate_full_report({"A": stats, "B": dict(stats)})
+
+        tex = (tmp_path / "comparative_report.tex").read_text()
+        assert included_figures(tex) == []
+        assert "Radar chart skipped" in caplog.text
+        assert not plt.get_fignums(), "the failed figure was left open"
+
 
 class TestLabelsRenderAsText:
     @pytest.mark.parametrize("latex,expected", [
@@ -322,6 +372,21 @@ class TestLabelsRenderAsText:
     ])
     def test_latex_fragments_become_plain_text(self, latex, expected):
         assert report_charts.plain(latex) == expected
+
+    def test_the_radar_legend_draws_attack_names_as_text(self, tmp_path):
+        """Codec2's bitrate rows carry an underscore the tables escape."""
+        generator = ComparativeReportGenerator(str(tmp_path))
+        fig, ax = plt.subplots()
+        try:
+            generator._draw_attack_legend(
+                ax, ["Codec2VocoderAttack_700", "EchoAttack (a&b)"],
+                ["A1", "A2"], n_models=2,
+            )
+            drawn = [text.get_text() for text in ax.texts]
+        finally:
+            plt.close(fig)
+        assert "A1  –  Codec2VocoderAttack_700" in drawn
+        assert "A2  –  Echo (a&b)" in drawn
 
 
 class TestNoAttacksDetectedColumn:

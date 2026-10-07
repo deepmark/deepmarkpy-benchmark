@@ -2,6 +2,7 @@
 input per code, so a message can be reworded but a code cannot stop firing."""
 
 import json
+import re
 
 import pytest
 
@@ -23,8 +24,8 @@ BASE = {
     "mode": "benchmark",
     "models": ["AudioSealModel"],
     # On, so the metrics block is what decides -- with it off the
-    # always-on trio applies instead and the enable flags are ignored,
-    # which is its own case below.
+    # always-on trio applies instead and the signal metrics' enable flags
+    # are ignored, which is its own case below.
     "calculate_quality_metrics": True,
 }
 
@@ -196,11 +197,13 @@ class TestModelCodes:
         assert issue_for(error, "E011").suggestion == "AudioSealModel"
 
     def test_E012_detection_reliability_takes_one_model(self, tmp_path):
-        found, _ = codes(write(tmp_path, {
+        found, error = codes(write(tmp_path, {
             "mode": "detection_reliability",
             "models": ["AudioSealModel", "PerthModel"],
         }))
         assert "E012" in found
+        # Not one file per model: two in one invocation would be E006.
+        assert "one invocation per model" in issue_for(error, "E012").message
 
     def test_E016_duplicate_model(self, tmp_path):
         found, _ = codes(write(
@@ -708,14 +711,68 @@ class TestComparisonCodes:
         })], ATTACKS, MODELS)[0]
         assert config.comparison_primary_statistic == "worst_case"
 
+    # Two models over audio_distortion alone, its median set by one group.
+    GROUP_MEDIAN = {
+        "models": ["AudioSealModel", "PerthModel"],
+        "attacks": {"list": ["GaussianNoiseAttack"]},
+        "comparison": {"primary_statistic": "median"},
+    }
+
+    def test_a_primary_only_the_selected_groups_compute_is_accepted(
+            self, tmp_path):
+        """The group's rows carry the median, so the main table is not empty."""
+        config = load_configs([write(tmp_path, {
+            **self.GROUP_MEDIAN,
+            "metrics": {
+                "defaults": {"accuracy": {"statistics": ["mean"]}},
+                "per_group": {
+                    "audio_distortion": {"accuracy": {"statistics": ["median"]}},
+                },
+            },
+        })], ATTACKS, MODELS)[0]
+        assert config.comparison_primary_statistic == "median"
+        assert not [w for w in config.warnings if w.code == "W015"]
+
+    def test_E036_a_group_this_run_does_not_select_does_not_count(
+            self, tmp_path):
+        found, _ = codes(write(tmp_path, {
+            **self.GROUP_MEDIAN,
+            "metrics": {
+                "defaults": {"accuracy": {"statistics": ["mean"]}},
+                "per_group": {
+                    "audio_editing": {"accuracy": {"statistics": ["median"]}},
+                },
+            },
+        }))
+        assert "E036" in found
+
+    def test_E036_needs_the_registry_to_rule_out_an_ungrouped_attack(
+            self, tmp_path):
+        """Only discovery can say whether an ungrouped attack runs."""
+        path = write(tmp_path, {
+            "models": ["AudioSealModel", "PerthModel"],
+            "metrics": {
+                "defaults": {"accuracy": {"statistics": ["mean"]}},
+                "per_group": {"other": {"accuracy": {"statistics": ["median"]}}},
+            },
+            "comparison": {"primary_statistic": "median"},
+        })
+        ungrouped = {**ATTACKS, "UngroupedAttack": {"config": {}}}
+
+        for registry in (None, ungrouped):
+            config = load_configs([path], registry, MODELS, quiet=True)[0]
+            assert config.comparison_primary_statistic == "median"
+        found, _ = codes(path)
+        assert "E036" in found
+
     def test_the_derived_primary_is_a_level_not_a_spread(self, tmp_path):
         """Unset, it is the first configured statistic other than std."""
         config = load_configs([write(tmp_path, {
             "models": ["AudioSealModel", "PerthModel"],
             "metrics": {"defaults": {
-                "accuracy": {"statistics": ["std", "mean"]}}},
+                "accuracy": {"statistics": ["std", "median"]}}},
         })], ATTACKS, MODELS)[0]
-        assert config.comparison_primary_statistic == "mean"
+        assert config.comparison_primary_statistic == "median"
 
     def test_W015_a_selected_group_leaves_the_primary_out(self, tmp_path):
         """Its rows read N/A in the main table; the run goes ahead."""
@@ -860,6 +917,34 @@ class TestWarningsDoNotBlockTheRun:
 
         assert any(w.code == "W002" for w in config.warnings)
 
+    def test_W002_covers_a_group_flag_too(self, tmp_path):
+        """With the switch absent, a group's stoi flag is ignored: STOI stays on."""
+        config = load_configs([write(tmp_path, {
+            "calculate_quality_metrics": None,
+            "metrics": {
+                "defaults": {"accuracy": {"enabled": True}},
+                "per_group": {
+                    "desynchronization": {"stoi": {"enabled": False}}},
+            },
+        })], ATTACKS, MODELS)[0]
+
+        assert [w.code for w in config.warnings if w.code == "W002"] == ["W002"]
+        assert config.resolver.is_enabled("desynchronization", "stoi") is True
+
+    def test_no_W002_when_no_signal_metric_flag_is_set(self, tmp_path):
+        """ber keeps its flag and statistics still apply, so nothing is ignored."""
+        config = load_configs([write(tmp_path, {
+            "calculate_quality_metrics": False,
+            "metrics": {"defaults": {
+                "accuracy": {"statistics": ["mean"]},
+                "ber": {"enabled": False},
+            }},
+        })], ATTACKS, MODELS)[0]
+
+        assert not [w for w in config.warnings if w.code == "W002"]
+        assert config.resolver.is_enabled(None, "ber") is False
+        assert config.resolver.statistics_for(None, "accuracy") == ["mean"]
+
     def test_partial_nisqa_selection_says_it_saves_nothing(self, tmp_path):
         config = load_configs([write(tmp_path, {
             "metrics": {"defaults": {
@@ -870,10 +955,24 @@ class TestWarningsDoNotBlockTheRun:
         note = next(w for w in config.warnings if w.code == "W003")
         assert "single NISQA request" in note.message
 
+    def test_W004_no_metrics_block_applies_the_builtin_matrix(self, tmp_path):
+        config = load_configs([write(tmp_path, {})], ATTACKS, MODELS)[0]
+        assert [(w.code, w.severity) for w in config.warnings
+                if w.code == "W004"] == [("W004", "info")]
+
     def test_include_overall_without_boundaries_is_only_a_warning(self, tmp_path):
         config = load_configs([write(tmp_path, {"duration_groups": {
             "boundaries": [], "include_overall": True}})], ATTACKS, MODELS)[0]
         assert any(w.code == "W005" for w in config.warnings)
+
+    def test_W013_a_disabled_efficiency_section_ignores_its_metrics(
+            self, tmp_path):
+        config = load_configs([write(tmp_path, {"efficiency": {
+            "enabled": False,
+            "metrics": {"embed_latency": {"enabled": True}},
+        }})], ATTACKS, MODELS)[0]
+        assert [(w.code, w.severity) for w in config.warnings
+                if w.code == "W013"] == [("W013", "info")]
 
     def test_W016_robustness_metric_under_a_subsection(self, tmp_path):
         """Accuracy, BER and EMR are tabled per top-level group, not subsection."""
@@ -936,6 +1035,33 @@ class TestTemplates:
         """The mode has no attack groups, so its metrics block names none."""
         raw = json.loads(init_template("no_attacks"))
         assert "per_group" not in json.dumps(raw.get("metrics", {}))
+
+    def test_no_attacks_template_lists_no_attack_timing(self):
+        """The mode applies no attack, so attack_latency never gets a value."""
+        assert "attack_latency" not in init_template("no_attacks")
+
+    def test_the_reliability_template_names_ber_only_to_rule_it_out(self):
+        """ber is E025 in this mode, so no other note may offer it."""
+        def notes(node):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key.startswith("_") and isinstance(value, str):
+                        yield key, value
+                    else:
+                        yield from notes(value)
+
+        raw = json.loads(init_template("detection_reliability"))
+        naming = [key for key, note in notes(raw) if re.search(r"\bber\b", note)]
+        assert naming == ["_metrics"]
+
+    @pytest.mark.parametrize("mode", VALID_MODES)
+    def test_the_duration_note_names_the_bins_the_reports_print(self, mode):
+        """The labels duration grouping produces, spelled in ASCII."""
+        from deepmarkpy.utils.utils import duration_bin_labels
+
+        note = json.loads(init_template(mode))["_duration_groups"]
+        for label in duration_bin_labels([5.0, 10.0, 20.0, 30.0]):
+            assert label.replace("–", "-").replace("≥", ">=") in note, label
 
 
 class TestSelectionCoverage:
@@ -1100,6 +1226,20 @@ class TestSilentlyEmptyMetricsIsWarned:
         }})], ATTACKS, MODELS)[0]
         assert not [w for w in config.warnings if w.code == "W012"]
 
+    def test_W012_without_the_master_switch_names_what_stays_on(self, tmp_path):
+        """The trio is computed for every group, so the tables are not empty."""
+        config = load_configs([write(tmp_path, {
+            "calculate_quality_metrics": None,
+            "metrics": {"per_group": {
+                "audio_distortion": {"ber": {"enabled": True}}}},
+        })], ATTACKS, MODELS)[0]
+
+        note = next(w for w in config.warnings if w.code == "W012")
+        assert "pesq, visqol and stoi" in note.message
+        assert "most tables will be empty" not in note.message
+        assert config.resolver.is_enabled("desynchronization", "stoi") is True
+        assert config.resolver.is_enabled("desynchronization", "ber") is False
+
 
 class TestValidatingWithoutAFile:
     """load_config_data runs the file loader's checks over a mapping."""
@@ -1165,6 +1305,26 @@ class TestEfficiencyMetricsBelongToTheirOwnSection:
         config = load_configs([path], attacks_registry=ATTACKS,
                               models_registry=MODELS, quiet=True)[0]
         assert config.resolver.is_enabled(None, "embed_latency") is True
+
+    # The section's own entries are checked as the metrics block's are.
+    def test_E029_container_footprint_takes_no_statistics(self, tmp_path):
+        found, _ = codes(write(tmp_path, {"efficiency": {
+            "enabled": True,
+            "metrics": {"container_footprint": {"statistics": ["mean"]}},
+        }}))
+        assert "E029" in found
+
+    def test_E024_unknown_efficiency_metric_suggests_closest(self, tmp_path):
+        found, error = codes(write(tmp_path, {"efficiency": {
+            "enabled": True, "metrics": {"embed_latancy": {}},
+        }}))
+        assert "E024" in found
+        assert issue_for(error, "E024").suggestion == "embed_latency"
+
+    def test_E007_unknown_efficiency_key_suggests_closest(self, tmp_path):
+        found, error = codes(write(tmp_path, {"efficiency": {"enabeld": True}}))
+        assert "E007" in found
+        assert issue_for(error, "E007").suggestion == "enabled"
 
 
 class TestABareAttackNameAndItsDefaultVersionAreOneTarget:

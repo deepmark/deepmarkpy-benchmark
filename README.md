@@ -137,10 +137,11 @@ Some attacks require additional datasets to function:
 
 ### 1. Build and Start Services
 
-This command builds the Docker images for all containerized models/attacks (defined in `docker-compose.yml`) using the configuration from `.env` and starts them in the background. This step is **required** if you intend to use plugins like `audioseal`, `vae`, `diffusion`, etc.
+These commands build the Docker images for all containerized models/attacks (defined in `docker-compose.yml`) using the configuration from `.env`, then start them in the background. This step is **required** if you intend to use plugins like `audioseal`, `vae`, `diffusion`, etc.
 ```bash
 docker build -f Dockerfile.base -t ml-services-base:latest .
 docker-compose -f docker-compose.yml build
+docker-compose up -d
 ```
 You can check the status of the services using `docker-compose ps`. The first build might take some time.
 
@@ -151,18 +152,28 @@ You can check the status of the services using `docker-compose ps`. The first bu
 
 ### 2. Run the CLI
 
-Measurement settings live in a JSON config file, one per mode; the command
-line carries only operational settings. Start from a commented template,
-check it, then run it:
+Measurement settings live in a JSON config file, one per mode, and the other
+flags are operational (the 2.x flags still run without `--config`; see
+[Running with the 2.x flags](#running-with-the-2x-flags)). Start from a
+commented template, choose its attacks, check it, then run it:
 
 ```bash
 deepmark-benchmark --init benchmark > my_config.json
+# Edit my_config.json to select attacks, e.g. "attacks": {"groups": ["audio_distortion"]}
 deepmark-benchmark --config my_config.json --validate-only
 deepmark-benchmark --config my_config.json --wav_files_dir /path/to/audio
 ```
 
+The template leaves `attacks` empty, which runs every discovered attack: that
+needs every service running (`docker-compose up -d`) and the AIR and music
+datasets. The `audio_distortion` attacks run natively, so the run above needs
+only the model's service (`docker-compose up -d audioseal` for the template's
+`AudioSealModel`).
+
 `--validate-only` checks the file against the discovered plugins and exits
-without running anything; it needs neither the audio nor the Docker services.
+without running anything. It needs neither the audio nor the Docker services:
+an unreachable model service is reported but is not an error, and attack
+services are not checked.
 
 | Mode | What it measures |
 |------|------------------|
@@ -198,11 +209,15 @@ it.
 of every run**), `--seed` (off by default; it seeds host-side RNGs only, so
 the diffusion, VAE, speech_enhancement_2 and network_transmission services
 stay stochastic), `--save_audio`, `--verbose`, `--plugins_dir` (also
-`DEEPMARK_PLUGINS_DIR`) and `--version`, plus the 2.x flags below. All but
-`--config`, `--init`, `--validate-only` and `--version` also exist under
-`general` in the config file, and the flag wins. Exit codes: `0` success,
-`1` runtime failure (for example a missing audio directory), `2` invalid
-configuration or unreachable model service — nothing was run.
+`DEEPMARK_PLUGINS_DIR`) and `--version`, plus the 2.x flags below. Of the
+operational flags, all but `--config`, `--init`, `--validate-only` and
+`--version` also exist under `general` in the config file, and the flag wins.
+
+Exit codes: `0` the run finished. A model skipped after an infrastructure
+failure, or a report that failed to render, is logged as an error but still
+exits 0. `1` a mode produced no results (for example an audio directory that
+does not exist or holds no audio files, or every model failed). `2` invalid
+configuration or unreachable model service; nothing was run.
 
 Every attack belongs to exactly one group; the canonical mapping lives in
 `src/deepmarkpy/utils/attack_groups.py` — update it there when adding a new
@@ -220,7 +235,9 @@ and a footnote saying why: read it as evidence the attack shifted the signal,
 not as a quality score. `SignInversionAttack`'s SI-SDR is marked the same way,
 because SI-SDR is scale-invariant and cannot see a polarity flip. Disable
 `stoi` and `mcd` for `desynchronization`, or `si_sdr` for `audio_distortion`,
-to drop the marked values instead.
+to drop the marked values instead (this needs
+`calculate_quality_metrics: true`; when it is false, STOI stays on for every
+group).
 
 **Codec2 Vocoder Attack:**
 
@@ -238,7 +255,10 @@ accepts either a single value or a list of bitrates, either in the plugin's
 
 When a list is provided, the benchmark automatically expands it into separate
 runs — one per bitrate — and reports results as `Codec2VocoderAttack_700`,
-`Codec2VocoderAttack_1200`, etc. Supported bitrates: 700, 1200, 1300, 1400,
+`Codec2VocoderAttack_1200`, etc. Once a Codec2 version is defined in
+`attack_parameters` (`"Codec2VocoderAttack:hi": { "bitrate_codec2": [3200] }`),
+each row also names its version: `Codec2VocoderAttack_700 (default)`, ...,
+`Codec2VocoderAttack_3200 (hi)`. Supported bitrates: 700, 1200, 1300, 1400,
 1600, 2400, 3200 bps; any other value in `attack_parameters` is a validation
 error (`E045`).
 
@@ -257,14 +277,15 @@ which the parser ignores. Besides the settings below, they cover
 `crop_before_attack` (the percentage cropped from the start of the
 watermarked audio before each attack), `efficiency` (embed, detect and attack
 latency, and container memory; off by default), `duration_groups` (a report
-part per audio-length bin) and `comparison` (the statistic the comparative
-report ranks).
+part per audio-length bin) and `comparison` (the accuracy statistic the
+comparative report ranks; it must be among accuracy's statistics and cannot
+be `std`).
 
 **`calculate_quality_metrics`** is the master switch for the signal metrics.
 When `true`, the `metrics` block decides what runs. When `false` or absent,
-only accuracy and PESQ, ViSQOL and STOI are computed, for every group, and the
-enable flags are ignored; per-metric `statistics` still apply, and `ber`/`emr`
-keep their flags.
+the signal metrics' enable flags are ignored and PESQ, ViSQOL and STOI are
+computed for every group; accuracy always is, `ber`/`emr` keep their flags,
+and per-metric `statistics` still apply.
 
 #### Per-group metrics and statistics
 
@@ -279,6 +300,7 @@ plugins. A metric's statistics come from the first that exists of: its group
 entry, the parent group's entry, `metrics.defaults`, the top-level
 `statistics` list, then all eight (`mean`, `std`, `median`, `p5`, `p10`,
 `p95`, `p99`, `worst_case`). Report columns follow that list's order.
+Accuracy's list needs a statistic other than `std` (`E046`).
 
 #### Attack parameters and versions
 
@@ -358,7 +380,7 @@ The config file sets which of these run for each attack group; see
 | MCD | Mel Cepstral Distortion | dB (lower = better) |
 | ViSQOL* | Virtual Speech Quality Objective Listener | 1.0 - 5.0 (MOS) |
 
-*ViSQOL is **optional**. The [`visqol`](https://github.com/google/visqol) package is not in `requirements.txt` because its installation requires Bazel and platform-specific build steps. Install it separately if you want ViSQOL scores in your reports; without it, `W007` warns before the run, the reports name ViSQOL in a footnote instead of a column, and all other metrics are still computed.
+*ViSQOL is **optional**. It comes from the prebuilt `visqol-python` wrapper, which `requirements.txt` pins and the `metrics` extra installs (`pip install 'deepmarkpy[metrics]'`, included in `.[all]`). Without it, `W007` warns before the run, the reports name ViSQOL in a footnote instead of a column, and all other metrics are still computed.
 
 **Non-Intrusive Quality (NISQA):**
 
@@ -454,7 +476,7 @@ invocation does not make them overwrite each other.
 
 **`benchmark` mode, one model:**
 - `benchmark_results.json` – Detailed per-file, per-attack results
-- `benchmark_stats.json` – Per-attack statistics, carrying exactly the metrics and statistics the config asked for
+- `benchmark_stats.json` – Per-attack statistics, carrying exactly the metrics and statistics the config asked for; with `duration_groups` set, it is keyed by duration bin instead (`{"<bin>": {"stats": {...}, "n_files": n}}`), plus an all-files `Overall` entry when `include_overall` is true and the files fall in more than one bin
 - `run_metadata.json` – Version, git revision, seed, plugin inventory, and the config file the run came from
 - `benchmark_report.tex/.pdf` – Accuracy per attack family, the accuracy ranking chart, and attack-strength curves for any attack run at two or more versions
 - `detailed_report.tex/.pdf` – Per-family metric breakdowns against a "no attack (watermark only)" baseline (whenever any signal metric is enabled)
@@ -598,7 +620,10 @@ class NewModel(BaseModel):
 3.	Add config.json
 ```json
 {
-    "watermark_size": 16
+    "sampling_rate": 16000,
+    "watermark_size": 16,
+    "returns_confidence": false,
+    "is_zero_bit": false
 }
 ```
 

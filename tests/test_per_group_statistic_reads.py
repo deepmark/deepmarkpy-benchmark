@@ -196,3 +196,47 @@ class TestComparativeReportFigures:
         )
 
         assert generator._primary_value(SPREAD_STATS[PINK_NOISE], PINK_NOISE) == 82.0
+
+    def test_the_radar_reads_the_main_tables_statistic(self, tmp_path):
+        """With worst_case ranked, the radar plots worst_case, not the mean."""
+        config = load_config_data({
+            "mode": "benchmark",
+            "models": ["AudioSealModel", "PerthModel"],
+            "metrics": {"defaults": {
+                "accuracy": {"statistics": ["mean", "worst_case"]}}},
+            "comparison": {"primary_statistic": "worst_case"},
+        }, quiet=True)
+        generator = ComparativeReportGenerator(
+            str(tmp_path), resolver=config.resolver,
+            primary_statistic=config.comparison_primary_statistic,
+        )
+
+        entry = {"accuracy_mean": 90.0, "accuracy_worst_case": 40.0}
+        assert generator._primary_value(entry, NOISE) == 40.0
+
+    def test_the_radar_caption_names_the_statistic_it_plots(self, stats, tmp_path):
+        """Lowpass's group computes only the median, so the caption says so."""
+        config, computed = stats
+        generator = ComparativeReportGenerator(
+            str(tmp_path), resolver=config.resolver,
+        )
+
+        tex = generator.generate_latex_report({"A": computed, "B": computed})
+        caption = tex.split("radar_chart.png}", 1)[1].split("\\caption{", 1)[1]
+        caption = caption.split("}\n", 1)[0]
+        assert caption.startswith("Detection accuracy (mean) across all attacks.")
+        assert "first statistic other than the standard deviation" in caption
+
+    def test_an_unconfigured_primary_gives_way_to_a_level_not_std(self, tmp_path):
+        """The default primary, mean, is not configured, and std is listed first."""
+        config = load_config_data({
+            "mode": "benchmark",
+            "models": ["AudioSealModel"],
+            "metrics": {"defaults": {
+                "accuracy": {"statistics": ["std", "median"]}}},
+        }, quiet=True)
+        generator = ComparativeReportGenerator(
+            str(tmp_path), resolver=config.resolver,
+        )
+
+        assert generator._statistics()[0] == "median"

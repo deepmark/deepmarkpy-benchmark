@@ -1,6 +1,7 @@
-"""The CLI, driven end to end from config files: ``main()`` runs real native
-attacks against an in-process model plugin with no ``base_url``, so no
-service is probed and Docker is not involved."""
+"""The CLI, driven end to end from config files and from flags: ``main()``
+runs real native attacks against an in-process model plugin with no
+``base_url``. An autouse fixture makes NISQA unavailable and the docker CLI
+list no container, so no test contacts a service or runs the docker CLI."""
 
 import json
 import pathlib
@@ -13,8 +14,22 @@ import pytest
 import soundfile as sf
 
 from deepmarkpy import run as run_module
+from deepmarkpy.utils import efficiency, metrics
 
 pytestmark = pytest.mark.usefixtures("no_pdflatex")
+
+# The docker CLI call, which _no_services replaces in every test.
+RUN_DOCKER = efficiency._run_docker
+
+
+@pytest.fixture(autouse=True)
+def _no_services(monkeypatch):
+    """NISQA reads as unavailable without a request; docker lists nothing."""
+    monkeypatch.setattr(metrics, "_NISQA_ENDPOINT", None)
+    monkeypatch.setattr(metrics, "_nisqa_unavailable", True)
+    monkeypatch.setattr(metrics, "_nisqa_reason", "disabled in tests")
+    monkeypatch.setattr(efficiency, "_run_docker", lambda args: "")
+
 
 MODEL_SOURCE = '''
 import numpy as np
@@ -248,8 +263,6 @@ class TestBenchmarkMode:
         self, tmp_path, plugins_dir, audio_dir, monkeypatch,
     ):
         """Only the configured metrics and statistics, no timings, no docker calls."""
-        from deepmarkpy.utils import efficiency
-
         docker_calls = []
         monkeypatch.setattr(efficiency, "_run_docker",
                             lambda args: docker_calls.append(args))
@@ -531,15 +544,19 @@ class TestDetectionReliabilityMode:
 
 class TestSeveralModesInOneInvocation:
     @pytest.mark.parametrize("repeated", [False, True])
-    def test_both_modes_run_and_neither_erases_the_other(
+    def test_every_mode_runs_and_none_erases_another(
         self, tmp_path, plugins_dir, audio_dir, repeated,
     ):
         """Each mode reports and saves its audio in audio/<mode>/."""
         benchmark = write_config(tmp_path, "benchmark.json")
         dr = write_config(tmp_path, "dr.json", mode="detection_reliability")
+        no_attacks = write_config(tmp_path, "no_attacks.json",
+                                  mode="no_attacks", attacks=None)
 
-        configs = (["--config", benchmark, "--config", dr] if repeated
-                   else ["--config", benchmark, dr])
+        configs = (
+            ["--config", benchmark, "--config", dr, "--config", no_attacks]
+            if repeated else ["--config", benchmark, dr, no_attacks]
+        )
         report_dir = tmp_path / "report"
         assert run_cli(
             *configs,
@@ -551,12 +568,13 @@ class TestSeveralModesInOneInvocation:
 
         assert (report_dir / "benchmark_report.tex").exists()
         assert (report_dir / "detection_reliability_report.tex").exists()
-        for mode in ("benchmark", "detection_reliability"):
+        assert (report_dir / "no_attacks_report.tex").exists()
+        for mode in ("benchmark", "detection_reliability", "no_attacks"):
             assert (report_dir / "audio" / mode / "clip0_watermarked.wav").exists()
 
 
 class TestFailureModes:
-    # The deprecated launcher, which scripts still run by path.
+    # The deprecated launcher, which scripts run by path.
     LAUNCHER = pathlib.Path(__file__).resolve().parents[1] / "src" / "run.py"
 
     @staticmethod
@@ -593,13 +611,19 @@ class TestFailureModes:
             "--config", config, "--plugins_dir", plugins_dir,
         ) == run_module.EXIT_CONFIG_ERROR
 
-    def test_validate_only_needs_no_audio_directory(self, tmp_path, plugins_dir):
+    def test_validate_only_needs_no_audio_directory(
+        self, tmp_path, plugins_dir, caplog,
+    ):
         """Validation needs no general.wav_files_dir, which --init leaves null."""
         config = write_config(tmp_path, "benchmark.json",
                               general={"wav_files_dir": None})
-        assert run_cli(
-            "--config", config, "--plugins_dir", plugins_dir, "--validate-only",
-        ) == run_module.EXIT_OK
+        with caplog.at_level("INFO"):
+            assert run_cli(
+                "--config", config, "--plugins_dir", plugins_dir,
+                "--validate-only",
+            ) == run_module.EXIT_OK
+        # The summary says how to set it rather than printing None.
+        assert "audio=not set" in caplog.text
 
     def test_validate_only_runs_nothing(self, tmp_path, plugins_dir, audio_dir):
         config = write_config(tmp_path, "benchmark.json")
@@ -885,12 +909,17 @@ class TestServiceProbe:
                 raise requests.ConnectionError("still starting")
             return "ok"
 
+        sleeps = []
         monkeypatch.setattr(requests, "get", flaky_get)
+        monkeypatch.setattr("time.sleep", sleeps.append)
         messages = run_module._unreachable_model_services(
             self._benchmark(), self._config(),
         )
         assert messages == []
         assert calls["n"] == 3, "gave up before the service came up"
+        # One pause between each pair of attempts, so a refused port is not
+        # hit in a tight loop.
+        assert sleeps == [run_module._SERVICE_PROBE_INTERVAL_S] * 2
 
     def test_a_service_that_never_answers_is_reported(self, monkeypatch):
         import requests
@@ -1187,10 +1216,22 @@ class TestContainerMemorySection:
         "attack_latency": {"enabled": False},
     }}
 
+    # What a run that used the service on port 5001 reports for it.
+    ROW = ("Model", "A", "deepmark-audioseal", 3348.0, 8192.0)
+
+    @staticmethod
+    def _one_running_container(monkeypatch):
+        """docker lists deepmark-audioseal, publishing port 5001."""
+        monkeypatch.setattr(efficiency, "_running_containers",
+                            lambda: {"5001": "deepmark-audioseal"})
+        monkeypatch.setattr(efficiency, "_memory_usage", lambda names: {
+            "deepmark-audioseal": (3348.0, 8192.0)})
+
     def test_the_in_process_plugin_has_no_container_so_no_section(
-        self, tmp_path, plugins_dir, audio_dir,
+        self, tmp_path, plugins_dir, audio_dir, monkeypatch,
     ):
-        """The model here runs in this process; there is nothing to report."""
+        """A container is running, but none serves this in-process model."""
+        self._one_running_container(monkeypatch)
         config = write_config(tmp_path, "containers.json",
                               efficiency=self.ENABLED)
         report_dir = tmp_path / "containers"
@@ -1220,26 +1261,26 @@ class TestContainerMemorySection:
         assert container_section([]) == ""
 
     def test_a_missing_docker_cli_yields_no_rows(self, monkeypatch):
-        from deepmarkpy.utils import efficiency
-
+        monkeypatch.setattr(efficiency, "_run_docker", RUN_DOCKER)
         monkeypatch.setattr(efficiency.shutil, "which", lambda name: None)
         assert efficiency.container_snapshot(
             [("Model", "X", "http://localhost:5001")]
         ) == []
 
-    def test_a_port_no_container_publishes_is_left_out(self):
-        from deepmarkpy.utils import efficiency
+    def test_a_port_no_container_publishes_is_left_out(self, monkeypatch):
+        self._one_running_container(monkeypatch)
+        assert efficiency.container_snapshot([
+            ("Model", "A", "http://localhost:5001"),
+            ("Model", "X", "http://localhost:59999"),
+        ]) == [self.ROW]
 
-        assert efficiency.container_snapshot(
-            [("Model", "X", "http://localhost:59999")]
-        ) == []
-
-    def test_a_malformed_url_is_left_out(self):
-        from deepmarkpy.utils import efficiency
-
-        assert efficiency.container_snapshot(
-            [("Model", "X", "not a url"), ("Model", "Y", None)]
-        ) == []
+    def test_a_malformed_url_is_left_out(self, monkeypatch):
+        self._one_running_container(monkeypatch)
+        assert efficiency.container_snapshot([
+            ("Model", "A", "http://localhost:5001"),
+            ("Model", "Y", "not a url"),
+            ("Model", "Z", None),
+        ]) == [self.ROW]
 
 
 class TestContainerSectionCoversTheWholeRun:
@@ -1342,8 +1383,8 @@ class TestContainerSectionCoversTheWholeRun:
         assert asked == [["DummyWatermarkModel"], ["SecondWatermarkModel"]]
 
 
-class TestTheFlagInterfaceStillWorks:
-    """The 2.x flags build a config that runs as the equivalent file does."""
+class TestTheFlagInterface:
+    """The measurement flags build a config that runs as the equivalent file does."""
 
     def _flag_run(self, tmp_path, plugins_dir, audio_dir, *extra):
         report_dir = tmp_path / "flags"
@@ -1391,23 +1432,21 @@ class TestTheFlagInterfaceStillWorks:
                      "detailed_report.tex"):
             assert (flag_dir / name).exists(), f"{name} was not written"
 
-        config = write_config(
-            tmp_path, "equivalent.json",
-            metrics={"defaults": {}},  # no block: the built-in matrix applies
-        )
+        # The config the flags build: no statistics and no metrics block, so
+        # all eight statistics and the built-in matrix apply.
+        config = write_config(tmp_path, "equivalent.json",
+                              metrics=None, statistics=None)
         config_dir = tmp_path / "fromfile"
-        run_cli("--config", config, "--wav_files_dir", audio_dir,
-                "--report_dir", str(config_dir), "--plugins_dir", plugins_dir,
-                "--seed", "3")
+        assert run_cli(
+            "--config", config, "--wav_files_dir", audio_dir,
+            "--report_dir", str(config_dir), "--plugins_dir", plugins_dir,
+            "--seed", "3",
+        ) == run_module.EXIT_OK
 
-        def accuracy(report_dir):
-            stats = json.loads(
-                (report_dir / "benchmark_stats.json").read_text()
-            )
-            return {name: value.get("accuracy_mean")
-                    for name, value in stats.items()}
+        def stats(report_dir):
+            return json.loads((report_dir / "benchmark_stats.json").read_text())
 
-        assert accuracy(flag_dir) == accuracy(config_dir)
+        assert stats(flag_dir) == stats(config_dir)
 
     def test_an_attack_parameter_flag_reaches_the_attack(
         self, tmp_path, plugins_dir, audio_dir,
@@ -1417,7 +1456,7 @@ class TestTheFlagInterfaceStillWorks:
         assert run_cli(
             "--wm_model", "DummyWatermarkModel",
             "--attack_types", ATTACK_CLASS,
-            f"--{ATTACK_PARAM}", "40",
+            f"--{ATTACK_PARAM}", "25",
             "--wav_files_dir", audio_dir,
             "--report_dir", str(report_dir),
             "--plugins_dir", plugins_dir, "--seed", "3",
@@ -1427,7 +1466,8 @@ class TestTheFlagInterfaceStillWorks:
             (report_dir / "benchmark_results.json").read_text()
         ).values()))["attacks"]
 
-        assert 35 < attacks[f"{ATTACK_CLASS} (default)"]["attack_snr_db"] < 45
+        # 25 dB, away from every preset: default 35, mild 45, aggressive 15.
+        assert 20 < attacks[f"{ATTACK_CLASS} (default)"]["attack_snr_db"] < 30
         # The presets it must not have touched.
         assert 10 < attacks[f"{ATTACK_CLASS} (aggressive)"]["attack_snr_db"] < 20
         assert 40 < attacks[f"{ATTACK_CLASS} (mild)"]["attack_snr_db"] < 50
@@ -1535,6 +1575,12 @@ class TestTheFlagInterfaceStillWorks:
                     "--wav_files_dir", audio_dir,
                     "--plugins_dir", plugins_dir, "--validate-only")
 
-    def test_neither_a_config_nor_a_flag_still_asks_for_config(self):
+    def test_neither_a_config_nor_a_flag_asks_for_a_config(self):
         with pytest.raises(SystemExit):
             run_cli("--wav_files_dir", "whatever")
+
+    def test_the_help_says_these_flags_run_without_a_config(self):
+        """--help lists them, so it must not call every flag operational."""
+        text = " ".join(run_module._build_parser().format_help().split())
+        assert "operational only" not in text
+        assert "Required unless --init or a compatibility flag is used." in text

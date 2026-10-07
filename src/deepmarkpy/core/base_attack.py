@@ -48,7 +48,7 @@ class BaseAttack(abc.ABC):
                     )
                 self._config = raw[self._version]
             else:
-                # Single-version config (backward compatible)
+                # Single-version config: the whole file is the parameter set.
                 self._config = raw
 
     @abc.abstractmethod

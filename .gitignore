@@ -45,8 +45,8 @@ chinese-test/
 chinese-test-60s/
 chinese-test-combined/
 results/
-# scripts/ is tracked since P0.2/P0.3: it holds the committed fixture
-# and constraint helpers required by docs/REORG_PLAN.md §4.3/§6.
+# scripts/ is tracked: generate_native_goldens.py and contract_check.py record
+# the test fixtures, capture_image_constraints.py the per-image constraints.
 
 
 report/

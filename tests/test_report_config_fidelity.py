@@ -333,7 +333,7 @@ class TestNoAttacksReportFollowsTheConfig:
             ],
         }}
 
-    def test_per_metric_statistics_are_no_longer_discarded(self, tmp_path):
+    def test_each_metric_gets_the_statistics_it_configures(self, tmp_path):
         """Each metric gets the statistics its own configuration asks for."""
         path = tmp_path / "c.json"
         path.write_text(json.dumps({

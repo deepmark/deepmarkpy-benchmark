@@ -55,7 +55,7 @@ class TestEveryAttackIsGrouped:
         ("AdditiveNoiseAttack", "audio_distortion"),
         ("VAEAttack", "ai_attacks"),
     ])
-    def test_previously_orphaned_attacks_sit_with_their_family(self, attack, group):
+    def test_an_attack_sits_with_its_family(self, attack, group):
         assert get_group_for_attack(attack) == group
 
     def test_grouped_attack_gets_fewer_metrics_than_the_fallback(self):

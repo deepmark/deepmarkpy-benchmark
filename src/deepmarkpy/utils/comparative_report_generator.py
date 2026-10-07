@@ -13,6 +13,7 @@ from deepmarkpy.utils.latex_helpers import (
     stat_header,
 )
 from deepmarkpy.utils.metric_resolver import MetricResolver
+from deepmarkpy.utils.report_charts import plain
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,9 @@ class ComparativeReportGenerator:
     def _statistics(self, all_stats=None):
         """Accuracy statistics to table, primary first.
 
-        The union of what every group the run touched configures.
+        The union of what every group the run touched configures. A primary
+        none of them configures gives way to the first one other than
+        ``std``, so a spread never heads the main table by default.
         """
         configured = list(self.resolver.statistics_for(None, "accuracy"))
         for attack in self._attacks_in(all_stats):
@@ -64,9 +67,14 @@ class ComparativeReportGenerator:
                     configured.append(statistic)
         primary = (
             self.primary_statistic if self.primary_statistic in configured
-            else (configured[0] if configured else "mean")
+            else next((s for s in configured if s != "std"), "mean")
         )
         return [primary] + [s for s in configured if s != primary]
+
+    def _radar_statistic(self, all_stats=None):
+        """The statistic the radar plots: the main table's, unless that is ``std``."""
+        return next((s for s in self._statistics(all_stats) if s != "std"),
+                    "mean")
 
     @staticmethod
     def _attacks_in(all_stats):
@@ -88,17 +96,21 @@ class ComparativeReportGenerator:
             return float(entry) if statistic == "mean" else None
         return entry.get(f"accuracy_{statistic}")
 
-    def _primary_value(self, entry, attack_name):
+    def _primary_value(self, entry, attack_name, statistic=None):
         """The radar's value for an attack.
 
-        Its group's first configured accuracy statistic other than ``std``
-        that has a value, else the mean.
+        ``statistic`` (by default ``_radar_statistic()``) when the attack has
+        it, else its group's first configured accuracy statistic other than
+        ``std`` that has a value, else the mean.
         """
+        statistic = statistic or self._radar_statistic()
         group_key = self.resolver.group_for_attack(attack_name)
-        for statistic in self.resolver.statistics_for(group_key, "accuracy"):
-            if statistic == "std":
+        candidates = [statistic] + self.resolver.statistics_for(group_key,
+                                                                "accuracy")
+        for candidate in candidates:
+            if candidate == "std":
                 continue
-            value = self._value(entry, statistic)
+            value = self._value(entry, candidate)
             if value is not None:
                 return float(value)
         return self._value(entry, "mean")
@@ -322,9 +334,10 @@ class ComparativeReportGenerator:
         angles_closed = angles + [angles[0]]
         ax.set_facecolor("white")
 
+        statistic = self._radar_statistic(all_stats)
         for idx, model in enumerate(model_names):
             values = [
-                self._primary_value(all_stats[model].get(a), a) or 0
+                self._primary_value(all_stats[model].get(a), a, statistic) or 0
                 for a in attacks
             ]
             values_closed = values + [values[0]]
@@ -372,7 +385,7 @@ class ComparativeReportGenerator:
     def _draw_attack_legend(self, legend_ax, attacks, codes, n_models):
         """Draw the "Attack Legend" block below the model legend."""
         legend_entries = [
-            f"{codes[i]}  --  {self._display_name(attacks[i])}"
+            plain(f"{codes[i]}  --  {self._display_name(attacks[i])}")
             for i in range(len(attacks))
         ]
         model_col_size = (n_models + 1) // 2
@@ -395,6 +408,21 @@ class ComparativeReportGenerator:
             legend_ax.text(x, y, entry, fontsize=10, color="#555555",
                            transform=legend_ax.transAxes,
                            verticalalignment="center")
+
+    def _radar_caption(self, all_stats, attacks):
+        """Name the statistic the radar plots, and the fallback when one is used."""
+        statistic = self._radar_statistic(all_stats)
+        name = stat_header(statistic).lower()
+        caption = f"Detection accuracy ({name}) across all attacks."
+        if any(statistic not in self.resolver.statistics_for(
+                self.resolver.group_for_attack(attack), "accuracy")
+               for attack in attacks):
+            caption += (
+                f" An attack whose group does not compute the {name} is "
+                f"plotted at its group's first statistic other than the "
+                f"standard deviation."
+            )
+        return caption
 
     # ----------------------------------------------------------------
     # Full LaTeX report
@@ -449,8 +477,7 @@ class ComparativeReportGenerator:
         radar_figure = ""
         if include_radar:
             radar_figure = figure_block(
-                "radar_chart.png",
-                "Detection accuracy comparison across all attacks.",
+                "radar_chart.png", self._radar_caption(all_stats, attacks),
                 "fig:comp_radar",
             )
 
@@ -500,9 +527,14 @@ class ComparativeReportGenerator:
         """
         self.model_meta = model_meta or {}
 
-        # Radar chart
+        # Radar chart, left out when it cannot be drawn.
         radar_path = os.path.join(self.report_dir, "radar_chart.png")
-        include_radar = self.create_radar_chart(all_stats, radar_path)
+        try:
+            include_radar = self.create_radar_chart(all_stats, radar_path)
+        except Exception as exc:  # noqa: BLE001 - a figure is never fatal
+            logger.warning(f"Radar chart skipped: {exc}")
+            plt.close("all")
+            include_radar = False
 
         latex_content = self.generate_latex_report(
             all_stats, include_radar=include_radar,

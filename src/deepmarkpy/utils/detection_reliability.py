@@ -117,8 +117,9 @@ def run_detection_reliability(
             expanded entry; see ``expand_attacks``.
         extra_attack_versions: versions the config defines that the plugin
             does not; see ``expand_attacks``.
-        **attack_kwargs: forwarded to attack ``apply()`` calls (per-attack
-            parameter overrides from the config file).
+        **attack_kwargs: extra keyword arguments forwarded to every
+            attack's ``apply()``; per-attack overrides come through
+            ``attack_parameters``.
 
     Returns:
         ``DetectionReliabilityResult`` with no-attack and per-attack

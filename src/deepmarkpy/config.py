@@ -39,6 +39,7 @@ from deepmarkpy.utils.metric_resolver import (
     MANDATORY_METRICS,
     MetricResolver,
     NISQA_METRICS,
+    SIGNAL_METRICS,
     STATISTICS_EXEMPT_METRICS,
 )
 
@@ -547,7 +548,7 @@ class _Validator:
             efficiency=efficiency,
         )
 
-        comparison = self._check_comparison(resolver)
+        comparison = self._check_comparison(resolver, groups, attack_list)
         self._check_primary_coverage(comparison, resolver, models, groups,
                                      attack_list)
         self._check_group_coverage(per_group, groups, attack_list)
@@ -779,7 +780,9 @@ class _Validator:
                 "E012", "models",
                 f"mode 'detection_reliability' measures one model at a time "
                 f"(false-positive and false-negative rates are per model), but "
-                f"{len(clean)} are listed. Use one file per model.",
+                f"{len(clean)} are listed. Run one invocation per model, each "
+                f"with its own report directory; one invocation takes one "
+                f"file per mode (E006).",
                 value=clean,
             )
         return clean
@@ -1124,27 +1127,39 @@ class _Validator:
 
         if "defaults" not in metrics:
             # A metric named nowhere is off.
+            if calculate:
+                effect = ("every metric not named under 'per_group' is off "
+                          "and most tables will be empty")
+            else:
+                effect = ("ber and emr are off wherever 'per_group' does not "
+                          "name them, and with 'calculate_quality_metrics' "
+                          "false the signal metrics are pesq, visqol and "
+                          "stoi whatever the block says")
             self.warn(
                 "W012", "metrics.defaults",
-                "missing, so every metric not named under 'per_group' is "
-                "off and most tables will be empty. Add a 'defaults' block, "
-                "or delete 'metrics' entirely to use the built-in matrix.",
+                f"missing, so {effect}. Add a 'defaults' block, or delete "
+                f"'metrics' entirely to use the built-in matrix.",
             )
 
         raw_defaults = self._typed(metrics, "defaults", "metrics.defaults",
                                    dict, {})
         defaults = self._check_metric_map(raw_defaults, "metrics.defaults")
+        per_group = self._check_per_group(metrics)
 
-        if not calculate and _real_keys(raw_defaults):
+        # The switch overrides the signal metrics' enable flags, and only those.
+        if not calculate and any(
+            metric in SIGNAL_METRICS and "enabled" in entry
+            for section in [defaults, *per_group.values()]
+            for metric, entry in section.items()
+        ):
             self.warn(
                 "W002", "calculate_quality_metrics",
-                "is false (or absent), so the 'metrics' enable flags are "
-                "ignored: only accuracy and the always-on trio (pesq, visqol, "
-                "stoi) are computed. Set it to true to use the metrics block. "
-                "Per-metric statistics still apply.",
+                "is false (or absent), so the signal-metric enable flags are "
+                "ignored and only pesq, visqol and stoi are computed among "
+                "them; ber and emr keep their flags, and per-metric "
+                "statistics still apply. Set it to true to use the metrics "
+                "block.",
             )
-
-        per_group = self._check_per_group(metrics)
         return defaults, per_group
 
     def _check_per_group(self, metrics):
@@ -1412,18 +1427,30 @@ class _Validator:
             )
         return clean, include_overall
 
-    def _check_comparison(self, resolver) -> str:
+    def _check_comparison(self, resolver, groups, attack_list) -> str:
         if "comparison" not in MODE_KEYS[self.mode]:
             return "mean"
 
         block = self._typed(self.raw, "comparison", "comparison", dict, {})
         self._check_keys(block, "comparison", ("primary_statistic",))
 
-        configured = resolver.statistics_for(None, "accuracy")
+        # Accuracy's statistics by default, then each ranked group's. A group
+        # whose list leaves the primary out is W015, not an error.
+        ranked = self._ranked_groups(groups, attack_list)
+        if self.attacks_registry is None and not groups and not attack_list:
+            # Without a registry an ungrouped attack may run, so 'other'
+            # counts too: E036 must not depend on undiscovered plugins.
+            from deepmarkpy.utils.attack_groups import OTHER_GROUP_KEY
+            ranked.append(OTHER_GROUP_KEY)
+        computed = list(resolver.statistics_for(None, "accuracy"))
+        for group_key in ranked:
+            for statistic in resolver.statistics_for(group_key, "accuracy"):
+                if statistic not in computed:
+                    computed.append(statistic)
         # Unset means "whichever statistic accuracy leads with", not a hard
         # "mean" -- a config that drops the mean has not made a mistake.
         if "primary_statistic" not in block:
-            return next((s for s in configured if s != "std"), "mean")
+            return next((s for s in computed if s != "std"), "mean")
 
         primary = block["primary_statistic"]
         if primary == "std":
@@ -1445,15 +1472,16 @@ class _Validator:
                 value=primary,
                 suggestion=_suggest(primary, _LEVEL_STATISTICS),
             )
-            return configured[0] if configured else "mean"
+            return computed[0] if computed else "mean"
 
-        if primary not in configured:
+        if primary not in computed:
             self.error(
                 "E036", "comparison.primary_statistic",
-                f"'{primary}' is not among the statistics configured for "
-                f"accuracy ({', '.join(configured)}), so it is never computed "
-                f"and the main comparison table would be empty. Add it to "
-                f"accuracy's statistics, or pick one of those.",
+                f"'{primary}' is not among the statistics accuracy is computed "
+                f"with, by default or in any group this run selects "
+                f"({', '.join(computed)}), so it is never computed and the "
+                f"main comparison table would be empty. Add it to accuracy's "
+                f"statistics, or pick one of those.",
                 value=primary,
             )
             return "mean"
@@ -1472,22 +1500,7 @@ class _Validator:
         """
         if "comparison" not in MODE_KEYS[self.mode] or len(models) < 2:
             return
-        from deepmarkpy.utils.attack_groups import (
-            OTHER_GROUP_KEY, get_group_for_attack,
-        )
-
-        reachable = self._groups_in_run(groups, attack_list)
-        candidates = [g for g in ATTACK_GROUPS
-                      if reachable is None or g in reachable]
-        if reachable is None:
-            # Every discovered attack runs, an ungrouped one included.
-            ungrouped = any(get_group_for_attack(name) is None
-                            for name in self.attacks_registry or ())
-        else:
-            ungrouped = OTHER_GROUP_KEY in reachable
-        if ungrouped:
-            candidates.append(OTHER_GROUP_KEY)
-        for group_key in candidates:
+        for group_key in self._ranked_groups(groups, attack_list):
             statistics = resolver.statistics_for(group_key, "accuracy")
             if primary not in statistics:
                 # A std table is shown uncoloured, so it ranks nothing.
@@ -1577,6 +1590,28 @@ class _Validator:
                         f"not this one. Add '{attack}:{version}' to run it.",
                         severity="info",
                     )
+
+    def _ranked_groups(self, groups, attack_list):
+        """Top-level group keys whose rows the main comparison table ranks.
+
+        Includes ``other`` when an ungrouped attack runs.
+        """
+        from deepmarkpy.utils.attack_groups import (
+            OTHER_GROUP_KEY, get_group_for_attack,
+        )
+
+        reachable = self._groups_in_run(groups, attack_list)
+        ranked = [g for g in ATTACK_GROUPS
+                  if reachable is None or g in reachable]
+        if reachable is None:
+            # Every discovered attack runs, an ungrouped one included.
+            ungrouped = any(get_group_for_attack(name) is None
+                            for name in self.attacks_registry or ())
+        else:
+            ungrouped = OTHER_GROUP_KEY in reachable
+        if ungrouped:
+            ranked.append(OTHER_GROUP_KEY)
+        return ranked
 
     def _groups_in_run(self, groups, attack_list):
         """Group keys reachable by this run's attack selection, or None for all."""

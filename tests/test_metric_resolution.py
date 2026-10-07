@@ -3,6 +3,7 @@ subgroup to its parent group to the defaults, the statistics fallbacks, and
 the shipped defaults reproducing the ``ATTACK_GROUPS`` matrix."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +28,9 @@ from deepmarkpy.utils.metric_resolver import (
 CONFIGURABLE_METRICS = [m for m in CANONICAL_METRIC_ORDER
                         if m not in EFFICIENCY_METRICS]
 
+TEMPLATES = (Path(__file__).resolve().parents[1]
+             / "src" / "deepmarkpy" / "config_templates")
+
 
 def build(tmp_path, **overrides):
     """Write and load a benchmark config from the given keys."""
@@ -41,7 +45,7 @@ def build(tmp_path, **overrides):
     return load_configs([str(path)])[0].resolver
 
 
-class TestRequirement1PerGroupSelection:
+class TestEachGroupChoosesItsOwnMetrics:
     """Each group may choose its own metrics and its own statistics."""
 
     def test_a_metric_can_be_on_for_one_group_and_off_for_another(self, tmp_path):
@@ -62,7 +66,7 @@ class TestRequirement1PerGroupSelection:
         assert "mcd" in resolver.metrics_for_attack("GaussianNoiseAttack")
 
 
-class TestRequirement1InheritanceIsPerMetric:
+class TestInheritanceIsPerMetric:
     def test_a_group_section_only_states_what_it_changes(self, tmp_path):
         resolver = build(tmp_path, metrics={
             "defaults": {
@@ -134,7 +138,7 @@ class TestSubgroupInheritance:
         assert set(needed) == {"pesq", "stoi"}
 
 
-class TestRequirement2PerGroupIsOptional:
+class TestPerGroupIsOptional:
     def test_deleting_per_group_applies_defaults_everywhere(self, tmp_path):
         resolver = build(tmp_path, metrics={
             "defaults": {"pesq": {"enabled": True}, "mcd": {"enabled": False}},
@@ -144,7 +148,7 @@ class TestRequirement2PerGroupIsOptional:
             assert resolver.is_enabled(group, "mcd") is False
 
 
-class TestRequirement3UnusedGroupsAreNotErrors:
+class TestUnusedGroupsAreNotErrors:
     def test_a_group_not_in_this_run_is_ignored_with_a_note(self, tmp_path):
         """A group this run does not reach is noted with W001, not refused."""
         path = tmp_path / "config.json"
@@ -160,7 +164,7 @@ class TestRequirement3UnusedGroupsAreNotErrors:
         assert [w.code for w in config.warnings if w.code == "W001"]
 
 
-class TestRequirement4DefaultsReproduceTheTaxonomy:
+class TestDefaultsReproduceTheTaxonomy:
     def test_builtin_matrix_is_the_taxonomy(self):
         """Each group's metrics plus the always-on trio; each subgroup's alone."""
         resolver = MetricResolver.from_attack_groups()
@@ -178,8 +182,7 @@ class TestRequirement4DefaultsReproduceTheTaxonomy:
     @pytest.mark.parametrize("mode", ["benchmark", "detection_reliability"])
     def test_shipped_template_reproduces_the_builtin_matrix(self, mode):
         """An unedited --init file must not change what a run displays."""
-        path = f"src/deepmarkpy/config_templates/{mode}.json"
-        shipped = load_configs([path])[0].resolver
+        shipped = load_configs([str(TEMPLATES / f"{mode}.json")])[0].resolver
         builtin = MetricResolver.from_attack_groups()
         drift = [
             (group, metric)
@@ -191,7 +194,7 @@ class TestRequirement4DefaultsReproduceTheTaxonomy:
         assert drift == []
 
 
-class TestRequirement5StatisticsFallback:
+class TestStatisticsFallback:
     def test_omitting_statistics_entirely_yields_all_eight(self, tmp_path):
         resolver = build(tmp_path, metrics={"defaults": {"pesq": {"enabled": True}}})
         assert resolver.statistics_for("audio_distortion", "pesq") == list(ALL_STATISTICS)

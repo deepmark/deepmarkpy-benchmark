@@ -3,8 +3,9 @@
 ``ATTACK_GROUPS`` is the attack *selection* taxonomy: it maps a group
 name to the attacks it contains, and declares which quality /
 intelligibility metrics that family makes sense for. Those metric lists
-are the source the shipped config templates are generated from, so a
-default run reproduces them exactly.
+are the built-in default matrix (``MetricResolver.from_attack_groups``).
+The shipped benchmark and detection_reliability templates restate them by
+hand, and a test fails if the two drift.
 
 ``ATTACK_SUBGROUPS`` refines one group -- ``audio_editing`` -- into four
 report-only subsections whose metric lists deliberately differ from the
@@ -17,9 +18,8 @@ length-changing edits. Both levels are configurable: see
 sample-aligned metric under desynchronization, SI-SDR under
 SignInversion. Reports print them marked, with the reason in a footnote.
 
-Groups with empty metric lists skip those metrics entirely -- this
-avoids reporting misleading values (e.g. PESQ for collusion attacks
-that preserve audio quality but overwrite the watermark).
+A metric a group's lists omit is off for that group, except PESQ, ViSQOL
+and STOI, which every top-level group reports.
 """
 
 _NISQA_METRICS = ["nisqa_mos", "nisqa_noi", "nisqa_dis", "nisqa_col", "nisqa_loud"]

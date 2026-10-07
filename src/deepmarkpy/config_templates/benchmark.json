@@ -29,7 +29,7 @@
     "_TimeStretchAttack:subtle": { "stretch_rate_time_stretch": 1.05 }
   },
 
-  "_calculate_quality_metrics": "Master switch: true = the metrics block below decides what runs; false or absent = only accuracy plus pesq, visqol, stoi, and the enabled flags are IGNORED (statistics still apply).",
+  "_calculate_quality_metrics": "Master switch: true = the metrics block below decides what runs; false or absent = accuracy plus pesq, visqol, stoi; the signal metrics' enabled flags are IGNORED, ber/emr keep theirs (statistics still apply).",
   "calculate_quality_metrics": true,
 
   "_statistics": "Default statistics per metric, and the report column order. Any of: mean, std, median, p5, p10, p95, p99, worst_case. Delete this key to get all eight.",
@@ -157,7 +157,7 @@
     }
   },
 
-  "_comparison": "Used only with two or more models. primary_statistic is the one ranked in the main comparison table; it must be one of accuracy's statistics. Every other one gets its own table below it.",
+  "_comparison": "Used only with two or more models. primary_statistic is the one ranked in the main comparison table; it must be one of accuracy's statistics, and not std, a spread that ranks nothing (E035). Every other one, std included, gets its own table below it, std uncoloured. accuracy's statistics must include one besides std (E046).",
   "comparison": {
     "primary_statistic": "mean"
   },
@@ -173,12 +173,12 @@
       "embed_latency": { "enabled": true, "statistics": ["mean", "worst_case"] },
       "detect_latency": { "enabled": true, "statistics": ["mean", "worst_case"] },
       "attack_latency": { "enabled": true, "statistics": ["mean", "p95", "worst_case"] },
-      "_container_footprint": "Resident memory of the model's container while warm, in MiB, read once per run via the docker CLI. It is the WHOLE service - weights, Python runtime, web server - not the size of the model, and the services load their weights at start so a container can never be measured empty. Absent, and simply omitted, when docker is unavailable or no container publishes the model's port.",
+      "_container_footprint": "Resident memory, in MiB, of each running container the run used (the model's, every dockerized attack's, and NISQA's when a NISQA metric is on), read via the docker CLI while warm. It is the WHOLE service - weights, Python runtime, web server - not the size of a model, and the services load their weights at start so a container can never be measured empty. A service is absent when docker is unavailable or no running container publishes its port.",
       "container_footprint": { "enabled": false }
     }
   },
 
-  "_duration_groups": "Report separately per audio length. boundaries: ascending seconds, e.g. [5, 10, 20, 30] gives <5s, 5-10s, 10-20s, 20-30s, >30s; an empty list disables grouping. include_overall adds a final all-files section.",
+  "_duration_groups": "Report separately per audio length. boundaries: ascending seconds, e.g. [5, 10, 20, 30] gives < 5.0s, 5.0-10.0s, 10.0-20.0s, 20.0-30.0s and >= 30.0s, each bin holding its lower boundary; an empty list disables grouping. include_overall adds a final all-files section.",
   "duration_groups": {
     "boundaries": [],
     "include_overall": false

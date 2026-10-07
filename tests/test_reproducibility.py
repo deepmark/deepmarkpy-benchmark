@@ -122,7 +122,7 @@ class TestReportDirIsHonoured:
         assert "report_base = settings.report_dir" in source
 
     def test_report_dir_resolves_cli_over_config_over_default(self, tmp_path):
-        """The three-level precedence the config split promises."""
+        """--report_dir, then general.report_dir, then the default."""
         import argparse
 
         from deepmarkpy.config import ModeConfig

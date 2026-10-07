@@ -211,7 +211,7 @@ def attack_strength_curves(series, output_path, statistic_label="Mean",
     """
     return _line_series(
         series, output_path,
-        xlabel="Configured attack version (weakest to strongest)",
+        xlabel="Configured attack version",
         ylabel=f"Detection accuracy ({statistic_label}, %)",
         title="Accuracy across attack strengths",
         chance_floor=chance_floor,

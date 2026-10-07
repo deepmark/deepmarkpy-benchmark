@@ -18,7 +18,7 @@ classifiers = [
 ]
 # Core dependencies are everything the CLI imports unconditionally
 # (metrics.py imports pesq/pystoi and run.py imports the matplotlib-backed
-# report generator at module level). requirements.txt remains the pinned
+# report generator at module level). requirements.txt is the pinned
 # reproduction lockfile.
 dependencies = [
     "numpy",
@@ -34,8 +34,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# ViSQOL is imported lazily and skipped when absent; NISQA has no PyPI
-# distribution and stays a documented manual install.
+# ViSQOL is imported lazily and skipped when absent. NISQA needs no extra:
+# it runs as the nisqa Docker service.
 metrics = ["visqol-python"]
 native-attacks = ["pycodec2>=4.0.0", "audiocomplib"]
 all = ["deepmarkpy[metrics,native-attacks]"]
@@ -53,8 +53,8 @@ include = ["deepmarkpy*"]
 
 [tool.setuptools.package-data]
 deepmarkpy = [
-    # --init reads these, so they must ship inside the wheel rather than
-    # only existing in the source checkout's configs/ directory.
+    # --init reads these from the installed package, so they must ship in
+    # the wheel.
     "config_templates/*.json",
     "plugins/**/config.json",
     "plugins/**/requirements.txt",
