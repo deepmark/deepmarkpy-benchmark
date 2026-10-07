@@ -5,12 +5,35 @@ import os
 
 import pytest
 
-from deepmarkpy.utils.latex_helpers import display_attack_name
+from deepmarkpy.utils.latex_helpers import display_attack_name, latex_escape
 from deepmarkpy.utils.report_generator import BenchmarkReportGenerator, generate_benchmark_report
 
 
+class TestVersionNamesAreEscaped:
+    """A version name is LaTeX-escaped like the base name it follows."""
+
+    def test_an_underscore_in_the_version_is_escaped(self):
+        assert display_attack_name("GaussianNoiseAttack (very_aggressive)") \
+            == "GaussianNoise (very\\_aggressive)"
+
+    def test_every_special_character_is_made_literal(self):
+        escaped = latex_escape("a&b%c$d#e_f{g}h~i^j\\k")
+        for raw in ("&", "%", "$", "#", "_", "{", "}"):
+            assert f"\\{raw}" in escaped
+        assert "\\textbackslash{}" in escaped
+        assert "\\textasciitilde{}" in escaped
+        assert "\\textasciicircum{}" in escaped
+
+    def test_the_figures_read_back_the_original_text(self):
+        """Charts take the table labels and undo the LaTeX for drawing."""
+        from deepmarkpy.utils.report_charts import plain
+
+        original = "x (a&b%c$d#e_f{g}h~i^j\\k)"
+        assert plain(latex_escape(original)) == original
+
+
 # ---------------------------------------------------------------------------
-# Performance tier classification (the threshold bug fix)
+# Performance tier classification
 # ---------------------------------------------------------------------------
 class TestPerformanceTiers:
     def test_excellent_threshold(self, sample_stats):
@@ -32,7 +55,7 @@ class TestPerformanceTiers:
         assert "Fair Performance" in report
 
     def test_thresholds_are_percentage_not_decimal(self):
-        """Regression test: thresholds must be 95/85/70, not 0.95/0.85/0.70."""
+        """Thresholds are percentages, 95/85/70, not fractions, 0.95/0.85/0.70."""
         stats = {"PerfectAttack": 100.0, "TerribleAttack": 50.0}
         gen = BenchmarkReportGenerator()
         report = gen.generate_latex_report(stats)

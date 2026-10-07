@@ -1,5 +1,53 @@
 # Changelog
 
+## v3.0.0 — 2026-10-07
+
+**Measurement settings move from flags into one JSON config file per mode.**
+`--config` runs one or more of them, `--init <mode>` prints a commented
+template, and `--validate-only` checks a file against the discovered plugins
+without running anything. The validator reports every problem together, each
+with a stable code and its JSON path. Without `--config` the 2.x flags still
+run: they are assembled into a config and validated the same way.
+
+### Added
+
+- Per-group metrics and statistics: each attack group enables its own metrics
+  and the statistics they are reported at.
+- Per-version attack parameters (`AttackName:version`), including versions a
+  config defines itself.
+- Duration groups: a report part per audio-length bin.
+- An `efficiency` section, off by default: embed, detect and attack latency,
+  and the memory of the containers a run used.
+- Attack-strength curves in the benchmark report: accuracy across an attack's
+  versions.
+
+### Changed
+
+- `--save_audio` with several modes in one invocation, including
+  `--no_attacks --detection_reliability`, writes each mode to `audio/<mode>/`.
+- The detailed report is written on every run and holds tables only.
+- `no_attacks` and the reliability baseline measure PESQ, ViSQOL and STOI
+  without `--calculate_quality_metrics`, as benchmark mode always has.
+- An unknown CrossModel second model (`E011`) and a `detection_reliability`
+  model without `is_watermarked()` (`E044`) fail validation before anything
+  runs.
+
+### Breaking
+
+- Removed `ReplacementAttack` and `Replacement2Attack`. No other attack's
+  output changes.
+- Each `metrics.<metric>` in `detection_reliability.json` is now an object of
+  statistics rather than the mean.
+- Attack parameter flags (`--snr_db_gaussian_noise`) must be spelled in full;
+  2.x accepted an unambiguous prefix.
+- Exit codes: `1` when a mode produces no results, `2` for an invalid
+  configuration or an unreachable model service (nothing runs). A skipped model
+  or a report that fails to render is logged and still exits `0`.
+- Internal Python APIs of `deepmarkpy.run`, `deepmarkpy.benchmark`,
+  `attack_groups` and the report generators changed. The engine API in
+  `docs/CONSUMING.md` did not.
+- `tqdm` is no longer a package dependency.
+
 ## v2.0.0 — 2026-08-01
 
 **Attack outputs change. Results are not comparable with v1.x.** v1.x preserved

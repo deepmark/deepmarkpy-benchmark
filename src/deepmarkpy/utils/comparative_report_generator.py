@@ -8,8 +8,12 @@ from deepmarkpy.utils.latex_helpers import (
     build_longtable,
     compile_latex,
     display_attack_name,
+    figure_block,
     make_preamble,
+    stat_header,
 )
+from deepmarkpy.utils.metric_resolver import MetricResolver
+from deepmarkpy.utils.report_charts import plain
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +34,86 @@ class ComparativeReportGenerator:
     Per-model quality and intelligibility breakdowns stay in the
     individual detailed reports; mixing model-level metrics here would
     compare different models on different signals and is not meaningful.
+
+    ``comparison.primary_statistic`` picks the main colour-ranked table's
+    statistic; every other configured accuracy statistic gets its own table.
     """
 
-    def __init__(self, report_dir="report/comparison"):
+    def __init__(self, report_dir="report/comparison", resolver=None,
+                 primary_statistic="mean"):
         self.report_dir = report_dir
         # {model: {is_zero_bit, watermark_size, sampling_rate, n_files}};
         # empty when a caller does not supply it.
         self.model_meta = {}
+        self.resolver = resolver or MetricResolver.from_attack_groups()
+        self.primary_statistic = primary_statistic
         os.makedirs(self.report_dir, exist_ok=True)
         self._has_deepmark_cls = os.path.exists(
             os.path.join(self.report_dir, "deepmark.cls")
         )
+
+    def _statistics(self, all_stats=None):
+        """Accuracy statistics to table, primary first.
+
+        The union of what every group the run touched configures. A primary
+        none of them configures gives way to the first one other than
+        ``std``, so a spread never heads the main table by default.
+        """
+        configured = list(self.resolver.statistics_for(None, "accuracy"))
+        for attack in self._attacks_in(all_stats):
+            group_key = self.resolver.group_for_attack(attack)
+            for statistic in self.resolver.statistics_for(group_key, "accuracy"):
+                if statistic not in configured:
+                    configured.append(statistic)
+        primary = (
+            self.primary_statistic if self.primary_statistic in configured
+            else next((s for s in configured if s != "std"), "mean")
+        )
+        return [primary] + [s for s in configured if s != primary]
+
+    def _radar_statistic(self, all_stats=None):
+        """The statistic the radar plots: the main table's, unless that is ``std``."""
+        return next((s for s in self._statistics(all_stats) if s != "std"),
+                    "mean")
+
+    @staticmethod
+    def _attacks_in(all_stats):
+        """Every attack name across the models, or nothing."""
+        attacks = set()
+        for stats in (all_stats or {}).values():
+            attacks.update(stats)
+        return attacks
+
+    @staticmethod
+    def _value(entry, statistic):
+        """One accuracy statistic from a per-attack stats dict, or None when absent.
+
+        A bare float is read as the mean.
+        """
+        if entry is None:
+            return None
+        if isinstance(entry, (int, float)):
+            return float(entry) if statistic == "mean" else None
+        return entry.get(f"accuracy_{statistic}")
+
+    def _primary_value(self, entry, attack_name, statistic=None):
+        """The radar's value for an attack.
+
+        ``statistic`` (by default ``_radar_statistic()``) when the attack has
+        it, else its group's first configured accuracy statistic other than
+        ``std`` that has a value, else the mean.
+        """
+        statistic = statistic or self._radar_statistic()
+        group_key = self.resolver.group_for_attack(attack_name)
+        candidates = [statistic] + self.resolver.statistics_for(group_key,
+                                                                "accuracy")
+        for candidate in candidates:
+            if candidate == "std":
+                continue
+            value = self._value(entry, candidate)
+            if value is not None:
+                return float(value)
+        return self._value(entry, "mean")
 
     def _preamble(self, title, author):
         return make_preamble(
@@ -121,15 +194,25 @@ class ComparativeReportGenerator:
         """True when the model reports a detection rate rather than bit accuracy."""
         return bool(self.model_meta.get(model_name, {}).get("is_zero_bit", False))
 
-    def generate_accuracy_table(self, all_stats):
-        """Generate the accuracy comparison table (attack x model).
+    def generate_accuracy_table(self, all_stats, statistic=None, label=None,
+                                with_note=True):
+        """Generate one accuracy comparison table (attack x model).
 
         Zero-bit and multi-bit models do not report the same quantity: a
         zero-bit score is a per-file detection rate whose failure floor is 0,
         a multi-bit score is bit agreement whose failure floor is chance
         (~50). Ranking them against each other would be meaningless, so
         zero-bit columns are marked and left out of the rank coloring.
+
+        Args:
+            all_stats: ``{model: {attack: per-attack stats dict}}``.
+            statistic: which accuracy statistic to show. Defaults to the
+                configured primary one.
+            label: LaTeX label; defaults to one derived from the statistic.
         """
+        statistic = statistic or self._statistics(all_stats)[0]
+        label = label or f"tab:comparison_accuracy_{statistic}"
+
         model_names, attacks = self.aggregate_stats(all_stats)
         n_models = len(model_names)
         zero_bit = [self._is_zero_bit(m) for m in model_names]
@@ -144,12 +227,16 @@ class ComparativeReportGenerator:
         rows = []
         for attack in attacks:
             display = self._display_name(attack)
-            values = [all_stats[m].get(attack) for m in model_names]
+            values = [
+                self._value(all_stats[m].get(attack), statistic)
+                for m in model_names
+            ]
             # Rank only among comparable (multi-bit) columns.
             rankable = [v for v, zb in zip(values, zero_bit) if not zb]
             cells = []
             for value, zb in zip(values, zero_bit):
-                if zb:
+                # A spread has no better end, so std is shown but not ranked.
+                if zb or statistic == "std":
                     cells.append("N/A" if value is None else f"{value:.2f}")
                 else:
                     cells.append(
@@ -161,11 +248,13 @@ class ComparativeReportGenerator:
             col_spec,
             header,
             rows,
-            caption="Watermark detection accuracy (\\%) by attack type. "
-                    "Columns are not a like-for-like ranking across model "
-                    "families -- see the notes below the table.",
-            label="tab:comparison_accuracy",
-        ) + self._comparability_note(model_names, zero_bit)
+            caption=(
+                f"Watermark detection accuracy (\\%), {stat_header(statistic).lower()}, "
+                f"by attack type. Columns are not a like-for-like ranking "
+                f"across model families -- see the notes below the table."
+            ),
+            label=label,
+        ) + (self._comparability_note(model_names, zero_bit) if with_note else "")
 
     def _comparability_note(self, model_names, zero_bit):
         """Spell out what makes the columns non-comparable, per model."""
@@ -245,8 +334,12 @@ class ComparativeReportGenerator:
         angles_closed = angles + [angles[0]]
         ax.set_facecolor("white")
 
+        statistic = self._radar_statistic(all_stats)
         for idx, model in enumerate(model_names):
-            values = [all_stats[model].get(a, 0) or 0 for a in attacks]
+            values = [
+                self._primary_value(all_stats[model].get(a), a, statistic) or 0
+                for a in attacks
+            ]
             values_closed = values + [values[0]]
             color = self._MODEL_COLORS[idx % len(self._MODEL_COLORS)]
             ax.plot(angles_closed, values_closed, color=color,
@@ -292,7 +385,7 @@ class ComparativeReportGenerator:
     def _draw_attack_legend(self, legend_ax, attacks, codes, n_models):
         """Draw the "Attack Legend" block below the model legend."""
         legend_entries = [
-            f"{codes[i]}  --  {self._display_name(attacks[i])}"
+            plain(f"{codes[i]}  --  {self._display_name(attacks[i])}")
             for i in range(len(attacks))
         ]
         model_col_size = (n_models + 1) // 2
@@ -315,6 +408,21 @@ class ComparativeReportGenerator:
             legend_ax.text(x, y, entry, fontsize=10, color="#555555",
                            transform=legend_ax.transAxes,
                            verticalalignment="center")
+
+    def _radar_caption(self, all_stats, attacks):
+        """Name the statistic the radar plots, and the fallback when one is used."""
+        statistic = self._radar_statistic(all_stats)
+        name = stat_header(statistic).lower()
+        caption = f"Detection accuracy ({name}) across all attacks."
+        if any(statistic not in self.resolver.statistics_for(
+                self.resolver.group_for_attack(attack), "accuracy")
+               for attack in attacks):
+            caption += (
+                f" An attack whose group does not compute the {name} is "
+                f"plotted at its group's first statistic other than the "
+                f"standard deviation."
+            )
+        return caption
 
     # ----------------------------------------------------------------
     # Full LaTeX report
@@ -342,21 +450,35 @@ class ComparativeReportGenerator:
             f"\\textbf{{{name}}}" for name in short_names
         )
 
-        accuracy_table = self.generate_accuracy_table(all_stats)
+        statistics = self._statistics(all_stats)
+        accuracy_table = self.generate_accuracy_table(all_stats, statistics[0])
         color_legend = self._color_legend_text()
+
+        # One table per remaining configured statistic.
+        secondary = ""
+        if len(statistics) > 1:
+            blocks = [
+                self.generate_accuracy_table(all_stats, statistic, with_note=False)
+                for statistic in statistics[1:]
+            ]
+            secondary = (
+                "\n\n\\section{Accuracy Comparison --- Further Statistics}\n\n"
+                "\\noindent The main table above shows the "
+                f"{stat_header(statistics[0]).lower()}. Every other statistic "
+                "configured for accuracy is tabled below, ranked the same way"
+                + (" -- except the standard deviation, a spread rather than "
+                   "a level, which is left uncoloured"
+                   if "std" in statistics[1:] else "")
+                + ".\n\n"
+                + "\n\n".join(blocks)
+            )
 
         # Radar chart right after accuracy table
         radar_figure = ""
         if include_radar:
-            radar_figure = (
-                "\\begin{figure}[H]\n"
-                "    \\centering\n"
-                "    \\includegraphics[width=\\linewidth]"
-                "{radar_chart.png}\n"
-                "    \\caption{Detection accuracy comparison "
-                "across all attacks.}\n"
-                "    \\label{fig:comp_radar}\n"
-                "\\end{figure}\n"
+            radar_figure = figure_block(
+                "radar_chart.png", self._radar_caption(all_stats, attacks),
+                "fig:comp_radar",
             )
 
         attack_word = "attack type" if num_attacks == 1 else "attack types"
@@ -387,35 +509,32 @@ class ComparativeReportGenerator:
             f"{accuracy_table}\n\n"
             f"{color_legend}\n\n"
             f"{radar_figure}\n"
+            f"{secondary}\n"
             f"\\end{{document}}"
         )
 
-    def generate_full_report(self, all_results, all_stats,
-                              calculate_quality_metrics=False,
-                              crop_before_attack=None,
-                              model_meta=None):
+    def generate_full_report(self, all_stats, crop_before_attack=None,
+                             model_meta=None):
         """Generate complete comparative report.
 
         Args:
-            all_results: Dict of {model_name: raw benchmark results}.
-                Kept in the signature for API compatibility with callers;
-                the comparative report now only uses accuracy stats.
-            all_stats: Dict of {model_name: {attack: accuracy_mean}}
-            calculate_quality_metrics: Kept for API compatibility;
-                ignored — per-model quality details live in each
-                model's detailed report, not the comparative one.
+            all_stats: Dict of {model_name: {attack: per-attack stats dict}}
             crop_before_attack: If set, percentage cropped before attacks
             model_meta: Optional {model: {"is_zero_bit", "watermark_size",
                 "sampling_rate", "n_files"}}. Zero-bit models report a
                 detection rate rather than bit accuracy, so they are
                 excluded from the rank coloring and flagged in the table.
         """
-        del all_results, calculate_quality_metrics  # unused, see docstring
         self.model_meta = model_meta or {}
 
-        # Radar chart
+        # Radar chart, left out when it cannot be drawn.
         radar_path = os.path.join(self.report_dir, "radar_chart.png")
-        include_radar = self.create_radar_chart(all_stats, radar_path)
+        try:
+            include_radar = self.create_radar_chart(all_stats, radar_path)
+        except Exception as exc:  # noqa: BLE001 - a figure is never fatal
+            logger.warning(f"Radar chart skipped: {exc}")
+            plt.close("all")
+            include_radar = False
 
         latex_content = self.generate_latex_report(
             all_stats, include_radar=include_radar,

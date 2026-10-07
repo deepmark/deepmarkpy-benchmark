@@ -5,11 +5,12 @@ import pytest
 from deepmarkpy.plugin_manager import PluginManager
 from deepmarkpy.utils.attack_groups import (
     ATTACK_GROUPS,
+    ATTACK_SUBGROUPS,
     get_attacks_for_groups,
     get_group_for_attack,
-    get_metrics_for_attack,
     group_attacks,
 )
+from deepmarkpy.utils.metric_resolver import MetricResolver
 
 
 class TestGroupedAttacksMatchPlugins:
@@ -25,6 +26,18 @@ class TestGroupedAttacksMatchPlugins:
                 assert attack in self.available, (
                     f"{attack} in group '{group_key}' is not a discovered plugin"
                 )
+
+
+class TestAudioEditingSubgroups:
+    """The detailed report tables audio_editing's metrics only per subsection."""
+
+    def test_each_attack_sits_in_exactly_one_subgroup(self):
+        held = [attack for definition in ATTACK_SUBGROUPS.values()
+                for attack in definition["attacks"]]
+        assert sorted(held) == sorted(ATTACK_GROUPS["audio_editing"]["attacks"]), (
+            "every audio_editing attack must sit in exactly one subgroup, and "
+            "the subgroups must hold nothing else"
+        )
 
 
 class TestGetAttacksForGroups:
@@ -64,17 +77,19 @@ class TestGroupAttacks:
         assert grouped["other"]["attacks"] == ["FakeAttack"]
 
 
-class TestGetMetricsForAttack:
+class TestMetricsForAttack:
+    """The default metric set per attack comes from the taxonomy's matrix."""
+
+    @staticmethod
+    def _metrics(attack):
+        return MetricResolver.from_attack_groups().metrics_for_attack(attack)
+
     def test_returns_group_metrics(self):
-        metrics = get_metrics_for_attack("GaussianNoiseAttack")
+        metrics = self._metrics("GaussianNoiseAttack")
         assert "pesq" in metrics
         assert "stoi" in metrics
 
     def test_process_disruption_has_metrics(self):
-        metrics = get_metrics_for_attack("SameModelAttack")
+        metrics = self._metrics("SameModelAttack")
         assert "pesq" in metrics
         assert "nisqa_mos" in metrics
-
-    def test_unknown_attack_returns_all_metrics(self):
-        from deepmarkpy.utils.metrics import ALL_METRICS
-        assert set(get_metrics_for_attack("FakeAttack")) == set(ALL_METRICS)

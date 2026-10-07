@@ -174,3 +174,60 @@ def renormalize_audio(original_audio: np.ndarray, processed_audio: np.ndarray) -
     renormalized_audio = renormalized_audio * (orig_max - orig_min) + orig_min  # Scale to original range
     
     return renormalized_audio
+
+
+def get_audio_duration(file_path: str) -> float:
+    """Return the duration of an audio file in seconds."""
+    import soundfile as sf
+    info = sf.info(file_path)
+    return info.duration
+
+
+def duration_bin_labels(boundaries):
+    """Human-readable labels for the bins ``boundaries`` define.
+
+    Bins are half-open, ``[lower, upper)``: a file exactly on a boundary
+    belongs to the bin above it, so the first bin is ``< b0`` and the last
+    is ``≥ bN``, which holds a file of exactly ``bN`` seconds.
+    """
+    labels = [f"< {boundaries[0]}s"]
+    for i in range(len(boundaries) - 1):
+        labels.append(f"{boundaries[i]}–{boundaries[i+1]}s")
+    labels.append(f"≥ {boundaries[-1]}s")
+    return labels
+
+
+def partition_files_by_duration(filepaths, boundaries):
+    """Partition files into groups based on audio duration.
+
+    Args:
+        filepaths: List of audio file paths
+        boundaries: Sorted list of boundary values in seconds (e.g. [5, 10, 20, 30])
+
+    Returns:
+        List of (label, file_list) tuples. Labels are human-readable
+        (e.g. "< 5s", "5–10s", "≥ 30s"); see ``duration_bin_labels``.
+        Each file appears in exactly one group.
+    """
+    if not boundaries:
+        return [("all", list(filepaths))]
+
+    groups = [[] for _ in range(len(boundaries) + 1)]
+    labels = duration_bin_labels(boundaries)
+
+    for fp in filepaths:
+        try:
+            dur = get_audio_duration(fp)
+        except Exception:
+            dur = 0.0
+
+        placed = False
+        for i, boundary in enumerate(boundaries):
+            if dur < boundary:
+                groups[i].append(fp)
+                placed = True
+                break
+        if not placed:
+            groups[-1].append(fp)
+
+    return [(label, files) for label, files in zip(labels, groups) if files]

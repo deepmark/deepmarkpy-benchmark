@@ -1,0 +1,1678 @@
+"""Benchmark configuration: schema, validation, and loading.
+
+One file per mode. Each file is self-contained, declares its own
+``"mode"``, and is only allowed to carry keys that mode actually uses --
+so a ``no_attacks`` config cannot mention attacks, and the reader is
+never asked to work out which sections to ignore. Pass several with
+``--config a.json b.json`` to run several modes in one invocation.
+
+The config file owns every measurement decision (mode, models, attacks,
+attack parameters, metrics, statistics, duration groups, crop). The CLI
+owns operational ones (where the audio is, where reports go, seed,
+verbosity, audio dumping, plugin directory) and wins for the handful
+mirrored under ``general``.
+
+Validation collects **every** problem before the run starts and reports
+them together, each with a stable code, the exact JSON path, the
+offending value, and a suggestion when the value looks like a typo.
+Errors block the run; warnings and info are printed and the run
+proceeds.
+"""
+
+import difflib
+import json
+import logging
+import os
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence
+
+from deepmarkpy.utils.attack_groups import (
+    ATTACK_GROUPS,
+    CONFIG_GROUP_KEYS,
+    get_attacks_for_groups,
+    group_parent,
+)
+from deepmarkpy.utils.metric_resolver import (
+    ALL_STATISTICS,
+    CANONICAL_METRIC_ORDER,
+    EFFICIENCY_METRICS,
+    MANDATORY_METRICS,
+    MetricResolver,
+    NISQA_METRICS,
+    SIGNAL_METRICS,
+    STATISTICS_EXEMPT_METRICS,
+)
+
+logger = logging.getLogger(__name__)
+
+VALID_MODES = ("benchmark", "no_attacks", "detection_reliability")
+
+# Keys every mode's file accepts.
+_COMMON_KEYS = frozenset({
+    "mode",
+    "general",
+    "models",
+    "calculate_quality_metrics",
+    "statistics",
+    "metrics",
+    "efficiency",
+    "duration_groups",
+})
+
+# Keys accepted per mode. A key another mode accepts is reported as E008.
+MODE_KEYS = {
+    "benchmark": _COMMON_KEYS | {
+        "attacks", "attack_parameters", "comparison", "crop_before_attack",
+    },
+    "no_attacks": _COMMON_KEYS,
+    "detection_reliability": _COMMON_KEYS | {"attacks", "attack_parameters"},
+}
+
+_GENERAL_KEYS = frozenset({
+    "wav_files_dir", "report_dir", "seed", "verbose", "save_audio",
+    "plugins_dir",
+})
+
+_METRIC_ENTRY_KEYS = frozenset({"enabled", "statistics"})
+
+# The metrics block takes every metric but the efficiency ones (E043).
+_CONFIGURABLE_METRICS = tuple(m for m in CANONICAL_METRIC_ORDER
+                              if m not in EFFICIENCY_METRICS)
+
+# Every statistic but std, which is a spread: the ones accuracy can be
+# reported and ranked at.
+_LEVEL_STATISTICS = tuple(s for s in ALL_STATISTICS if s != "std")
+
+_TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "config_templates")
+
+_UNSET = object()
+
+
+# ---------------------------------------------------------------------------
+# Issues
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ConfigIssue:
+    """One validation finding, addressed to the person editing the file."""
+
+    code: str
+    path: str
+    message: str
+    value: Any = _UNSET
+    suggestion: Optional[str] = None
+    severity: str = "error"
+    source: Optional[str] = None
+
+    def render(self) -> str:
+        location = f"{self.source}: " if self.source else ""
+        line = f"[{self.code}] {location}{self.path}\n    {self.message}"
+        if self.value is not _UNSET:
+            line += f"\n    got: {json.dumps(self.value, default=str)}"
+        if self.suggestion:
+            line += f"\n    did you mean '{self.suggestion}'?"
+        return line
+
+
+class ConfigError(Exception):
+    """Raised when one or more config files are invalid.
+
+    Carries every blocking issue found, so the user fixes them in one
+    pass instead of rerunning after each.
+    """
+
+    def __init__(self, issues: Sequence[ConfigIssue]):
+        self.issues = list(issues)
+        count = len(self.issues)
+        noun = "problem" if count == 1 else "problems"
+        body = "\n\n".join(issue.render() for issue in self.issues)
+        super().__init__(
+            f"Found {count} configuration {noun}:\n\n{body}\n\n"
+            f"Run 'deepmark-benchmark --init <mode>' to print a fresh, "
+            f"fully-commented config file for a mode."
+        )
+
+
+def _suggest(value: Any, candidates: Sequence[str]) -> Optional[str]:
+    """Closest valid spelling of ``value``, or None when nothing is close.
+
+    Tries case, then prefixes ("desync"), then edit distance.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    candidates = list(candidates)
+    lowered = value.lower()
+
+    for candidate in candidates:
+        if candidate.lower() == lowered:
+            return candidate
+
+    prefixed = [
+        candidate for candidate in candidates
+        if candidate.lower().startswith(lowered)
+        or lowered.startswith(candidate.lower())
+    ]
+    if prefixed:
+        return min(prefixed, key=len)
+
+    matches = difflib.get_close_matches(value, candidates, n=1, cutoff=0.6)
+    return matches[0] if matches else None
+
+
+def _json_syntax_help(text: str, exc: json.JSONDecodeError) -> str:
+    """Show the offending line and name the likely cause.
+
+    Python's own message ("Expecting property name enclosed in double
+    quotes") describes the parser's state, not the mistake. A comma left
+    before a closing brace is by far the most common way to break one of
+    these files, and it is worth saying so in those words.
+    """
+    lines = text.splitlines()
+    if not text.strip():
+        return "\n    The file is empty."
+
+    parts = []
+    if 1 <= exc.lineno <= len(lines):
+        offending = lines[exc.lineno - 1]
+        if exc.lineno >= 2:
+            parts.append(f"    {exc.lineno - 1:>4} | {lines[exc.lineno - 2]}")
+        parts.append(f"    {exc.lineno:>4} | {offending}")
+        parts.append("    " + " " * 4 + " | " + " " * max(exc.colno - 1, 0) + "^")
+    else:
+        offending = ""
+
+    # What precedes the failure point is what usually identifies the cause.
+    before = text[:max(exc.pos, 0)].rstrip()
+    prev = before[-1:] if before else ""
+    hint = None
+    if exc.msg.startswith("Expecting property name") and prev == ",":
+        hint = ("A comma before the closing brace. JSON allows no trailing "
+                "comma - remove it.")
+    elif exc.msg.startswith("Expecting value") and prev == ",":
+        hint = ("A comma before the closing bracket. JSON allows no trailing "
+                "comma - remove it.")
+    elif exc.msg.startswith("Expecting ',' delimiter"):
+        hint = ("A comma is missing between two entries, or a { or [ above "
+                "was never closed.")
+    elif exc.msg.startswith("Extra data"):
+        hint = ("Something follows the end of the object - usually one "
+                "closing brace too many.")
+    elif "'" in offending and exc.msg.startswith("Expecting property name"):
+        hint = "JSON needs double quotes; single quotes are not valid."
+    elif offending.lstrip().startswith(("//", "#", "/*")):
+        hint = ("JSON has no comments. This project uses keys prefixed with "
+                "\"_\" instead, which the parser ignores.")
+    elif exc.msg.startswith("Expecting property name"):
+        hint = "A key here must be a name in double quotes."
+    if hint:
+        parts.append(f"    {hint}")
+
+    # Unbalanced brackets are invisible at the failure point, which is
+    # usually far from the line that actually forgot to close.
+    for opener, closer, label in (("{", "}", "Braces"), ("[", "]", "Brackets")):
+        n_open, n_close = text.count(opener), text.count(closer)
+        if n_open != n_close:
+            parts.append(
+                f"    {label} do not balance across the file: "
+                f"{n_open} '{opener}' and {n_close} '{closer}'."
+            )
+    return "\n" + "\n".join(parts) if parts else ""
+
+
+_TYPE_NAMES = {
+    dict: "an object", list: "an array", str: "a string",
+    bool: "a boolean", int: "a number", float: "a number",
+    type(None): "null",
+}
+
+
+def _type_name(value: Any) -> str:
+    return _TYPE_NAMES.get(type(value), type(value).__name__)
+
+
+def _real_keys(mapping: Dict[str, Any]) -> List[str]:
+    """Keys excluding documentation keys.
+
+    JSON has no comments, so the shipped templates document themselves
+    with ``_``-prefixed keys. Those are ignored everywhere.
+    """
+    return [key for key in mapping if not key.startswith("_")]
+
+
+# ---------------------------------------------------------------------------
+# Parsed configuration
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ModeConfig:
+    """A validated config file for one benchmark mode."""
+
+    mode: str
+    source: str
+    general: Dict[str, Any] = field(default_factory=dict)
+    models: List[str] = field(default_factory=list)
+    attack_groups: List[str] = field(default_factory=list)
+    attack_list: List[str] = field(default_factory=list)
+    # {(attack, version): params} -- a bare attack name is stored under
+    # its "default" version.
+    parameter_overrides: Dict[Any, Dict[str, Any]] = field(default_factory=dict)
+    # {attack: {version: params}} -- versions this config defines, which the
+    # plugin's own config.json does not declare.
+    synthetic_versions: Dict[str, Dict[str, Dict[str, Any]]] = field(
+        default_factory=dict)
+    calculate_quality_metrics: bool = False
+    resolver: MetricResolver = field(default_factory=MetricResolver)
+    comparison_primary_statistic: str = "mean"
+    crop_before_attack: Optional[float] = None
+    duration_boundaries: List[float] = field(default_factory=list)
+    duration_include_overall: bool = False
+    warnings: List[ConfigIssue] = field(default_factory=list)
+
+    # -- attacks -------------------------------------------------------
+
+    def selected_attack_specs(self) -> Optional[List[str]]:
+        """Attack specs this config asks for, or None meaning "every attack".
+
+        Groups expand to every attack they declare, imported or not, so
+        ``Benchmark.run`` raises on an attack whose plugin failed to load.
+        """
+        if not self.attack_groups and not self.attack_list:
+            return None
+        specs = list(self.attack_list)
+        specs += [
+            attack for attack in get_attacks_for_groups(self.attack_groups)
+            if attack not in specs
+        ]
+        return specs
+
+    def parameters_for(self, attack_name, version) -> Dict[str, Any]:
+        """Parameters to apply to one expanded attack entry.
+
+        A version this config defines carries its full parameter set; an
+        override on an existing version carries only what it changes.
+        Looked up by resolved version, so ``GaussianNoiseAttack`` and
+        ``GaussianNoiseAttack:default`` are the same target and cannot
+        leak onto ``:aggressive``.
+        """
+        defined = self.synthetic_versions.get(attack_name, {})
+        if version in defined:
+            return dict(defined[version])
+        key = "default" if version is None else version
+        return dict(self.parameter_overrides.get((attack_name, key), {}))
+
+    # -- duration groups -----------------------------------------------
+
+    @property
+    def has_duration_groups(self) -> bool:
+        return bool(self.duration_boundaries)
+
+    def duration_labels(self) -> List[str]:
+        """Human-readable bin labels, e.g. ``["< 5s", "5–10s", "≥ 30s"]``.
+
+        The same labels the run partitions files under, so the two cannot
+        describe the bins differently.
+        """
+        if not self.duration_boundaries:
+            return []
+        # Imported here: utils.utils pulls in librosa, which config loading
+        # (and --validate-only) should not pay for.
+        from deepmarkpy.utils.utils import duration_bin_labels
+        return duration_bin_labels(self.duration_boundaries)
+
+
+# ---------------------------------------------------------------------------
+# Loading
+# ---------------------------------------------------------------------------
+
+def load_configs(
+    paths: Sequence[str],
+    attacks_registry: Optional[Dict[str, Any]] = None,
+    models_registry: Optional[Dict[str, Any]] = None,
+    quiet: bool = False,
+) -> List[ModeConfig]:
+    """Load, validate, and return one ``ModeConfig`` per path.
+
+    Args:
+        paths: config file paths, in the order their modes should run.
+        attacks_registry, models_registry: ``Benchmark.attacks`` and
+            ``Benchmark.models``; they enable the checks against discovered
+            plugins, and None skips them.
+        quiet: skip logging the warnings.
+
+    Raises:
+        ConfigError: with every blocking issue found across every file.
+    """
+    return _validate_all(
+        [(path, _UNSET) for path in paths],
+        attacks_registry, models_registry, quiet,
+    )
+
+
+def load_config_data(
+    data: Dict[str, Any],
+    source: str = "<memory>",
+    attacks_registry: Optional[Dict[str, Any]] = None,
+    models_registry: Optional[Dict[str, Any]] = None,
+    quiet: bool = False,
+) -> ModeConfig:
+    """``load_configs`` for one mapping shaped like the JSON file.
+
+    ``source`` names the mapping in issues.
+    """
+    return _validate_all(
+        [(source, data)], attacks_registry, models_registry, quiet,
+    )[0]
+
+
+def _validate_all(sources, attacks_registry, models_registry, quiet):
+    """Validate several configurations, reporting all of their issues at once."""
+    issues: List[ConfigIssue] = []
+    configs: List[ModeConfig] = []
+
+    for source, data in sources:
+        validator = _Validator(
+            source, attacks_registry, models_registry, data=data,
+        )
+        config = validator.run()
+        issues.extend(validator.errors)
+        if config is not None:
+            configs.append(config)
+
+    issues.extend(_check_mode_uniqueness(configs))
+
+    if issues:
+        raise ConfigError(issues)
+
+    if not quiet:
+        for config in configs:
+            for warning in config.warnings:
+                logger.warning(warning.render()) if warning.severity == "warning" \
+                    else logger.info(warning.render())
+
+    return configs
+
+
+def _check_mode_uniqueness(configs: Sequence[ModeConfig]) -> List[ConfigIssue]:
+    """Reject two config files declaring the same mode in one invocation.
+
+    Each mode writes fixed output filenames, so the second run would
+    overwrite the first's report with no warning.
+    """
+    seen: Dict[str, str] = {}
+    issues = []
+    for config in configs:
+        if config.mode in seen:
+            issues.append(ConfigIssue(
+                code="E006",
+                path="mode",
+                source=config.source,
+                value=config.mode,
+                message=(
+                    f"mode '{config.mode}' is already declared by "
+                    f"'{seen[config.mode]}'. Each --config file passed to one "
+                    f"invocation must declare a different mode, because both "
+                    f"would write the same report filenames."
+                ),
+            ))
+        else:
+            seen[config.mode] = config.source
+    return issues
+
+
+def init_template(mode: str) -> str:
+    """Return the fully-commented template config file for ``mode``."""
+    if mode not in VALID_MODES:
+        suggestion = _suggest(mode, VALID_MODES)
+        hint = f" Did you mean '{suggestion}'?" if suggestion else ""
+        raise ConfigError([ConfigIssue(
+            code="E005",
+            path="--init",
+            value=mode,
+            message=(
+                f"unknown mode. Valid modes: {', '.join(VALID_MODES)}.{hint}"
+            ),
+            suggestion=suggestion,
+        )])
+
+    with open(os.path.join(_TEMPLATE_DIR, f"{mode}.json"), encoding="utf-8") as fh:
+        return fh.read()
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+class _Validator:
+    """Validates one config file, accumulating every issue it finds.
+
+    Each ``_check_*`` method guards its own preconditions and returns a
+    usable value (or a safe default) so later checks still run. That is
+    what lets one pass report every problem at once.
+    """
+
+    def __init__(self, path, attacks_registry=None, models_registry=None,
+                 data=_UNSET):
+        """Validate the file at ``path``, or the parsed mapping ``data``.
+
+        With ``data`` given, ``path`` only names it in issues.
+        """
+        self.path = path
+        self.attacks_registry = attacks_registry
+        self.models_registry = models_registry
+        self.errors: List[ConfigIssue] = []
+        self.warnings: List[ConfigIssue] = []
+        self.raw: Dict[str, Any] = {}
+        self.data = data
+        self.mode: Optional[str] = None
+
+    # -- issue helpers -------------------------------------------------
+
+    def error(self, code, path, message, value=_UNSET, suggestion=None):
+        self.errors.append(ConfigIssue(
+            code=code, path=path, message=message, value=value,
+            suggestion=suggestion, severity="error", source=self.path,
+        ))
+
+    def warn(self, code, path, message, value=_UNSET, severity="warning"):
+        self.warnings.append(ConfigIssue(
+            code=code, path=path, message=message, value=value,
+            severity=severity, source=self.path,
+        ))
+
+    def _typed(self, container, key, path, expected, default):
+        """Return ``container[key]`` when it has the expected type.
+
+        Records a type error and returns ``default`` otherwise, so the
+        caller can keep validating instead of aborting the whole file.
+        """
+        if key not in container:
+            return default
+        value = container[key]
+        if not isinstance(value, expected) or (
+            expected is not bool and isinstance(value, bool)
+        ):
+            self.error(
+                "E009", path,
+                f"must be {_TYPE_NAMES[expected]}, but is {_type_name(value)}.",
+                value=value,
+            )
+            return default
+        return value
+
+    def _check_keys(self, mapping, path, allowed, hint=""):
+        """Record E007 for each key of ``mapping`` not in ``allowed``."""
+        allowed = sorted(allowed)
+        for key in _real_keys(mapping):
+            if key not in allowed:
+                self.error(
+                    "E007", f"{path}.{key}",
+                    f"unknown key. Accepted: {', '.join(allowed)}.{hint}",
+                    suggestion=_suggest(key, allowed),
+                )
+
+    # -- entry point ---------------------------------------------------
+
+    def run(self) -> Optional[ModeConfig]:
+        if not self._read():
+            return None
+
+        self.mode = self._check_mode()
+        if self.mode is None:
+            return None
+
+        self._check_top_level_keys()
+
+        general = self._check_general()
+        models = self._check_models()
+        # Before _check_attacks, which needs to know the versions this file
+        # defines in order to accept them in attacks.list.
+        parameter_overrides, synthetic_versions = self._check_attack_parameters()
+        groups, attack_list = self._check_attacks(synthetic_versions)
+        calculate = self._typed(
+            self.raw, "calculate_quality_metrics",
+            "calculate_quality_metrics", bool, False,
+        )
+        statistics = self._check_statistics()
+        defaults, per_group = self._check_metrics(calculate)
+        self._check_accuracy_level(statistics, defaults, per_group)
+        efficiency = self._check_efficiency()
+        crop = self._check_crop()
+        boundaries, include_overall = self._check_duration_groups()
+
+        resolver = MetricResolver(
+            defaults=defaults,
+            per_group=per_group,
+            statistics=statistics,
+            calculate_quality_metrics=calculate,
+            efficiency=efficiency,
+        )
+
+        comparison = self._check_comparison(resolver, groups, attack_list)
+        self._check_primary_coverage(comparison, resolver, models, groups,
+                                     attack_list)
+        self._check_group_coverage(per_group, groups, attack_list)
+        self._check_parameter_coverage(
+            parameter_overrides, synthetic_versions, groups, attack_list,
+        )
+        self._check_nisqa_cost(resolver)
+
+        if self.errors:
+            return None
+
+        return ModeConfig(
+            mode=self.mode,
+            source=self.path,
+            general=general,
+            models=models,
+            attack_groups=groups,
+            attack_list=attack_list,
+            parameter_overrides=parameter_overrides,
+            synthetic_versions=synthetic_versions,
+            calculate_quality_metrics=calculate,
+            resolver=resolver,
+            comparison_primary_statistic=comparison,
+            crop_before_attack=crop,
+            duration_boundaries=boundaries,
+            duration_include_overall=include_overall,
+            warnings=self.warnings,
+        )
+
+    # -- file ----------------------------------------------------------
+
+    def _read(self) -> bool:
+        if self.data is not _UNSET:
+            return self._accept(self.data)
+
+        if not os.path.exists(self.path):
+            self.error(
+                "E001", "--config",
+                "config file does not exist. Create one with "
+                "'deepmark-benchmark --init <mode> > <path>'.",
+                value=self.path,
+            )
+            return False
+        try:
+            # utf-8-sig also reads the byte order mark PowerShell 5.1's
+            # 'Out-File -Encoding utf8' writes, which E002 suggests.
+            with open(self.path, encoding="utf-8-sig") as fh:
+                text = fh.read()
+            raw = json.loads(text)
+        except json.JSONDecodeError as exc:
+            self.error(
+                "E002", f"line {exc.lineno}, column {exc.colno}",
+                f"file is not valid JSON: {exc.msg}."
+                + _json_syntax_help(text, exc),
+            )
+            return False
+        except UnicodeDecodeError as exc:
+            # UnicodeDecodeError is a ValueError but neither a
+            # JSONDecodeError nor an OSError, so it needs its own clause to
+            # become a coded error.
+            self.error(
+                "E002", "--config",
+                f"file is not UTF-8 text ({exc.reason} at byte {exc.start}). "
+                f"Save it as UTF-8; Windows PowerShell 5.1's '>' writes "
+                f"UTF-16, so redirect --init through "
+                f"'| Out-File -Encoding utf8' there.",
+                value=self.path,
+            )
+            return False
+        except OSError as exc:
+            self.error("E001", "--config", f"cannot read config file: {exc}",
+                       value=self.path)
+            return False
+
+        return self._accept(raw)
+
+    def _accept(self, raw) -> bool:
+        """Take a parsed config mapping, whatever it was parsed from."""
+        if not isinstance(raw, dict):
+            self.error("E003", "(root)",
+                       f"the top level must be a JSON object, but is "
+                       f"{_type_name(raw)}.")
+            return False
+
+        self.raw = raw
+        return True
+
+    # -- mode ----------------------------------------------------------
+
+    def _check_mode(self) -> Optional[str]:
+        if "mode" not in self.raw:
+            self.error(
+                "E004", "mode",
+                f"missing required key. Every config file must declare which "
+                f"mode it configures, one of: {', '.join(VALID_MODES)}.",
+            )
+            return None
+
+        mode = self.raw["mode"]
+        if mode not in VALID_MODES:
+            self.error(
+                "E005", "mode",
+                f"unknown mode. Valid modes: {', '.join(VALID_MODES)}.",
+                value=mode, suggestion=_suggest(mode, VALID_MODES),
+            )
+            return None
+        return mode
+
+    def _check_top_level_keys(self):
+        allowed = MODE_KEYS[self.mode]
+        for key in _real_keys(self.raw):
+            if key in allowed:
+                continue
+            other_modes = sorted(
+                m for m, keys in MODE_KEYS.items() if key in keys
+            )
+            if other_modes:
+                self.error(
+                    "E008", key,
+                    f"'{key}' is not used by mode '{self.mode}', so setting it "
+                    f"here would have no effect. It belongs to: "
+                    f"{', '.join(other_modes)}.",
+                )
+            else:
+                self.error(
+                    "E007", key,
+                    f"unknown key. Keys accepted in mode '{self.mode}': "
+                    f"{', '.join(sorted(allowed))}.",
+                    suggestion=_suggest(key, sorted(allowed)),
+                )
+
+    # -- general -------------------------------------------------------
+
+    def _check_general(self) -> Dict[str, Any]:
+        general = self._typed(self.raw, "general", "general", dict, {})
+        self._check_keys(
+            general, "general", _GENERAL_KEYS,
+            " Measurement settings (models, attacks, metrics, statistics) "
+            "are top-level keys, not 'general' ones.",
+        )
+        clean = {key: general[key] for key in _real_keys(general)
+                 if key in _GENERAL_KEYS}
+
+        for key in ("wav_files_dir", "report_dir", "plugins_dir"):
+            if clean.get(key) is not None and not isinstance(clean[key], str):
+                self.error("E009", f"general.{key}",
+                           f"must be a string or null, but is "
+                           f"{_type_name(clean[key])}.", value=clean[key])
+        for key in ("verbose", "save_audio"):
+            if key in clean and not isinstance(clean[key], bool):
+                self.error("E009", f"general.{key}",
+                           f"must be true or false, but is "
+                           f"{_type_name(clean[key])}.", value=clean[key])
+
+        seed = clean.get("seed")
+        if seed is not None and (isinstance(seed, bool)
+                                 or not isinstance(seed, int)
+                                 or not 0 <= seed < 2**32):
+            self.error(
+                "E037", "general.seed",
+                "must be an integer between 0 and 4294967295 or null. "
+                "null keeps a fresh watermark per "
+                "file and fresh attack noise per run.",
+                value=seed,
+            )
+        return clean
+
+    # -- models --------------------------------------------------------
+
+    def _check_models(self) -> List[str]:
+        if "models" not in self.raw:
+            self.error(
+                "E010", "models",
+                "missing required key: list at least one watermarking model "
+                "class name, e.g. [\"AudioSealModel\"].",
+            )
+            return []
+
+        models = self._typed(self.raw, "models", "models", list, [])
+        if not models:
+            self.error("E010", "models",
+                       "must list at least one model class name.", value=models)
+            return []
+
+        known = sorted(self.models_registry) if self.models_registry is not None else None
+        clean = []
+        for index, name in enumerate(models):
+            if not isinstance(name, str):
+                self.error("E009", f"models[{index}]",
+                           f"must be a model class name (a string), but is "
+                           f"{_type_name(name)}.", value=name)
+                continue
+            if known is not None and name not in known:
+                self.error(
+                    "E011", f"models[{index}]",
+                    f"unknown model. Discovered models: {', '.join(known)}.",
+                    value=name, suggestion=_suggest(name, known),
+                )
+                continue
+            if name in clean:
+                self.error("E016", f"models[{index}]",
+                           "listed more than once.", value=name)
+                continue
+            entry = (self.models_registry or {}).get(name)
+            model_cls = entry.get("class") if isinstance(entry, dict) else None
+            if self.mode == "detection_reliability" and isinstance(model_cls, type):
+                # Only a registry of real classes is judged, so the pre-flight
+                # pass and name-only registries are unaffected. Imported here:
+                # such a registry means base_model is loaded already.
+                from deepmarkpy.core.base_model import implements_is_watermarked
+                if not implements_is_watermarked(model_cls):
+                    capable = sorted(
+                        other for other, other_entry in self.models_registry.items()
+                        if isinstance(other_entry, dict)
+                        and isinstance(other_entry.get("class"), type)
+                        and implements_is_watermarked(other_entry["class"])
+                    )
+                    self.error(
+                        "E044", f"models[{index}]",
+                        f"mode 'detection_reliability' needs a model that "
+                        f"implements is_watermarked(), and this one does not. "
+                        f"Models that do: {', '.join(capable) or 'none discovered'}.",
+                        value=name,
+                    )
+            clean.append(name)
+
+        if self.mode == "detection_reliability" and len(clean) > 1:
+            self.error(
+                "E012", "models",
+                f"mode 'detection_reliability' measures one model at a time "
+                f"(false-positive and false-negative rates are per model), but "
+                f"{len(clean)} are listed. Run one invocation per model, each "
+                f"with its own report directory; one invocation takes one "
+                f"file per mode (E006).",
+                value=clean,
+            )
+        return clean
+
+    # -- attacks -------------------------------------------------------
+
+    def _check_attacks(self, synthetic_versions):
+        if "attacks" not in MODE_KEYS[self.mode]:
+            return [], []
+
+        attacks = self._typed(self.raw, "attacks", "attacks", dict, {})
+        self._check_keys(attacks, "attacks", ("groups", "list"),
+                         " Leaving both empty runs every discovered attack.")
+
+        groups = self._check_attack_groups(
+            self._typed(attacks, "groups", "attacks.groups", list, []))
+        attack_list = self._check_attack_list(
+            self._typed(attacks, "list", "attacks.list", list, []),
+            synthetic_versions)
+        return groups, attack_list
+
+    def _check_attack_groups(self, groups) -> List[str]:
+        selectable = sorted(ATTACK_GROUPS)
+        clean = []
+        for index, name in enumerate(groups):
+            path = f"attacks.groups[{index}]"
+            if not isinstance(name, str):
+                self.error("E009", path,
+                           f"must be a group name (a string), but is "
+                           f"{_type_name(name)}.", value=name)
+                continue
+            if name not in ATTACK_GROUPS:
+                # Subgroups configure metrics but do not select attacks.
+                extra = ""
+                if name in CONFIG_GROUP_KEYS:
+                    extra = (
+                        f" '{name}' is a report subsection usable under "
+                        f"metrics.per_group, not a selectable attack group."
+                    )
+                self.error(
+                    "E013", path,
+                    f"unknown attack group. Selectable groups: "
+                    f"{', '.join(selectable)}.{extra}",
+                    value=name, suggestion=_suggest(name, selectable),
+                )
+                continue
+            if name in clean:
+                self.error("E016", path, "listed more than once.", value=name)
+                continue
+            if self.attacks_registry is not None:
+                missing = [
+                    attack for attack in get_attacks_for_groups(name)
+                    if attack not in self.attacks_registry
+                ]
+                if missing:
+                    self.error(
+                        "E014", path,
+                        f"group '{name}' includes attacks that were not "
+                        f"discovered: {', '.join(missing)}. Install what their "
+                        f"plugins need (the import errors are logged above), "
+                        f"or name the attacks you want under attacks.list.",
+                        value=name,
+                    )
+                    continue
+            clean.append(name)
+        return clean
+
+    def _check_attack_list(self, attack_list, synthetic_versions) -> List[str]:
+        known = sorted(self.attacks_registry) if self.attacks_registry is not None else None
+        clean = []
+        for index, spec in enumerate(attack_list):
+            path = f"attacks.list[{index}]"
+            if not isinstance(spec, str):
+                self.error("E009", path,
+                           f"must be an attack name, optionally "
+                           f"'AttackName:version', but is {_type_name(spec)}.",
+                           value=spec)
+                continue
+            name, _, version = spec.partition(":")
+            if known is not None and name not in known:
+                self.error(
+                    "E014", path,
+                    f"unknown attack. Discovered attacks: {', '.join(known)}.",
+                    value=spec, suggestion=_suggest(name, known),
+                )
+                continue
+            if version and self.attacks_registry is not None:
+                self._check_attack_version(
+                    path, name, version, spec, synthetic_versions)
+            if spec in clean:
+                self.error("E016", path, "listed more than once.", value=spec)
+                continue
+            clean.append(spec)
+        return clean
+
+    def _versions_of(self, name):
+        """Version names an attack declares in its config.json.
+
+        A single-version config has no named presets, so it reports the
+        one implicit ``default``.
+        """
+        raw_config = self.attacks_registry[name].get("_raw_config") or {}
+        if "default" in raw_config and isinstance(raw_config["default"], dict):
+            return _real_keys(raw_config)
+        return ["default"]
+
+    def _check_attack_version(self, path, name, version, spec, synthetic):
+        """Reject a version that neither the plugin nor the config defines."""
+        declared = self._versions_of(name)
+        added = sorted(synthetic.get(name, {}))
+        if version in declared or version in added:
+            return
+        available = sorted(set(declared) | set(added))
+        hint = ""
+        if added:
+            hint = (
+                f" Versions defined in attack_parameters: {', '.join(added)}."
+            )
+        self.error(
+            "E015", path,
+            f"attack '{name}' has no version '{version}'. Available "
+            f"versions: {', '.join(available)}.{hint} To define a new one, "
+            f"give ALL of this attack's parameters under "
+            f"'attack_parameters.{name}:{version}'.",
+            value=spec, suggestion=_suggest(version, available),
+        )
+
+    def _check_attack_parameters(self):
+        """Validate ``attack_parameters`` into ``(overrides, synthetic)``.
+
+        A version the plugin does not declare goes to ``synthetic`` when
+        every parameter is given, and is skipped with W010 when only some are.
+        """
+        if "attack_parameters" not in MODE_KEYS[self.mode]:
+            return {}, {}
+
+        block = self._typed(self.raw, "attack_parameters",
+                            "attack_parameters", dict, {})
+        known = sorted(self.attacks_registry) if self.attacks_registry is not None else None
+
+        overrides: Dict[Any, Dict[str, Any]] = {}
+        synthetic: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        # The key that set each target, so a second key for the same one
+        # is reported rather than one of them dropped without a word.
+        targets: Dict[Any, str] = {}
+
+        for spec in _real_keys(block):
+            path = f"attack_parameters.{spec}"
+            attack_name, _, version = spec.partition(":")
+            version = version or None
+
+            if known is not None and attack_name not in known:
+                self.error(
+                    "E017", path,
+                    f"unknown attack. Keys of 'attack_parameters' are attack "
+                    f"class names, optionally 'AttackName:version'. "
+                    f"Discovered attacks: {', '.join(known)}.",
+                    value=attack_name, suggestion=_suggest(attack_name, known),
+                )
+                continue
+
+            params = self._typed(block, spec, path, dict, None)
+            if params is None:
+                continue
+
+            defaults = (
+                (self.attacks_registry[attack_name].get("config") or {})
+                if self.attacks_registry else None
+            )
+            resolved = self._check_parameter_values(path, attack_name,
+                                                    params, defaults)
+            if not resolved:
+                continue
+
+            target = (attack_name, version or "default")
+            if target in targets:
+                self.error(
+                    "E016", path,
+                    f"sets the same target as 'attack_parameters."
+                    f"{targets[target]}': a bare attack name and ':default' "
+                    f"both mean its default version. Merge them into one "
+                    f"entry.",
+                    value=spec,
+                )
+                continue
+            targets[target] = spec
+
+            if self.attacks_registry is None or version is None \
+                    or version in self._versions_of(attack_name):
+                overrides[target] = resolved
+                continue
+
+            # A version the plugin does not declare. Only real parameters
+            # count, not the ``_``-prefixed documentation keys a
+            # config.json may carry.
+            real = _real_keys(defaults or {})
+            missing = [key for key in real if key not in resolved]
+            if missing:
+                self.warn(
+                    "W010", path,
+                    f"'{attack_name}' has no version '{version}', and only "
+                    f"{len(resolved)} of its {len(real)} parameters "
+                    f"are set here, so this entry is skipped. To define the "
+                    f"version, set the missing one(s) too: "
+                    f"{', '.join(sorted(missing))}.",
+                )
+                continue
+
+            synthetic.setdefault(attack_name, {})[version] = resolved
+
+        return overrides, synthetic
+
+    def _check_parameter_values(self, path, attack_name, params, defaults):
+        """Check every parameter name and type against the plugin's defaults."""
+        resolved = {}
+        for key in _real_keys(params):
+            key_path = f"{path}.{key}"
+            if defaults is not None and key not in defaults:
+                self.error(
+                    "E018", key_path,
+                    f"'{attack_name}' has no parameter '{key}'. Its "
+                    f"parameters: {', '.join(sorted(defaults)) or '(none)'}.",
+                    suggestion=_suggest(key, sorted(defaults)),
+                )
+                continue
+            if defaults is not None and not _compatible_type(
+                params[key], defaults[key]
+            ) and not (
+                # expand_attacks runs a single bitrate as a one-element
+                # list, which is how the README and the plugin document it.
+                key == "bitrate_codec2" and isinstance(params[key], int)
+                and not isinstance(params[key], bool)
+            ):
+                self.error(
+                    "E019", key_path,
+                    f"must be {_type_name(defaults[key])} to match the "
+                    f"plugin default ({json.dumps(defaults[key], default=str)}), "
+                    f"but is {_type_name(params[key])}.",
+                    value=params[key],
+                )
+                continue
+            if key == "bitrate_codec2" and defaults is not None:
+                from deepmarkpy.benchmark import _CODEC2_SUPPORTED
+                bitrates = (params[key] if isinstance(params[key], list)
+                            else [params[key]])
+                if not bitrates or not all(
+                    isinstance(value, int) and not isinstance(value, bool)
+                    and value in _CODEC2_SUPPORTED for value in bitrates
+                ):
+                    self.error(
+                        "E045", key_path,
+                        f"must list at least one Codec2 bitrate, each one of "
+                        f"{', '.join(map(str, sorted(_CODEC2_SUPPORTED)))}.",
+                        value=params[key],
+                    )
+                    continue
+            if key == "different_model_name_cross_model" \
+                    and defaults is not None \
+                    and self.models_registry is not None \
+                    and params[key] not in self.models_registry:
+                known = sorted(self.models_registry)
+                self.error(
+                    "E011", key_path,
+                    f"unknown model. Discovered models: {', '.join(known)}.",
+                    value=params[key], suggestion=_suggest(params[key], known),
+                )
+                continue
+            resolved[key] = params[key]
+        return resolved
+
+    # -- statistics ----------------------------------------------------
+
+    def _check_statistics(self) -> Optional[List[str]]:
+        """The top-level list, or None when omitted (all eight then apply)."""
+        if "statistics" not in self.raw:
+            return None
+        return self._check_statistic_list(self.raw["statistics"], "statistics")
+
+    def _check_statistic_list(self, value, path):
+        if not isinstance(value, list):
+            self.error("E009", path,
+                       f"must be an array of statistic names, e.g. "
+                       f"[\"mean\", \"median\", \"worst_case\"], but is "
+                       f"{_type_name(value)}.", value=value)
+            return None
+
+        if not value:
+            self.error(
+                "E022", path,
+                f"is empty. A metric with no statistic has nothing to report; "
+                f"to drop the metric set its 'enabled' to false instead. "
+                f"Available statistics: {', '.join(ALL_STATISTICS)}.",
+                value=value,
+            )
+            return None
+
+        clean = []
+        for index, name in enumerate(value):
+            item_path = f"{path}[{index}]"
+            if not isinstance(name, str):
+                self.error("E009", item_path,
+                           f"must be a statistic name (a string), but is "
+                           f"{_type_name(name)}.", value=name)
+                continue
+            if name not in ALL_STATISTICS:
+                self.error(
+                    "E021", item_path,
+                    f"unknown statistic. Available: "
+                    f"{', '.join(ALL_STATISTICS)}.",
+                    value=name, suggestion=_suggest(name, ALL_STATISTICS),
+                )
+                continue
+            if name in clean:
+                self.error("E023", item_path,
+                           "listed more than once; each statistic is one "
+                           "report column.", value=name)
+                continue
+            clean.append(name)
+        return clean or None
+
+    # -- metrics -------------------------------------------------------
+
+    def _check_metrics(self, calculate):
+        if "metrics" not in self.raw:
+            if calculate:
+                self.warn(
+                    "W004", "metrics",
+                    "'calculate_quality_metrics' is true but no 'metrics' "
+                    "block is present, so the built-in per-group defaults "
+                    "apply (the same matrix 'deepmark-benchmark --init' "
+                    "ships).", severity="info",
+                )
+            builtin = MetricResolver.from_attack_groups()
+            return builtin.defaults, builtin.per_group
+
+        metrics = self._typed(self.raw, "metrics", "metrics", dict, {})
+        self._check_keys(
+            metrics, "metrics", ("defaults", "per_group"),
+            " 'defaults' applies to every attack group and 'per_group' "
+            "overrides one group; metric names go one level deeper.",
+        )
+
+        if "defaults" not in metrics:
+            # A metric named nowhere is off.
+            if calculate:
+                effect = ("every metric not named under 'per_group' is off "
+                          "and most tables will be empty")
+            else:
+                effect = ("ber and emr are off wherever 'per_group' does not "
+                          "name them, and with 'calculate_quality_metrics' "
+                          "false the signal metrics are pesq, visqol and "
+                          "stoi whatever the block says")
+            self.warn(
+                "W012", "metrics.defaults",
+                f"missing, so {effect}. Add a 'defaults' block, or delete "
+                f"'metrics' entirely to use the built-in matrix.",
+            )
+
+        raw_defaults = self._typed(metrics, "defaults", "metrics.defaults",
+                                   dict, {})
+        defaults = self._check_metric_map(raw_defaults, "metrics.defaults")
+        per_group = self._check_per_group(metrics)
+
+        # The switch overrides the signal metrics' enable flags, and only those.
+        if not calculate and any(
+            metric in SIGNAL_METRICS and "enabled" in entry
+            for section in [defaults, *per_group.values()]
+            for metric, entry in section.items()
+        ):
+            self.warn(
+                "W002", "calculate_quality_metrics",
+                "is false (or absent), so the signal-metric enable flags are "
+                "ignored and only pesq, visqol and stoi are computed among "
+                "them; ber and emr keep their flags, and per-metric "
+                "statistics still apply. Set it to true to use the metrics "
+                "block.",
+            )
+        return defaults, per_group
+
+    def _check_per_group(self, metrics):
+        if "per_group" not in metrics:
+            return {}
+
+        if self.mode == "no_attacks":
+            self.error(
+                "E028", "metrics.per_group",
+                f"mode '{self.mode}' applies no attacks, so there are no "
+                f"attack groups to configure. Put the metrics for this mode "
+                f"under 'metrics.defaults'.",
+            )
+            return {}
+
+        block = self._typed(metrics, "per_group", "metrics.per_group", dict, {})
+        clean = {}
+        for group_key in _real_keys(block):
+            path = f"metrics.per_group.{group_key}"
+            if group_key not in CONFIG_GROUP_KEYS:
+                self.error(
+                    "E027", path,
+                    f"unknown attack group. Configurable groups: "
+                    f"{', '.join(CONFIG_GROUP_KEYS)}.",
+                    value=group_key,
+                    suggestion=_suggest(group_key, CONFIG_GROUP_KEYS),
+                )
+                continue
+            entry = self._typed(block, group_key, path, dict, None)
+            if entry is None:
+                continue
+            resolved = self._check_metric_map(entry, path)
+            parent = group_parent(group_key)
+            for metric in ("accuracy", "ber", "emr"):
+                if parent is not None and metric in resolved:
+                    # Subsections only split the signal-metric tables; these
+                    # three are computed and tabled once per parent group.
+                    self.warn(
+                        "W016", f"{path}.{metric}",
+                        f"is not used by any table: '{group_key}' is a report "
+                        f"subsection of '{parent}', and accuracy, BER and EMR "
+                        f"are computed and tabled for '{parent}' as a whole. "
+                        f"Set it under metrics.per_group.{parent} instead.",
+                    )
+            if resolved:
+                clean[group_key] = resolved
+        return clean
+
+    def _check_metric_map(self, mapping, path, allowed=_CONFIGURABLE_METRICS):
+        """Validate a ``{metric: {enabled, statistics}}`` mapping."""
+        clean = {}
+
+        for metric in _real_keys(mapping):
+            metric_path = f"{path}.{metric}"
+            if metric in EFFICIENCY_METRICS and metric not in allowed:
+                # Its flags are read from the efficiency section, so here
+                # they would silently do nothing.
+                self.error(
+                    "E043", metric_path,
+                    f"'{metric}' is an efficiency metric and is configured "
+                    f"in the 'efficiency' section, not in 'metrics'. Move "
+                    f"it to efficiency.metrics.{metric}; setting it here "
+                    f"has no effect on whether it is measured.",
+                    value=metric,
+                )
+                continue
+            if metric not in allowed:
+                # The efficiency names stay a suggestion source, so a typo
+                # for one is answered by E043 on the next attempt.
+                self.error(
+                    "E024", metric_path,
+                    f"unknown metric. Available: {', '.join(allowed)}.",
+                    value=metric,
+                    suggestion=_suggest(
+                        metric, list(allowed) + list(EFFICIENCY_METRICS)),
+                )
+                continue
+            if metric == "ber" and self.mode == "detection_reliability":
+                self.error(
+                    "E025", metric_path,
+                    f"metric '{metric}' does not apply to mode '{self.mode}'. "
+                    f"Detection reliability scores each file as a binary "
+                    f"detected/not-detected outcome, so there are no payload "
+                    f"bits for a bit error rate.",
+                )
+                continue
+
+            entry = self._typed(mapping, metric, metric_path, dict, None)
+            if entry is None:
+                continue
+
+            resolved = {}
+            self._check_keys(entry, metric_path, _METRIC_ENTRY_KEYS)
+
+            if "enabled" in entry:
+                enabled = entry["enabled"]
+                if not isinstance(enabled, bool):
+                    self.error("E009", f"{metric_path}.enabled",
+                               f"must be true or false, but is "
+                               f"{_type_name(enabled)}.", value=enabled)
+                elif metric in MANDATORY_METRICS and not enabled:
+                    self.error(
+                        "E026", f"{metric_path}.enabled",
+                        f"'{metric}' cannot be disabled -- it is the "
+                        f"measurement the benchmark exists to make. Remove "
+                        f"this key.",
+                        value=enabled,
+                    )
+                else:
+                    resolved["enabled"] = enabled
+
+            if "statistics" in entry:
+                if metric in STATISTICS_EXEMPT_METRICS:
+                    self.error(
+                        "E029", f"{metric_path}.statistics",
+                        f"'{metric}' takes no statistics: it reports a count "
+                        f"or a single reading, not a distribution. Remove "
+                        f"this key.",
+                        value=entry["statistics"],
+                    )
+                else:
+                    stats = self._check_statistic_list(
+                        entry["statistics"], f"{metric_path}.statistics",
+                    )
+                    if stats is not None:
+                        resolved["statistics"] = stats
+
+            if resolved:
+                clean[metric] = resolved
+        return clean
+
+    def _check_accuracy_level(self, statistics, defaults, per_group):
+        """Refuse an accuracy statistics list that holds only ``std``.
+
+        Reports read accuracy at a level statistic, and given only the
+        spread the basic report prints it as the accuracy. Checks each list
+        accuracy reads: a group's own, the defaults', and the top-level one
+        when the defaults set none. No table reads a subsection's (W016).
+        """
+        def listed(section):
+            return (section.get("accuracy") or {}).get("statistics")
+
+        lists = [
+            (f"metrics.per_group.{group_key}.accuracy.statistics", listed(entry))
+            for group_key, entry in per_group.items()
+            if group_parent(group_key) is None
+        ]
+        lists.append(("metrics.defaults.accuracy.statistics", listed(defaults)))
+        if listed(defaults) is None:
+            lists.append(("statistics", statistics))
+
+        for path, configured in lists:
+            if configured == ["std"]:
+                self.error(
+                    "E046", path,
+                    f"accuracy reads this list, and std is a spread, not a "
+                    f"level: list at least one of "
+                    f"{', '.join(_LEVEL_STATISTICS)}.",
+                    value=configured,
+                )
+
+    # -- crop, duration, comparison ------------------------------------
+
+    def _check_efficiency(self):
+        """Validate the ``efficiency`` section.
+
+        Its own section rather than a bucket inside ``metrics``: these
+        measure the machine, not the watermark, and a run decides whether
+        to take the measurement at all separately from which quality
+        metrics it wants.
+        """
+        if "efficiency" not in self.raw:
+            return {}
+
+        block = self._typed(self.raw, "efficiency", "efficiency", dict, {})
+        self._check_keys(block, "efficiency", ("enabled", "metrics"))
+        enabled = self._typed(block, "enabled", "efficiency.enabled", bool,
+                              False)
+        metrics = self._typed(block, "metrics", "efficiency.metrics", dict, {})
+        clean = self._check_metric_map(metrics, "efficiency.metrics",
+                                       allowed=EFFICIENCY_METRICS)
+
+        if not enabled and _real_keys(metrics):
+            # Info, not a warning: the shipped templates carry this section
+            # switched off with its metrics listed as documentation, so a
+            # warning here would fire on every default run.
+            self.warn(
+                "W013", "efficiency.enabled",
+                "is false, so no timing is measured and the entries under "
+                "'efficiency.metrics' are ignored. Set it to true to record "
+                "them.", severity="info",
+            )
+
+        return {"enabled": enabled, "metrics": clean}
+
+    def _check_crop(self) -> Optional[float]:
+        if "crop_before_attack" not in MODE_KEYS[self.mode]:
+            return None
+        crop = self.raw.get("crop_before_attack")
+        if crop is None:
+            return None
+        if isinstance(crop, bool) or not isinstance(crop, (int, float)):
+            self.error(
+                "E030", "crop_before_attack",
+                f"must be a percentage (a number) or null, but is "
+                f"{_type_name(crop)}.", value=crop,
+            )
+            return None
+        if not 0 < crop < 100:
+            self.error(
+                "E031", "crop_before_attack",
+                "must be greater than 0 and less than 100: it is the "
+                "percentage cropped from the start of the watermarked audio. "
+                "Use null to disable cropping.",
+                value=crop,
+            )
+            return None
+        return float(crop)
+
+    def _check_duration_groups(self):
+        block = self._typed(self.raw, "duration_groups", "duration_groups",
+                            dict, {})
+        self._check_keys(block, "duration_groups",
+                         ("boundaries", "include_overall"))
+
+        boundaries = self._typed(block, "boundaries",
+                                 "duration_groups.boundaries", list, [])
+        clean = []
+        for index, value in enumerate(boundaries):
+            path = f"duration_groups.boundaries[{index}]"
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                self.error("E032", path,
+                           f"must be a duration in seconds (a number), but is "
+                           f"{_type_name(value)}.", value=value)
+                continue
+            if value <= 0:
+                self.error("E032", path,
+                           "must be greater than 0 seconds.", value=value)
+                continue
+            if value in clean:
+                self.error("E034", path,
+                           "duplicate boundary; each value opens one duration "
+                           "bin.", value=value)
+                continue
+            clean.append(float(value))
+
+        if clean != sorted(clean):
+            self.error(
+                "E033", "duration_groups.boundaries",
+                f"must be in ascending order, so the bins read left to right. "
+                f"Sorted, this is {sorted(clean)}.",
+                value=clean,
+            )
+            clean = sorted(clean)
+
+        include_overall = self._typed(
+            block, "include_overall", "duration_groups.include_overall",
+            bool, False,
+        )
+        if include_overall and not clean:
+            self.warn(
+                "W005", "duration_groups.include_overall",
+                "is true but no boundaries are set, so there is nothing to "
+                "split and no separate 'Overall' section is added.",
+            )
+        return clean, include_overall
+
+    def _check_comparison(self, resolver, groups, attack_list) -> str:
+        if "comparison" not in MODE_KEYS[self.mode]:
+            return "mean"
+
+        block = self._typed(self.raw, "comparison", "comparison", dict, {})
+        self._check_keys(block, "comparison", ("primary_statistic",))
+
+        # Accuracy's statistics by default, then each ranked group's. A group
+        # whose list leaves the primary out is W015, not an error.
+        ranked = self._ranked_groups(groups, attack_list)
+        if self.attacks_registry is None and not groups and not attack_list:
+            # Without a registry an ungrouped attack may run, so 'other'
+            # counts too: E036 must not depend on undiscovered plugins.
+            from deepmarkpy.utils.attack_groups import OTHER_GROUP_KEY
+            ranked.append(OTHER_GROUP_KEY)
+        computed = list(resolver.statistics_for(None, "accuracy"))
+        for group_key in ranked:
+            for statistic in resolver.statistics_for(group_key, "accuracy"):
+                if statistic not in computed:
+                    computed.append(statistic)
+        # Unset means "whichever statistic accuracy leads with", not a hard
+        # "mean" -- a config that drops the mean has not made a mistake.
+        if "primary_statistic" not in block:
+            return next((s for s in computed if s != "std"), "mean")
+
+        primary = block["primary_statistic"]
+        if primary == "std":
+            self.error(
+                "E035", "comparison.primary_statistic",
+                f"std is a spread, not a level, so the main comparison table "
+                f"cannot rank by it. Pick one of: "
+                f"{', '.join(_LEVEL_STATISTICS)}.",
+                value=primary,
+            )
+            return "mean"
+        if not isinstance(primary, str) or primary not in ALL_STATISTICS:
+            self.error(
+                "E035" if isinstance(primary, str) else "E009",
+                "comparison.primary_statistic",
+                f"must be one of: {', '.join(_LEVEL_STATISTICS)}. It selects "
+                f"the statistic shown in the colour-ranked multi-model table; "
+                f"the others each get their own table below it.",
+                value=primary,
+                suggestion=_suggest(primary, _LEVEL_STATISTICS),
+            )
+            return computed[0] if computed else "mean"
+
+        if primary not in computed:
+            self.error(
+                "E036", "comparison.primary_statistic",
+                f"'{primary}' is not among the statistics accuracy is computed "
+                f"with, by default or in any group this run selects "
+                f"({', '.join(computed)}), so it is never computed and the "
+                f"main comparison table would be empty. Add it to accuracy's "
+                f"statistics, or pick one of those.",
+                value=primary,
+            )
+            return "mean"
+        return primary
+
+    # -- cross-cutting warnings ----------------------------------------
+
+    def _check_primary_coverage(self, primary, resolver, models, groups,
+                                attack_list):
+        """Name the groups the main comparison table cannot rank.
+
+        Each attack's accuracy is computed with its own group's statistics,
+        so a group that leaves the primary out reads N/A in the main table
+        and is ranked only in its own statistics' tables below it. Not an
+        error: every number is still reported.
+        """
+        if "comparison" not in MODE_KEYS[self.mode] or len(models) < 2:
+            return
+        for group_key in self._ranked_groups(groups, attack_list):
+            statistics = resolver.statistics_for(group_key, "accuracy")
+            if primary not in statistics:
+                # A std table is shown uncoloured, so it ranks nothing.
+                ranked = [s for s in statistics if s != "std"]
+                self.warn(
+                    "W015", f"metrics.per_group.{group_key}.accuracy.statistics",
+                    f"leaves out '{primary}', the statistic the main "
+                    f"comparison table ranks, so this group's rows read N/A "
+                    f"there and are ranked only in the "
+                    f"{', '.join(ranked)} table(s) below it. Add "
+                    f"'{primary}' to this list if they should be ranked in "
+                    f"the main table.",
+                )
+
+    def _check_group_coverage(self, per_group, groups, attack_list):
+        """Note per_group entries for groups this run will not reach.
+
+        Not an error: keeping a full matrix in the file and narrowing the
+        attack selection per run is the expected workflow.
+        """
+        if not per_group:
+            return
+        selected = self._groups_in_run(groups, attack_list)
+        if selected is None:
+            return
+        for group_key in per_group:
+            if group_key not in selected:
+                self.warn(
+                    "W001", f"metrics.per_group.{group_key}",
+                    f"no attack in this run belongs to '{group_key}', so this "
+                    f"section is unused. Nothing to fix if that is intended.",
+                    severity="info",
+                )
+
+    def _check_parameter_coverage(self, overrides, synthetic, groups,
+                                  attack_list):
+        """Note attack_parameters entries this run will not apply.
+
+        Narrowing the attack selection leaves parameter entries behind,
+        and an entry that silently does nothing is the same trap as an
+        unused ``per_group`` section -- so it gets the same treatment.
+        """
+        if not overrides and not synthetic:
+            return
+        if not groups and not attack_list and self.mode == "benchmark":
+            # Everything runs, so every entry is reachable. Only benchmark
+            # mode expands an empty selection; detection_reliability then
+            # measures the no-attack baseline alone.
+            return
+
+        selected = {spec.partition(":")[0] for spec in attack_list}
+        for group_key in groups:
+            if group_key in ATTACK_GROUPS:
+                selected.update(ATTACK_GROUPS[group_key]["attacks"])
+
+        configured = {attack for attack, _version in overrides}
+        configured.update(synthetic)
+        for attack in sorted(configured - selected):
+            self.warn(
+                "W011", f"attack_parameters.{attack}",
+                f"this run does not select '{attack}', so its parameters are "
+                f"unused. Add it to attacks.list, or remove the entry.",
+                severity="info",
+            )
+
+        # A version defined here but never selected is also worth saying,
+        # since defining one is deliberate work.
+        for attack, versions in synthetic.items():
+            if attack not in selected:
+                continue
+            named = {
+                spec.partition(":")[2] for spec in attack_list
+                if spec.partition(":")[0] == attack
+            }
+            bare = any(spec == attack for spec in attack_list) or any(
+                attack in ATTACK_GROUPS.get(g, {}).get("attacks", [])
+                for g in groups
+            )
+            if bare:
+                continue
+            for version in versions:
+                if version not in named:
+                    self.warn(
+                        "W011", f"attack_parameters.{attack}:{version}",
+                        f"version '{version}' is defined but not selected: "
+                        f"attacks.list names other versions of '{attack}' and "
+                        f"not this one. Add '{attack}:{version}' to run it.",
+                        severity="info",
+                    )
+
+    def _ranked_groups(self, groups, attack_list):
+        """Top-level group keys whose rows the main comparison table ranks.
+
+        Includes ``other`` when an ungrouped attack runs.
+        """
+        from deepmarkpy.utils.attack_groups import (
+            OTHER_GROUP_KEY, get_group_for_attack,
+        )
+
+        reachable = self._groups_in_run(groups, attack_list)
+        ranked = [g for g in ATTACK_GROUPS
+                  if reachable is None or g in reachable]
+        if reachable is None:
+            # Every discovered attack runs, an ungrouped one included.
+            ungrouped = any(get_group_for_attack(name) is None
+                            for name in self.attacks_registry or ())
+        else:
+            ungrouped = OTHER_GROUP_KEY in reachable
+        if ungrouped:
+            ranked.append(OTHER_GROUP_KEY)
+        return ranked
+
+    def _groups_in_run(self, groups, attack_list):
+        """Group keys reachable by this run's attack selection, or None for all."""
+        from deepmarkpy.utils.attack_groups import (
+            OTHER_GROUP_KEY, get_group_for_attack, get_subgroup_for_attack,
+            subgroups_of,
+        )
+
+        if not groups and not attack_list:
+            return None
+
+        reachable = set()
+        for group_key in groups:
+            reachable.add(group_key)
+            reachable.update(subgroups_of(group_key))
+        for spec in attack_list:
+            name = spec.partition(":")[0]
+            reachable.add(get_group_for_attack(name) or OTHER_GROUP_KEY)
+            subgroup = get_subgroup_for_attack(name)
+            if subgroup:
+                reachable.add(subgroup)
+        return reachable
+
+    def _check_nisqa_cost(self, resolver):
+        """Say plainly that enabling fewer NISQA dimensions costs the same.
+
+        All five come back from one forward pass, so trimming the list
+        shortens tables and saves nothing.
+        """
+        enabled = {
+            metric for group_key in list(resolver.per_group) + [None]
+            for metric in resolver.metrics_for_group(group_key)
+            if metric in NISQA_METRICS
+        }
+        if enabled and len(enabled) < len(NISQA_METRICS):
+            missing = [m for m in NISQA_METRICS if m not in enabled]
+            self.warn(
+                "W003", "metrics",
+                f"{len(enabled)} of {len(NISQA_METRICS)} NISQA dimensions are "
+                f"enabled ({', '.join(sorted(enabled))}). All five come from a "
+                f"single NISQA request, so leaving out "
+                f"{', '.join(missing)} makes the tables narrower but costs the "
+                f"same to run.", severity="info",
+            )
+
+
+def _compatible_type(value, default) -> bool:
+    """Whether a config value matches the shape of a plugin's default.
+
+    Ints are accepted where a float is expected (JSON writes ``2`` for
+    ``2.0``); bools are kept distinct from numbers, which Python's
+    ``isinstance`` otherwise conflates.
+    """
+    if isinstance(default, bool):
+        return isinstance(value, bool)
+    if isinstance(default, (int, float)):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if isinstance(default, list):
+        return isinstance(value, list)
+    if isinstance(default, str):
+        return isinstance(value, str)
+    if default is None:
+        return True
+    return isinstance(value, type(default))

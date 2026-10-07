@@ -116,15 +116,15 @@ class BaseModel(abc.ABC):
         pass
 
     def is_watermarked(self, detect_output) -> bool:
-        """Determine whether a watermark is present based on detect() output.
+        """Whether the raw ``detect()`` output means a watermark is present.
 
-        Models that support --detection_reliability must override this method.
-        The default implementation raises NotImplementedError so that
-        detection_reliability can check support at runtime.
+        Override to support detection_reliability mode and the no-attacks
+        detection count. The default raises; callers check
+        ``implements_is_watermarked()`` first.
         """
         raise NotImplementedError(
             f"{self.name} does not implement is_watermarked(). "
-            f"Cannot use --detection_reliability with this model."
+            f"Cannot use detection_reliability mode with this model."
         )
 
     def generate_watermark(self) -> np.ndarray:
@@ -158,3 +158,20 @@ class BaseModel(abc.ABC):
             dict: The model's configuration loaded from `config.json`.
         """
         return self._config
+
+
+def implements_is_watermarked(model) -> bool:
+    """Whether a model instance or class overrides ``is_watermarked()``.
+
+    Inheriting the base implementation is not support: it raises. Config
+    validation asks it of the registered class; the detection_reliability
+    mode and the no-attacks report ask it of the instance.
+    """
+    if not hasattr(model, "is_watermarked"):
+        return False
+    if isinstance(model, type):
+        return (not issubclass(model, BaseModel)
+                or model.is_watermarked is not BaseModel.is_watermarked)
+    if not isinstance(model, BaseModel):
+        return True
+    return type(model).is_watermarked is not BaseModel.is_watermarked

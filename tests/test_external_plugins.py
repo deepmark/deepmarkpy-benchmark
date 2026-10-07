@@ -35,6 +35,25 @@ def test_external_plugin_registers_with_config(external_dir):
     assert attacks["ExternalDropInAttack"]["config"] == {"gain_external_drop_in": 1.0}
 
 
+def test_external_plugin_can_actually_be_instantiated(external_dir):
+    """A plugin loaded by file path can be constructed, as the run loop does."""
+    pm = PluginManager(external_plugins_dir=str(external_dir))
+    instance = pm.get_attacks()["ExternalDropInAttack"]["class"]()
+    assert instance._config == {"gain_external_drop_in": 1.0}
+
+
+def test_a_failed_external_plugin_leaves_no_module_behind(external_dir):
+    """A half-executed module must not stay importable under its own name."""
+    import sys
+
+    PluginManager(external_plugins_dir=str(external_dir))
+    leaked = [
+        name for name in sys.modules
+        if name.startswith("deepmarkpy_external_plugins.broken_attack")
+    ]
+    assert leaked == []
+
+
 def test_external_plugin_failure_is_recorded_not_raised(external_dir):
     pm = PluginManager(external_plugins_dir=str(external_dir))
     failed_paths = [p for p in pm.failed if p.endswith("broken_attack/attack.py")]

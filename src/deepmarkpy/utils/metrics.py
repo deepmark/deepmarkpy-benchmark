@@ -567,6 +567,10 @@ METRIC_LABELS = {
     "nisqa_dis": "Discontinuity (1--5)",
     "nisqa_col": "Coloration (1--5)",
     "nisqa_loud": "Loudness (1--5)",
+    "embed_latency": "Embed time (s)",
+    "detect_latency": "Detect time (s)",
+    "attack_latency": "Attack time (s)",
+    "container_footprint": "Container memory (MiB)",
 }
 
 # Metrics that require 8 kHz or 16 kHz and are resampled accordingly.

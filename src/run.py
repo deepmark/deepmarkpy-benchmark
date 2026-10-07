@@ -4,6 +4,7 @@
 ``deepmark-benchmark`` console script and ``python -m deepmarkpy.run``.
 """
 
+import sys
 import warnings
 
 from deepmarkpy.run import main
@@ -15,4 +16,4 @@ if __name__ == "__main__":
         DeprecationWarning,
         stacklevel=1,
     )
-    main()
+    sys.exit(main())

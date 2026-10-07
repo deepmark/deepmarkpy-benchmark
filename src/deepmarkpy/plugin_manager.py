@@ -14,6 +14,7 @@ import inspect
 import json
 import logging
 import os
+import sys
 
 from deepmarkpy.core.base_attack import BaseAttack
 from deepmarkpy.core.base_model import BaseModel
@@ -86,20 +87,31 @@ class PluginManager:
     def _load_config(root):
         """Return the directory's parsed config.json, or None."""
         config_path = os.path.join(root, "config.json")
-        config_data = None
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config_data = json.load(f)
-            except Exception as e:
-                logger.warning(f"Could not load config.json at {config_path} ({e})")
-        return config_data
+        if not os.path.exists(config_path):
+            return None
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Could not load config.json at {config_path} ({e})")
+            return None
 
     def _register_members(self, module, base_class, storage_dict, config_data):
         """Register every ``base_class`` subclass found in ``module``."""
         for name, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, base_class) and obj is not base_class:
-                storage_dict[name] = {"class": obj, "config": config_data}
+                # For registry consumers (get_available_args, kwargs filtering),
+                # expose the default version's params. Store the full raw config
+                # separately for version resolution.
+                if config_data and "default" in config_data and isinstance(config_data["default"], dict):
+                    registry_config = config_data["default"]
+                else:
+                    registry_config = config_data
+                storage_dict[name] = {
+                    "class": obj,
+                    "config": registry_config,
+                    "_raw_config": config_data,
+                }
 
     def _load_classes_from_directory(self, directory, base_class, storage_dict):
         # The import prefix derives from this module's package, so plugins
@@ -151,9 +163,17 @@ class PluginManager:
                 try:
                     spec = importlib.util.spec_from_file_location(module_name, file_path)
                     module = importlib.util.module_from_spec(spec)
+                    # Registered before exec, and kept afterwards, because
+                    # BaseAttack/BaseModel locate their config.json with
+                    # inspect.getfile(), which looks the class's module up in
+                    # sys.modules. Without this an external plugin registers
+                    # fine and then raises "is a built-in class" the moment
+                    # anything tries to instantiate it.
+                    sys.modules[module_name] = module
                     spec.loader.exec_module(module)
                     self._register_members(module, base_class, storage_dict, config_data)
                 except Exception as e:
+                    sys.modules.pop(module_name, None)
                     logger.error(f"Failed to import {file_path}: {e}")
                     self.failed[file_path] = str(e)
 

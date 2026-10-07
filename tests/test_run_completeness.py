@@ -1,9 +1,6 @@
-"""A run must not quietly do less than it was asked to.
-
-Covers the two ways that used to happen: a port set in .env never reaching
-the host clients, and a requested attack whose plugin failed to import being
-warned about and skipped while the run still exited 0.
-"""
+"""A run must not quietly do less than it was asked to: a port set in .env
+reaches the host clients, and an attack, version or second model that cannot
+run stops the run rather than being skipped."""
 
 import os
 
@@ -94,11 +91,7 @@ class TestMissingAttacksAreFatal:
                       attack_types=["GaussianNoiseAttack", "WaveletAttack"])
 
     def test_run_refuses_an_empty_explicit_request(self):
-        """An explicitly empty set must not fall back to the whole registry.
-
-        This is what a group whose plugins all failed to import used to
-        produce: asking for one group and silently getting every attack.
-        """
+        """An explicitly empty set must not fall back to the whole registry."""
         bench = self._benchmark()
         with pytest.raises(ValueError, match="empty"):
             bench.run(filepaths=["/nonexistent.wav"], wm_model="FakeModel",
@@ -114,24 +107,41 @@ class TestMissingAttacksAreFatal:
 
 
 class TestAttackGroupsReachTheGuard:
-    """--attack_groups must hand its resolved list over unfiltered.
+    """--attack_groups must hand its resolved list over unfiltered."""
 
-    Filtering unavailable attacks out in run.py left the guard with nothing to
-    catch, so a group ran short silently; when every plugin in a group failed,
-    the empty list fell through to "run everything".
-    """
+    def test_config_group_resolution_does_not_filter_against_the_registry(self):
+        """Group expansion in the config layer leaves every member for the guard."""
+        from deepmarkpy.config import ModeConfig
+        from deepmarkpy.utils.attack_groups import ATTACK_GROUPS
 
-    def test_run_py_does_not_filter_group_results(self):
-        import inspect
-        from deepmarkpy import run as run_module
+        config = ModeConfig(mode="benchmark", source="c.json",
+                            attack_groups=["audio_editing"])
+        specs = config.selected_attack_specs()
 
-        src = inspect.getsource(run_module.main)
-        start = src.index("if args.attack_groups:")
-        block = src[start:start + 600]
-        assert "available = set(attacks)" not in block, (
-            "run.py filters group-resolved attacks against the registry again; "
-            "unavailable ones are dropped before Benchmark.run can object"
+        assert set(specs) == set(ATTACK_GROUPS["audio_editing"]["attacks"]), (
+            "config group resolution filters against the plugin registry; "
+            "unavailable attacks are dropped before Benchmark.run can object"
         )
+
+    def test_empty_selection_means_every_attack_not_none_of_them(self):
+        """No groups and no list is 'run everything', which run() expands."""
+        from deepmarkpy.config import ModeConfig
+
+        config = ModeConfig(mode="benchmark", source="c.json")
+        assert config.selected_attack_specs() is None
+
+    def test_explicit_list_and_groups_combine_without_duplicates(self):
+        from deepmarkpy.config import ModeConfig
+
+        config = ModeConfig(
+            mode="benchmark", source="c.json",
+            attack_groups=["audio_distortion"],
+            attack_list=["GaussianNoiseAttack", "ReplayAttack"],
+        )
+        specs = config.selected_attack_specs()
+        assert specs.count("GaussianNoiseAttack") == 1
+        assert "ReplayAttack" in specs
+        assert "PinkNoiseAttack" in specs
 
     def test_group_resolution_returns_declared_attacks_not_discovered_ones(self):
         from deepmarkpy.utils.attack_groups import ATTACK_GROUPS, get_attacks_for_groups
@@ -142,3 +152,112 @@ class TestAttackGroupsReachTheGuard:
             "group resolution must reflect what the group declares, so a "
             "missing plugin is visible rather than absent"
         )
+
+
+class TestCrossModelReceivesItsSecondModel:
+    """The run loop hands the cross-model attack its second model's name."""
+
+    def test_the_resolved_name_is_handed_to_the_attack(self):
+        import inspect
+
+        from deepmarkpy import benchmark as benchmark_module
+
+        source = inspect.getsource(benchmark_module.Benchmark.run)
+        assert 'current_attack_kwargs[\n' \
+               '                        "different_model_name_cross_model"]' in source \
+            or '"different_model_name_cross_model"] = different_model_name' in source, (
+                "the resolved name is not passed to the attack"
+            )
+
+    def test_the_plugin_default_second_model_is_discovered(self):
+        benchmark = Benchmark()
+        entry = benchmark.attacks["CrossModelAttack"]
+        default = (entry.get("config") or {}).get(
+            "different_model_name_cross_model")
+        assert default in benchmark.models, (
+            f"the plugin default {default!r} is not a discovered model"
+        )
+
+    def test_an_unknown_second_model_stops_the_run_before_any_audio(
+        self, tmp_path, monkeypatch,
+    ):
+        """The plugin's unknown default name stops the run before any audio."""
+        import numpy as np
+        import soundfile as sf
+
+        from deepmarkpy.utils.metric_resolver import MetricResolver
+
+        embedded = []
+
+        class _Model:
+            def generate_watermark(self):
+                return np.ones(16, dtype=np.int32)
+
+            def embed(self, audio, watermark_data, sampling_rate):
+                embedded.append(sampling_rate)
+                return audio
+
+            def detect(self, audio, sampling_rate):
+                return np.ones(16, dtype=np.int32)
+
+        path = tmp_path / "a.wav"
+        sf.write(str(path), np.zeros(16000, dtype=np.float32), 16000)
+
+        benchmark = Benchmark()
+        monkeypatch.setitem(
+            benchmark.attacks["CrossModelAttack"], "config",
+            {"different_model_name_cross_model": "NotAModel"},
+        )
+        monkeypatch.setitem(benchmark.models, "StubModel", {
+            "class": _Model, "config": {"sampling_rate": 16000},
+        })
+
+        with pytest.raises(ValueError, match="different_model_name_cross_model"):
+            benchmark.run(
+                filepaths=[str(path)], wm_model="StubModel",
+                attack_types=["GaussianNoiseAttack", "CrossModelAttack"],
+                metric_resolver=MetricResolver(),
+            )
+        assert embedded == [], "audio was embedded before the name was checked"
+
+
+class TestAVersionIsNeverSilentlyDropped:
+    """An attack either takes the requested version or says it cannot."""
+
+    class _TakesVersion:
+        def __init__(self, version=None):
+            self.version = version
+
+    class _TakesNone:
+        def __init__(self):
+            self.version = "default-preset"
+
+    class _RaisesInside:
+        def __init__(self, version=None):
+            raise TypeError("a bug in the plugin's own constructor")
+
+    def test_a_versioned_attack_receives_its_version(self):
+        from deepmarkpy.benchmark import instantiate_attack
+
+        built = instantiate_attack(self._TakesVersion, "X", "aggressive")
+        assert built.version == "aggressive"
+
+    def test_a_versionless_attack_asked_for_a_version_is_refused(self):
+        """Running its default preset would label the row as data it is not."""
+        from deepmarkpy.benchmark import instantiate_attack
+
+        with pytest.raises(ValueError, match="does not support versions"):
+            instantiate_attack(self._TakesNone, "X", "aggressive")
+
+    def test_a_versionless_attack_asked_for_the_default_is_silent(self, caplog):
+        from deepmarkpy.benchmark import instantiate_attack
+
+        with caplog.at_level("WARNING"):
+            instantiate_attack(self._TakesNone, "X", "default")
+        assert "does not support versions" not in caplog.text
+
+    def test_a_constructor_bug_is_not_mistaken_for_a_missing_version(self):
+        from deepmarkpy.benchmark import instantiate_attack
+
+        with pytest.raises(TypeError, match="bug in the plugin"):
+            instantiate_attack(self._RaisesInside, "X", "mild")

@@ -1,0 +1,186 @@
+{
+  "_file": "Benchmark mode: embed, apply each attack, measure what survives and what it cost. Keys starting with _ are comments and are ignored. Check with --validate-only; reset with 'deepmark-benchmark --init benchmark'.",
+
+  "mode": "benchmark",
+
+  "_general": "Operational settings; the matching CLI flag overrides each one. wav_files_dir has no default - set it here or pass --wav_files_dir. report_dir is DELETED at the start of every run. seed: integer for a repeatable run, or null for a fresh watermark per file.",
+  "general": {
+    "wav_files_dir": null,
+    "report_dir": "report",
+    "seed": null,
+    "verbose": false,
+    "save_audio": false,
+    "plugins_dir": null
+  },
+
+  "_models": "Model class names; two or more adds a comparative report. Any of: AudioSealModel, AwareModel, PerthModel, SilentCipherModel, TimbreWMModel, WavMarkModel. Each one's Docker service must be running.",
+  "models": ["AudioSealModel"],
+
+  "_attacks": "groups and list are combined; leaving BOTH empty runs every attack. groups - any of: process_disruption, audio_editing, audio_distortion, desynchronization, ai_attacks, transmission. list - attack class names, optionally AttackName:version (e.g. GaussianNoiseAttack:aggressive).",
+  "attacks": {
+    "groups": [],
+    "list": []
+  },
+
+  "_attack_parameters": "Plugin parameter overrides, keyed by attack CLASS NAME (its default version ONLY) or AttackName:version; naming a version the plugin lacks DEFINES it when you give ALL of that attack's parameters. Delete the underscore from an entry below to activate it.",
+  "attack_parameters": {
+    "_GaussianNoiseAttack": { "snr_db_gaussian_noise": 30 },
+    "_GaussianNoiseAttack:aggressive": { "snr_db_gaussian_noise": 10 },
+    "_TimeStretchAttack:subtle": { "stretch_rate_time_stretch": 1.05 }
+  },
+
+  "_calculate_quality_metrics": "Master switch: true = the metrics block below decides what runs; false or absent = accuracy plus pesq, visqol, stoi; the signal metrics' enabled flags are IGNORED, ber/emr keep theirs (statistics still apply).",
+  "calculate_quality_metrics": true,
+
+  "_statistics": "Default statistics per metric, and the report column order. Any of: mean, std, median, p5, p10, p95, p99, worst_case. Delete this key to get all eight.",
+  "statistics": ["mean", "std", "median", "p5", "p95", "worst_case"],
+
+  "_metrics": "Per metric: enabled (true/false) and statistics (a subset of the list above). Metrics - accuracy (always on, cannot be disabled), ber, emr (a count, takes NO statistics), pesq, psnr, si_sdr, mcd, visqol, stoi, sii, ncm, nisqa_mos, nisqa_noi, nisqa_dis, nisqa_col, nisqa_loud. A metric named nowhere is off.",
+  "metrics": {
+    "_defaults": "Baseline for every group. The signal metrics are OFF here and each group below switches on the ones that are meaningful for it, so a group section reads as a positive list of what it reports. accuracy/ber/emr are free (all three come from the accuracy array) and apply everywhere.",
+    "defaults": {
+      "accuracy": { "enabled": true, "statistics": ["mean", "std", "median", "p5", "p10", "p95", "p99", "worst_case"] },
+      "ber": { "enabled": true },
+      "emr": { "enabled": true },
+
+      "pesq": { "enabled": false }, "psnr": { "enabled": false }, "si_sdr": { "enabled": false },
+      "mcd": { "enabled": false }, "visqol": { "enabled": false },
+      "stoi": { "enabled": false }, "sii": { "enabled": false }, "ncm": { "enabled": false },
+      "nisqa_mos": { "enabled": false }, "nisqa_noi": { "enabled": false },
+      "nisqa_dis": { "enabled": false }, "nisqa_col": { "enabled": false },
+      "nisqa_loud": { "enabled": false }
+    },
+
+    "_per_group": "Each group lists the metrics it reports, as true. Inheritance is PER METRIC, so a group inherits anything it does not name from defaults above - where the signal metrics are off, which is why each section is a complete list. Group keys: the six attack families, then frequency_filtering / temporal_editing / audio_effects / compression_quantization (report subsections of audio_editing, NOT selectable in attacks.groups), then other. A group this run does not use is ignored; a MISSPELLED one is an error.",
+    "per_group": {
+      "_process_disruption": "Collusion and re-watermarking keep the signal intact, so every metric applies.",
+      "process_disruption": {
+        "pesq": { "enabled": true }, "psnr": { "enabled": true }, "si_sdr": { "enabled": true },
+        "mcd": { "enabled": true }, "visqol": { "enabled": true }, "stoi": { "enabled": true },
+        "sii": { "enabled": true }, "ncm": { "enabled": true }, "nisqa_mos": { "enabled": true },
+        "nisqa_noi": { "enabled": true }, "nisqa_dis": { "enabled": true },
+        "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
+      },
+
+      "_audio_editing": "The family as a whole. Its four subsections below are read INSTEAD of this in the detailed report, and each states its own full list because it inherits from here.",
+      "audio_editing": {
+        "pesq": { "enabled": true }, "psnr": { "enabled": true }, "si_sdr": { "enabled": true },
+        "mcd": { "enabled": true }, "visqol": { "enabled": true }, "stoi": { "enabled": true },
+        "sii": { "enabled": true }, "ncm": { "enabled": true }, "nisqa_mos": { "enabled": true },
+        "nisqa_noi": { "enabled": true }, "nisqa_dis": { "enabled": true },
+        "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
+      },
+
+      "_audio_distortion": "Additive noise. No mcd: index-aligned, and it adds nothing PESQ and ViSQOL do not already say.",
+      "audio_distortion": {
+        "pesq": { "enabled": true }, "psnr": { "enabled": true }, "si_sdr": { "enabled": true },
+        "visqol": { "enabled": true }, "stoi": { "enabled": true }, "sii": { "enabled": true },
+        "ncm": { "enabled": true }, "nisqa_mos": { "enabled": true },
+        "nisqa_noi": { "enabled": true }, "nisqa_dis": { "enabled": true },
+        "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
+      },
+
+      "_desynchronization": "The time axis moves. pesq, visqol and stoi are on, as in every family, with mcd and the reference-free NISQA; psnr, si_sdr, sii and ncm are off. stoi and mcd compare samples by index, so reports mark them with a dagger and a footnote: here they measure the shift, not quality.",
+      "desynchronization": {
+        "pesq": { "enabled": true }, "mcd": { "enabled": true }, "visqol": { "enabled": true },
+        "stoi": { "enabled": true },
+        "nisqa_mos": { "enabled": true }, "nisqa_noi": { "enabled": true },
+        "nisqa_dis": { "enabled": true }, "nisqa_col": { "enabled": true },
+        "nisqa_loud": { "enabled": true }
+      },
+
+      "_ai_attacks": "Neural resynthesis rewrites the waveform, so psnr and si_sdr collapse while perceptual quality holds.",
+      "ai_attacks": {
+        "pesq": { "enabled": true }, "mcd": { "enabled": true }, "visqol": { "enabled": true },
+        "stoi": { "enabled": true }, "sii": { "enabled": true }, "ncm": { "enabled": true },
+        "nisqa_mos": { "enabled": true }, "nisqa_noi": { "enabled": true },
+        "nisqa_dis": { "enabled": true }, "nisqa_col": { "enabled": true },
+        "nisqa_loud": { "enabled": true }
+      },
+
+      "_transmission": "Replay and network loss keep sample alignment, so every metric applies.",
+      "transmission": {
+        "pesq": { "enabled": true }, "psnr": { "enabled": true }, "si_sdr": { "enabled": true },
+        "mcd": { "enabled": true }, "visqol": { "enabled": true }, "stoi": { "enabled": true },
+        "sii": { "enabled": true }, "ncm": { "enabled": true }, "nisqa_mos": { "enabled": true },
+        "nisqa_noi": { "enabled": true }, "nisqa_dis": { "enabled": true },
+        "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
+      },
+
+      "_frequency_filtering": "audio_editing subsection: lowpass, highpass, bandstop, equalizer. psnr/si_sdr off.",
+      "frequency_filtering": {
+        "pesq": { "enabled": true }, "psnr": { "enabled": false },
+        "si_sdr": { "enabled": false }, "mcd": { "enabled": true },
+        "visqol": { "enabled": true }, "stoi": { "enabled": true }, "sii": { "enabled": true },
+        "ncm": { "enabled": true }, "nisqa_mos": { "enabled": true },
+        "nisqa_noi": { "enabled": true }, "nisqa_dis": { "enabled": true },
+        "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
+      },
+
+      "_temporal_editing": "audio_editing subsection: cut, crop-beginning, crop-random. Signal length changes, so nothing can be compared to the original; accuracy, ber and emr still are.",
+      "temporal_editing": {
+        "pesq": { "enabled": false }, "psnr": { "enabled": false },
+        "si_sdr": { "enabled": false }, "mcd": { "enabled": false },
+        "visqol": { "enabled": false }, "stoi": { "enabled": false },
+        "sii": { "enabled": false }, "ncm": { "enabled": false },
+        "nisqa_mos": { "enabled": false }, "nisqa_noi": { "enabled": false },
+        "nisqa_dis": { "enabled": false }, "nisqa_col": { "enabled": false },
+        "nisqa_loud": { "enabled": false }
+      },
+
+      "_audio_effects": "audio_editing subsection: wavelet, smoothing, chorus, flanger, echo, mixing. psnr off.",
+      "audio_effects": {
+        "pesq": { "enabled": true }, "psnr": { "enabled": false }, "si_sdr": { "enabled": true },
+        "mcd": { "enabled": true }, "visqol": { "enabled": true }, "stoi": { "enabled": true },
+        "sii": { "enabled": true }, "ncm": { "enabled": true }, "nisqa_mos": { "enabled": true },
+        "nisqa_noi": { "enabled": true }, "nisqa_dis": { "enabled": true },
+        "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
+      },
+
+      "_compression_quantization": "audio_editing subsection: quantization, MP3, Encodec, DAC, Opus, Codec2, resampling. si_sdr off.",
+      "compression_quantization": {
+        "pesq": { "enabled": true }, "psnr": { "enabled": true }, "si_sdr": { "enabled": false },
+        "mcd": { "enabled": true }, "visqol": { "enabled": true }, "stoi": { "enabled": true },
+        "sii": { "enabled": true }, "ncm": { "enabled": true }, "nisqa_mos": { "enabled": true },
+        "nisqa_noi": { "enabled": true }, "nisqa_dis": { "enabled": true },
+        "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
+      },
+
+      "_other": "Attacks in no declared family, including third-party plugins. Everything on, since nothing is known to be misleading.",
+      "other": {
+        "pesq": { "enabled": true }, "psnr": { "enabled": true }, "si_sdr": { "enabled": true },
+        "mcd": { "enabled": true }, "visqol": { "enabled": true }, "stoi": { "enabled": true },
+        "sii": { "enabled": true }, "ncm": { "enabled": true }, "nisqa_mos": { "enabled": true },
+        "nisqa_noi": { "enabled": true }, "nisqa_dis": { "enabled": true },
+        "nisqa_col": { "enabled": true }, "nisqa_loud": { "enabled": true }
+      }
+    }
+  },
+
+  "_comparison": "Used only with two or more models. primary_statistic is the one ranked in the main comparison table; it must be one of accuracy's statistics, and not std, a spread that ranks nothing (E035). Every other one, std included, gets its own table below it, std uncoloured. accuracy's statistics must include one besides std (E046).",
+  "comparison": {
+    "primary_statistic": "mean"
+  },
+
+  "_crop_before_attack": "Percentage cropped from the START of the watermarked audio before each attack, to test a watermark that cannot rely on being aligned. A number greater than 0 and less than 100, or null to disable.",
+  "crop_before_attack": null,
+
+  "_efficiency": "What the run cost in time and memory, kept apart from the metrics block above. Those describe the watermarking method and reproduce from a seed; these describe this machine on this day and do not. enabled: false means none of it is measured. Metrics - embed_latency, detect_latency, attack_latency (seconds), container_footprint (MiB).",
+  "_efficiency_caveat": "A native attack is timed as pure computation; one running in Docker includes base64 encoding of the audio and the HTTP round trip, so the two are not comparable. The first call to a cold container also pays for loading the model.",
+  "efficiency": {
+    "enabled": false,
+    "metrics": {
+      "embed_latency": { "enabled": true, "statistics": ["mean", "worst_case"] },
+      "detect_latency": { "enabled": true, "statistics": ["mean", "worst_case"] },
+      "attack_latency": { "enabled": true, "statistics": ["mean", "p95", "worst_case"] },
+      "_container_footprint": "Resident memory, in MiB, of each running container the run used (the model's, every dockerized attack's, and NISQA's when a NISQA metric is on), read via the docker CLI while warm. It is the WHOLE service - weights, Python runtime, web server - not the size of a model, and the services load their weights at start so a container can never be measured empty. A service is absent when docker is unavailable or no running container publishes its port.",
+      "container_footprint": { "enabled": false }
+    }
+  },
+
+  "_duration_groups": "Report separately per audio length. boundaries: ascending seconds, e.g. [5, 10, 20, 30] gives < 5.0s, 5.0-10.0s, 10.0-20.0s, 20.0-30.0s and >= 30.0s, each bin holding its lower boundary; an empty list disables grouping. include_overall adds a final all-files section.",
+  "duration_groups": {
+    "boundaries": [],
+    "include_overall": false
+  }
+}
