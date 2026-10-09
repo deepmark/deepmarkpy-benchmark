@@ -39,6 +39,7 @@ Excluded (with rationale, also recorded in the manifest):
   collusion_2 additionally draws from a fresh ``np.random.default_rng()`` at
   attack.py:129, beyond ``np.random.seed``'s reach);
 - corpus-dependent attacks (replay, mixing — need on-disk corpora);
+- attacks awaiting a canonical-machine recording (see ``EXCLUSIONS`` below).
 """
 
 import datetime
@@ -127,6 +128,12 @@ EXCLUSIONS = {
     " across in-process instantiations, so output is"
     " invocation-history-dependent": [
         "Codec2VocoderAttack",
+    ],
+    "not recorded yet: deterministic and ffmpeg-backed like mp3_compression,"
+    " so goldenable in principle, but added on a non-canonical machine;"
+    " move into GOLDEN_ATTACKS and rerun this script on the canonical"
+    " machine to record it": [
+        "AacCompressionAttack",
     ],
 }
 

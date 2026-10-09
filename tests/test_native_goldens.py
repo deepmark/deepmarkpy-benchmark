@@ -29,7 +29,11 @@ suite parametrizes from); for reference the list is also recorded here:
   Wavelet,
   TimeStretch, PitchShift, InvertedTimeStretch;
 - not goldenable: Codec2Vocoder — pycodec2 carries C encoder state across in-process instantiations, so its output is
-  invocation-history-dependent.
+  invocation-history-dependent;
+- not recorded yet: AacCompression — deterministic and ffmpeg-backed like
+  mp3_compression, so goldenable in principle, but added on a non-canonical
+  machine; a maintainer can move it into GOLDEN_ATTACKS and rerun
+  scripts/generate_native_goldens.py on the canonical machine.
 
 ``test_goldens_and_exclusions_cover_the_attack_universe`` enforces that the
 goldens plus these exclusions exactly cover the discovery-lock attack
