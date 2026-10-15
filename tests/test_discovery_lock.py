@@ -112,7 +112,7 @@ CANONICAL_ATTACKS = frozenset(CANONICAL_ATTACK_DIRS)
 
 # Attacks whose import-time dependency is optional, so a clean install may
 # lack them: {class: (directory, dependency)}. Every dependency is declared
-# and all 45 attacks register in the canonical environment; the mapping
+# and all 46 attacks register in the canonical environment; the mapping
 # stays (empty) so a future optional dependency has an obvious home.
 OPTIONAL_DEP_ATTACKS = {}
 

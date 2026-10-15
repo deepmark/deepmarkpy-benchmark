@@ -131,8 +131,9 @@ EXCLUSIONS = {
     ],
     "not recorded yet: deterministic and ffmpeg-backed like mp3_compression,"
     " so goldenable in principle, but added on a non-canonical machine;"
-    " move into GOLDEN_ATTACKS and rerun this script on the canonical"
-    " machine to record it": [
+    " move into GOLDEN_ATTACKS and rerun"
+    " scripts/generate_native_goldens.py on the canonical machine to"
+    " record it": [
         "AacCompressionAttack",
     ],
 }

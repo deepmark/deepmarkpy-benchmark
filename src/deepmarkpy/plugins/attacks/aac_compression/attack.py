@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 import tempfile
@@ -8,34 +9,30 @@ import soundfile as sf
 
 from deepmarkpy.core.base_attack import BaseAttack
 
+logger = logging.getLogger(__name__)
+
 
 class AacCompressionAttack(BaseAttack):
     """Lossy AAC transcode-and-decode attack.
 
-    Mp3CompressionAttack models "the file got lossily recompressed," but AAC,
-    not MP3, is the codec that actually sits in most of today's real
-    distribution paths for a watermarked file: YouTube/M4A, Apple Music,
-    the MP4 audio track TikTok/Instagram/WhatsApp re-encode into, and the
-    Bluetooth A2DP AAC profile. This attack encodes with ffmpeg's built-in
-    `aac` encoder (LC profile; avoids the nonfree `libfdk_aac` build) at a
-    configurable bitrate and decodes it back to PCM, the same
-    encode-then-decode round trip Mp3CompressionAttack applies for the
-    codec AAC has largely displaced in that role.
+    Encodes with ffmpeg's built-in `aac` encoder (LC profile, avoiding the
+    nonfree `libfdk_aac` build) at a configurable bitrate and decodes back
+    to PCM — the role Mp3CompressionAttack fills for MP3, but AAC is the
+    codec that actually sits in most of today's real distribution paths
+    (YouTube/M4A, Apple Music, TikTok/Instagram/WhatsApp re-encodes,
+    Bluetooth A2DP).
 
-    The container matters here, not just the codec: AAC's encoder has an
+    Transcodes through `.m4a`, not raw ADTS (`.aac`): AAC's encoder has an
     inherent ~1024-sample priming delay, and only a container with an edit
     list (MP4/`.m4a`) records where real audio starts so a decoder can trim
-    it back out. Measured on this machine's ffmpeg (8.1.2): round-tripping
-    through raw ADTS (`.aac`) leaves a 1024-sample leading offset with zero
-    trimming, which would register as a desync artifact having nothing to
-    do with AAC's actual lossy damage; round-tripping through `.m4a` came
-    back sample-aligned (0-sample lag), which is also what every player on
-    the platforms above actually does. This attack therefore transcodes
-    through `.m4a`, not `.aac`.
+    it back out. Measured on this machine's ffmpeg (8.1.2): raw ADTS
+    round-trips leave a 1024-sample leading offset with zero trimming (a
+    desync artifact unrelated to AAC's actual lossy damage); `.m4a`
+    round-trips come back sample-aligned, matching what players on the
+    platforms above actually do.
 
-    libsndfile has no AAC decoder, so — unlike Mp3CompressionAttack, whose
-    MP3 decode goes through `soundfile.read` — the decode step here also
-    goes through ffmpeg.
+    libsndfile has no AAC decoder, so the decode step goes through ffmpeg
+    too.
     """
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
@@ -90,9 +87,6 @@ class AacCompressionAttack(BaseAttack):
                 capture_output=True, check=True,
             )
 
-            # Small delay to ensure FFmpeg fully releases files
-            time.sleep(0.1)
-
             # Decode back to PCM via ffmpeg -- libsndfile has no AAC decoder,
             # and going through the MP4 demuxer is what applies the edit
             # list that keeps this round trip sample-aligned (see class
@@ -102,18 +96,12 @@ class AacCompressionAttack(BaseAttack):
                 capture_output=True, check=True,
             )
 
-            time.sleep(0.1)
-
             decoded_audio, _ = sf.read(wav_out_path, dtype="float32")
-
-            time.sleep(0.1)
 
         except subprocess.CalledProcessError as e:
             raise RuntimeError(
                 f"FFmpeg AAC transcode failed: {e.stderr.decode(errors='replace') if e.stderr else str(e)}"
             )
-        except Exception as e:
-            raise e
         finally:
             # Clean up temporary files with retry logic
             self.safe_delete(wav_in_path)
@@ -138,4 +126,6 @@ class AacCompressionAttack(BaseAttack):
                 if attempt < max_retries - 1:
                     time.sleep(0.1)  # Wait 100ms before retry
                 else:
-                    print(f"Warning: Could not delete {filepath} after {max_retries} attempts")
+                    logger.warning(
+                        "Could not delete %s after %d attempts", filepath, max_retries
+                    )
