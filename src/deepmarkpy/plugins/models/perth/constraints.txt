@@ -3,7 +3,7 @@
 # resolved dependency set.
 annotated-doc==0.0.5
 annotated-types==0.8.0
-anyio==4.14.2
+anyio==4.15.1
 audioread==3.1.0
 certifi==2026.7.22
 cffi==2.1.0
@@ -12,13 +12,13 @@ click==8.4.2
 decorator==5.3.1
 fastapi==0.115.14
 filelock==3.32.0
-fsspec==2026.7.0
+fsspec==2026.9.0
 h11==0.16.0
 hf-xet==1.5.2
 httpcore==1.0.9
 httpx==0.28.1
 huggingface_hub==1.25.1
-idna==3.18
+idna==3.20
 Jinja2==3.1.6
 joblib==1.5.3
 lazy-loader==0.5
@@ -28,7 +28,7 @@ markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
 mpmath==1.3.0
-msgpack==1.2.1
+msgpack==1.2.3
 narwhals==2.24.0
 networkx==3.6.1
 numba==0.66.0
@@ -46,7 +46,7 @@ requests==2.34.2
 resemble-perth==1.0.1
 rich==15.0.0
 safetensors==0.8.0
-scikit-learn==1.9.0
+scikit-learn==1.9.1
 scipy==1.17.1
 shellingham==1.5.4
 soundfile==0.13.1
@@ -55,12 +55,12 @@ starlette==0.46.2
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.22.2
-torch==2.7.1
+torch==2.14.1
 torchaudio==2.7.1
 tqdm==4.70.0
-transformers==5.14.1
+transformers==5.19.0
 typer==0.27.0
 typing-inspection==0.4.2
 typing_extensions==4.16.0
-urllib3==2.7.0
+urllib3==2.8.0
 uvicorn==0.35.0
