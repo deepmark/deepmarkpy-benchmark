@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.14-slim
 
 ENV APP_PORT=10023
 ENV HOST="0.0.0.0"

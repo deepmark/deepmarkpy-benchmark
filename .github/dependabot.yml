@@ -1,0 +1,75 @@
+# Dependabot version and security updates.
+# Security fixes arrive as one grouped PR per ecosystem as soon as an advisory
+# is published; routine minor/patch bumps are grouped into one weekly PR.
+version: 2
+updates:
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/src/deepmarkpy/plugins/attacks/descript_audio_codec"
+      - "/src/deepmarkpy/plugins/attacks/diffusion"
+      - "/src/deepmarkpy/plugins/attacks/encodec"
+      - "/src/deepmarkpy/plugins/attacks/network_transmission"
+      - "/src/deepmarkpy/plugins/attacks/neural_vocoder"
+      - "/src/deepmarkpy/plugins/attacks/opus_codec"
+      - "/src/deepmarkpy/plugins/attacks/speech_enhancement_1"
+      - "/src/deepmarkpy/plugins/attacks/speech_enhancement_2"
+      - "/src/deepmarkpy/plugins/attacks/speech_tokenization"
+      - "/src/deepmarkpy/plugins/attacks/vae"
+      - "/src/deepmarkpy/plugins/models/audio_seal"
+      - "/src/deepmarkpy/plugins/models/aware"
+      - "/src/deepmarkpy/plugins/models/perth"
+      - "/src/deepmarkpy/plugins/models/silent_cipher"
+      - "/src/deepmarkpy/plugins/models/timbrewm"
+      - "/src/deepmarkpy/plugins/models/wavmark"
+      - "/src/deepmarkpy/services/nisqa"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      security:
+        applies-to: "security-updates"
+        patterns: ["*"]
+      minor-and-patch:
+        applies-to: "version-updates"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Major upgrades need deliberate migration; security fixes are unaffected.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: "pip"
+    directories:
+      - "/"
+      - "/src/deepmarkpy/plugins/attacks/descript_audio_codec"
+      - "/src/deepmarkpy/plugins/attacks/diffusion"
+      - "/src/deepmarkpy/plugins/attacks/encodec"
+      - "/src/deepmarkpy/plugins/attacks/network_transmission"
+      - "/src/deepmarkpy/plugins/attacks/neural_vocoder"
+      - "/src/deepmarkpy/plugins/attacks/opus_codec"
+      - "/src/deepmarkpy/plugins/attacks/speech_enhancement_1"
+      - "/src/deepmarkpy/plugins/attacks/speech_enhancement_2"
+      - "/src/deepmarkpy/plugins/attacks/speech_tokenization"
+      - "/src/deepmarkpy/plugins/attacks/vae"
+      - "/src/deepmarkpy/plugins/models/audio_seal"
+      - "/src/deepmarkpy/plugins/models/aware"
+      - "/src/deepmarkpy/plugins/models/perth"
+      - "/src/deepmarkpy/plugins/models/silent_cipher"
+      - "/src/deepmarkpy/plugins/models/timbrewm"
+      - "/src/deepmarkpy/plugins/models/wavmark"
+      - "/src/deepmarkpy/services/nisqa"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      security:
+        applies-to: "security-updates"
+        patterns: ["*"]
+      minor-and-patch:
+        applies-to: "version-updates"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Major upgrades need deliberate migration; security fixes are unaffected.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
