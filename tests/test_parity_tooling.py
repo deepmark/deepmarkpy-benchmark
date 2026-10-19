@@ -19,7 +19,7 @@ import soundfile as sf
 from deepmarkpy.parity import cli
 from deepmarkpy.parity.corpus import EDGE_LENGTHS, build_corpus, load_manifest, verify_inputs
 from deepmarkpy.parity.runner import case_bits, case_seed
-from deepmarkpy.parity.verdicts import passing_verdict, verdict_path, write_verdict
+from deepmarkpy.parity.verdicts import engine_config, passing_verdict, verdict_path, write_verdict
 
 UUID = "MIG-50bf93fa-b44c-530a-acf3-c79763c56eec"
 
@@ -108,31 +108,42 @@ class TestPerCaseRandomness:
 
 
 class TestVerdicts:
-    def _record(self, image_id, passed=True):
+    F32 = {"engine": "plugin_inference.NeuralVocoderEngine", "numerics": {"strict": True}}
+    F64 = {"engine": "engine_override.NeuralVocoderEngineF64", "numerics": {"strict": True}}
+
+    def _record(self, image_id, passed=True, env=None):
         return {"service": "encodec", "op": "apply", "tier": "QUANTIZED", "passed": passed,
-                "candidate": {"image_id": image_id}, "reference": {"image_id": "sha256:cpu"},
-                "corpus": {"sha256": "x"}}
+                "candidate": {"image_id": image_id, "env": env or self.F32},
+                "reference": {"image_id": "sha256:cpu"}, "corpus": {"sha256": "x"}}
 
     def test_a_pass_vouches_for_exactly_its_image(self, tmp_path):
         write_verdict(self._record("sha256:aaaaaaaaaaaa1111"), tmp_path)
-        assert passing_verdict("encodec", "apply", "sha256:aaaaaaaaaaaa1111", tmp_path)
-        assert passing_verdict("encodec", "apply", "sha256:bbbbbbbbbbbb1111", tmp_path) is None
+        cfg = engine_config(self.F32)
+        assert passing_verdict("encodec", "apply", "sha256:aaaaaaaaaaaa1111", cfg, tmp_path)
+        assert passing_verdict("encodec", "apply", "sha256:bbbbbbbbbbbb1111", cfg, tmp_path) is None
 
     def test_a_prefix_collision_is_not_a_pass(self, tmp_path):
         write_verdict(self._record("sha256:aaaaaaaaaaaa1111"), tmp_path)
-        assert passing_verdict("encodec", "apply", "sha256:aaaaaaaaaaaa2222", tmp_path) is None
+        cfg = engine_config(self.F32)
+        assert passing_verdict("encodec", "apply", "sha256:aaaaaaaaaaaa2222", cfg, tmp_path) is None
+
+    def test_a_pass_for_one_engine_does_not_vouch_for_another_in_the_same_image(self, tmp_path):
+        write_verdict(self._record("sha256:cccccccccccc", passed=False, env=self.F32), tmp_path)
+        write_verdict(self._record("sha256:cccccccccccc", passed=True, env=self.F64), tmp_path)
+        assert passing_verdict("encodec", "apply", "sha256:cccccccccccc", engine_config(self.F64), tmp_path)
+        assert passing_verdict("encodec", "apply", "sha256:cccccccccccc", engine_config(self.F32), tmp_path) is None
 
     def test_a_fail_is_not_a_pass(self, tmp_path):
-        write_verdict(self._record("sha256:cccccccccccc", passed=False), tmp_path)
-        assert passing_verdict("encodec", "apply", "sha256:cccccccccccc", tmp_path) is None
+        write_verdict(self._record("sha256:dddddddddddd", passed=False), tmp_path)
+        assert passing_verdict("encodec", "apply", "sha256:dddddddddddd", engine_config(self.F32), tmp_path) is None
 
     def test_an_incomplete_record_is_refused(self, tmp_path):
         with pytest.raises(ValueError, match="corpus"):
-            write_verdict({k: v for k, v in self._record("sha256:d").items() if k != "corpus"}, tmp_path)
+            write_verdict({k: v for k, v in self._record("sha256:e").items() if k != "corpus"}, tmp_path)
 
-    def test_the_file_name_carries_service_op_and_image(self, tmp_path):
-        p = verdict_path("vae", "apply", "sha256:0123456789abcdef", tmp_path)
-        assert p.name == "vae.apply.0123456789ab.json"
+    def test_the_file_name_carries_service_op_image_and_engine(self, tmp_path):
+        p = verdict_path("vae", "apply", "sha256:0123456789abcdef", "a1b2c3d4", tmp_path)
+        assert p.name == "vae.apply.0123456789ab.a1b2c3d4.json"
 
 
 class TestGates:

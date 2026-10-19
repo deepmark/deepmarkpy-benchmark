@@ -6,11 +6,15 @@ A verdict is one JSON file under ``parity/verdicts/``, named
 - both runs' environments;
 - the corpus hash and the git revision.
 
-It is keyed by the **candidate image's ID**. A rebuilt image has a new ID and
-so has no verdict until it is measured again; nothing carries over silently.
+It is keyed by the **candidate image's ID** and its **engine configuration**:
+the engine class that ran and the numerics settings. A rebuilt image, or the
+same image run with another engine or precision, has no verdict until it is
+measured. Nothing carries over silently. BigVGAN showed why: its float32
+engine fails on the GPU and its float64 engine passes, in one image.
 """
 
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -24,9 +28,15 @@ VERDICT_DIR = Path(
 )
 
 
-def verdict_path(service: str, op: str, image_id: str, directory: Path = VERDICT_DIR) -> Path:
+def engine_config(env: Dict) -> str:
+    """Fingerprint of what ran inside the image: engine class and numerics settings."""
+    key = {"engine": env.get("engine"), "numerics": env.get("numerics")}
+    return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
+
+
+def verdict_path(service: str, op: str, image_id: str, config: str, directory: Path = VERDICT_DIR) -> Path:
     short = image_id.split(":")[-1][:12]
-    return Path(directory) / f"{service}.{op}.{short}.json"
+    return Path(directory) / f"{service}.{op}.{short}.{config}.json"
 
 
 def write_verdict(record: Dict, directory: Path = VERDICT_DIR) -> Path:
@@ -35,7 +45,10 @@ def write_verdict(record: Dict, directory: Path = VERDICT_DIR) -> Path:
             raise ValueError(f"verdict lacks {key!r}")
     record = dict(record)
     record.setdefault("created_utc", datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"))
-    path = verdict_path(record["service"], record["op"], record["candidate"]["image_id"], directory)
+    record["candidate"] = dict(record["candidate"])
+    record["candidate"]["engine_config"] = engine_config(record["candidate"].get("env", {}))
+    path = verdict_path(record["service"], record["op"], record["candidate"]["image_id"],
+                        record["candidate"]["engine_config"], directory)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(record, indent=1, sort_keys=True, default=float) + "\n")
@@ -48,12 +61,14 @@ def read_verdicts(directory: Path = VERDICT_DIR) -> Iterable[Dict]:
         yield json.loads(path.read_text())
 
 
-def passing_verdict(service: str, op: str, image_id: str, directory: Path = VERDICT_DIR) -> Optional[Dict]:
-    """The PASS verdict for exactly this image, or None."""
-    path = verdict_path(service, op, image_id, directory)
+def passing_verdict(service: str, op: str, image_id: str, config: str,
+                    directory: Path = VERDICT_DIR) -> Optional[Dict]:
+    """The PASS verdict for exactly this image and engine configuration, or None."""
+    path = verdict_path(service, op, image_id, config, directory)
     if not path.exists():
         return None
     record = json.loads(path.read_text())
-    if record.get("candidate", {}).get("image_id") != image_id or not record.get("passed"):
+    candidate = record.get("candidate", {})
+    if candidate.get("image_id") != image_id or candidate.get("engine_config") != config or not record.get("passed"):
         return None
     return record

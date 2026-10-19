@@ -100,8 +100,11 @@ class Judgement:
     passed: bool
     failures: List[str]
     n_cases: int
+    # Raw relative L2 over the cases, for the record. The median check uses
+    # rel_l2_median_judged, where errors under the -120 dBFS floor count as 0.
     rel_l2_median: Optional[float]
     rel_l2_worst: Optional[float]
+    rel_l2_median_judged: Optional[float]
     max_abs: Optional[float]
     flip_frames: int
 
@@ -116,7 +119,8 @@ def _fmt(x: float) -> str:
 def judge(cases: Sequence[CaseEvidence], tier: Tier, required: Sequence[str]) -> Judgement:
     """Judge ``cases`` against ``tier``. Every kind in ``required`` must be present for every case."""
     failures: List[str] = []
-    rel_l2s: List[float] = []
+    rel_l2s: List[float] = []        # as judged: under the floor counts as 0
+    rel_l2s_raw: List[float] = []
     max_abs_seen = 0.0
     flip_frames = 0
 
@@ -160,6 +164,7 @@ def judge(cases: Sequence[CaseEvidence], tier: Tier, required: Sequence[str]) ->
                 # An RMS error at or under compare.ABS_RMS_FLOOR (-120 dBFS) counts
                 # as none: quiet references are not held below float32 resolution.
                 rel_l2s.append(0.0 if judged.below_floor else judged.rel_l2)
+                rel_l2s_raw.append(judged.rel_l2)
                 if tier.rel_l2_worst is not None and not judged.within_relative(tier.rel_l2_worst):
                     failures.append(
                         f"{where}: relative L2 {_fmt(judged.rel_l2)} > {tier.rel_l2_worst:g} "
@@ -198,8 +203,9 @@ def judge(cases: Sequence[CaseEvidence], tier: Tier, required: Sequence[str]) ->
         passed=not failures,
         failures=failures,
         n_cases=len(cases),
-        rel_l2_median=median,
-        rel_l2_worst=max(rel_l2s) if rel_l2s else None,
+        rel_l2_median=statistics.median(rel_l2s_raw) if rel_l2s_raw else None,
+        rel_l2_worst=max(rel_l2s_raw) if rel_l2s_raw else None,
+        rel_l2_median_judged=median,
         max_abs=max_abs_seen if rel_l2s else None,
         flip_frames=flip_frames,
     )

@@ -1,5 +1,6 @@
 {
  "candidate": {
+  "engine_config": "469f0459",
   "engine_override": "scripts/gpu_study/gpu_engines.py:SpeechEnhancement1EngineGPU",
   "env": {
    "cuda_available": true,
@@ -49,6 +50,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/clipped",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.9550323486328125e-05,
@@ -57,7 +59,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 2.7072900000711165e-07,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -67,7 +71,6 @@
     "ref_len": 79872,
     "ref_rms": 0.6118899676682156,
     "rel_l2": 4.424471952674811e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 127.08277107208593
    },
@@ -77,6 +80,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l001_aura-2-helena-en_001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 4.76837158203125e-07,
@@ -85,7 +89,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.4669509001107422e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -95,7 +101,6 @@
     "ref_len": 79872,
     "ref_rms": 0.0887652602927935,
     "rel_l2": 1.6526182599724076e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.63654905965097
    },
@@ -105,6 +110,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l003_aura-2-thalia-en_001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.9073486328125e-06,
@@ -113,7 +119,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.013888363998599e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -123,7 +131,6 @@
     "ref_len": 79872,
     "ref_rms": 0.0585996963984084,
     "rel_l2": 1.7301938854859608e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.23810454229596
    },
@@ -133,6 +140,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l004_aura-2-iris-en_006",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.9325485229492188e-05,
@@ -141,7 +149,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.6246109268948952e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -151,7 +161,6 @@
     "ref_len": 79872,
     "ref_rms": 0.10067145718919077,
     "rel_l2": 1.6137751178487283e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.84313970060552
    },
@@ -161,6 +170,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l006_aura-2-atlas-en_004",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.430511474609375e-05,
@@ -169,7 +179,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.4832786327865856e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -179,7 +191,6 @@
     "ref_len": 79872,
     "ref_rms": 0.08953524883732263,
     "rel_l2": 1.65664210693329e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.61542608716016
    },
@@ -189,6 +200,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l008_aura-2-electra-en_004",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 9.298324584960938e-06,
@@ -197,7 +209,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.307632053363295e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -207,7 +221,6 @@
     "ref_len": 79872,
     "ref_rms": 0.07318906595297714,
     "rel_l2": 1.786649462371099e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 134.95921293971625
    },
@@ -217,6 +230,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l010_aura-2-asteria-en_004",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 4.291534423828125e-06,
@@ -225,7 +239,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 9.908053439558583e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -235,7 +251,6 @@
     "ref_len": 79872,
     "ref_rms": 0.057489701157803136,
     "rel_l2": 1.7234484159801122e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.27203421599916
    },
@@ -245,6 +260,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l012_aura-2-arcas-en_001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 4.291534423828125e-06,
@@ -253,7 +269,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 5.626069409498489e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -263,7 +281,6 @@
     "ref_len": 79872,
     "ref_rms": 0.029505577887104714,
     "rel_l2": 1.906781636687529e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 134.3939807841938
    },
@@ -273,6 +290,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l013_aura-2-athena-en_007",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 7.3909759521484375e-06,
@@ -281,7 +299,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.5519679897863123e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -291,7 +311,6 @@
     "ref_len": 79872,
     "ref_rms": 0.09285399603284654,
     "rel_l2": 1.671406784945812e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.53835678361207
    },
@@ -301,6 +320,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l015_aura-2-hermes-en_004",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 7.152557373046875e-07,
@@ -309,7 +329,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.5585129860741472e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -319,7 +341,6 @@
     "ref_len": 79872,
     "ref_rms": 0.09498545164693777,
     "rel_l2": 1.640791257030773e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.69893333550232
    },
@@ -329,6 +350,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l017_aura-2-luna-en_002",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 6.67572021484375e-06,
@@ -337,7 +359,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 8.689998982555204e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -347,7 +371,6 @@
     "ref_len": 79872,
     "ref_rms": 0.049727138781969,
     "rel_l2": 1.7475364952439588e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.1514749151642
    },
@@ -357,6 +380,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l018_aura-2-phoebe-en_007",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 5.245208740234375e-06,
@@ -365,7 +389,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.2170799287321097e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -375,7 +401,6 @@
     "ref_len": 79872,
     "ref_rms": 0.0742544997314742,
     "rel_l2": 1.6390655558025758e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.7080735221964
    },
@@ -385,6 +410,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/l020_aura-2-aries-en_006",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.4080276489257812e-05,
@@ -393,7 +419,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.3392178969594944e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -403,7 +431,6 @@
     "ref_len": 79872,
     "ref_rms": 0.07314546408108588,
     "rel_l2": 1.830896712166452e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 134.7467231041509
    },
@@ -413,6 +440,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/len_16000",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 0.00010180473327636719,
@@ -421,7 +449,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 15872,
+    "err_rms": 1.4903592360828556e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -431,7 +461,6 @@
     "ref_len": 15872,
     "ref_rms": 0.07896971087508108,
     "rel_l2": 1.887254264410811e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 134.4833916926043
    },
@@ -441,6 +470,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/len_480000",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.002716064453125e-05,
@@ -449,7 +479,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 480000,
+    "err_rms": 1.493624197550402e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -459,7 +491,6 @@
     "ref_len": 480000,
     "ref_rms": 0.08869542261796412,
     "rel_l2": 1.6839924242583038e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.47319733167055
    },
@@ -469,6 +500,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/len_57143",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 4.0531158447265625e-05,
@@ -477,7 +509,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 57088,
+    "err_rms": 1.554576752852431e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -487,7 +521,6 @@
     "ref_len": 57088,
     "ref_rms": 0.08940305720759086,
     "rel_l2": 1.738840707922053e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.19480402226984
    },
@@ -497,6 +530,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/len_63999",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.7881393432617188e-05,
@@ -505,7 +539,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 63744,
+    "err_rms": 1.598611089878708e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -515,7 +551,6 @@
     "ref_len": 63744,
     "ref_rms": 0.09307308238689276,
     "rel_l2": 1.7175869208172226e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.301625513012
    },
@@ -525,6 +560,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/len_64000",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 5.1021575927734375e-05,
@@ -533,7 +569,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 64000,
+    "err_rms": 1.55183100027329e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -543,7 +581,6 @@
     "ref_len": 64000,
     "ref_rms": 0.09287535961373289,
     "rel_l2": 1.670874822694986e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.54112170050644
    },
@@ -553,6 +590,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/len_64001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 5.0067901611328125e-06,
@@ -561,7 +599,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 64000,
+    "err_rms": 1.7155638472510102e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -571,7 +611,6 @@
     "ref_len": 64000,
     "ref_rms": 0.09279082693416658,
     "rel_l2": 1.8488506934722886e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 134.66196318968048
    },
@@ -581,6 +620,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/m008_aura-2-phoebe-en_001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 3.0994415283203125e-06,
@@ -589,7 +629,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.3494269806032535e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -599,7 +641,6 @@
     "ref_len": 79872,
     "ref_rms": 0.08342339885319423,
     "rel_l2": 1.6175641356664585e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.8227698148689
    },
@@ -609,6 +650,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/m015_aura-2-saturn-en_002",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.621246337890625e-05,
@@ -617,7 +659,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.4242621086889297e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -627,7 +671,6 @@
     "ref_len": 79872,
     "ref_rms": 0.08223392989046849,
     "rel_l2": 1.7319640573981763e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.2292224985167
    },
@@ -637,6 +680,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/ml001_aura-2-atlas-en_003",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.621246337890625e-05,
@@ -645,7 +689,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.5852240872909187e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -655,7 +701,6 @@
     "ref_len": 79872,
     "ref_rms": 0.09633214934271736,
     "rel_l2": 1.6455815614071115e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.6736117503309
    },
@@ -665,6 +710,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/ml005_aura-2-asteria-en_002",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.5497207641601562e-06,
@@ -673,7 +719,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 8.306818394809168e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -683,7 +731,6 @@
     "ref_len": 79872,
     "ref_rms": 0.04447518352919314,
     "rel_l2": 1.867742353296112e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 134.573660659111
    },
@@ -693,6 +740,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/ml009_aura-2-orion-en_002",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 6.67572021484375e-06,
@@ -701,7 +749,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.0350463550105656e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -711,7 +761,6 @@
     "ref_len": 79872,
     "ref_rms": 0.05966820960269447,
     "rel_l2": 1.7346697041900607e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.21566412701165
    },
@@ -721,6 +770,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/ml012_aura-2-luna-en_003",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.6689300537109375e-06,
@@ -729,7 +779,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.0928039402927618e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -739,7 +791,6 @@
     "ref_len": 79872,
     "ref_rms": 0.05656218365137008,
     "rel_l2": 1.9320398714243973e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 134.27967830622703
    },
@@ -749,6 +800,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/ml016_aura-2-zeus-en_003",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.0728836059570312e-06,
@@ -757,7 +809,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 5.9424977150116715e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -767,7 +821,6 @@
     "ref_len": 79872,
     "ref_rms": 0.02081018800075914,
     "rel_l2": 2.855571374364755e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 130.88613960541147
    },
@@ -777,6 +830,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/ml019_aura-2-apollo-en_003",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 9.775161743164062e-06,
@@ -785,7 +839,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.1301352939816248e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -795,7 +851,6 @@
     "ref_len": 79872,
     "ref_rms": 0.06558223894304362,
     "rel_l2": 1.7232337782232724e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.2731160214952
    },
@@ -805,6 +860,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/noise",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.6689300537109375e-06,
@@ -813,7 +869,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 2.9610414538117743e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -823,7 +881,6 @@
     "ref_len": 79872,
     "ref_rms": 0.013660945449153576,
     "rel_l2": 2.1675230787157844e-06,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 113.28072539347744
    },
@@ -833,6 +890,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/quiet",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.384185791015625e-07,
@@ -841,7 +899,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.6513361718211238e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -851,7 +911,6 @@
     "ref_len": 79872,
     "ref_rms": 0.0007376610086512643,
     "rel_l2": 2.2386111675340123e-06,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 113.00042668097986
    },
@@ -861,6 +920,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/silence",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 0.0,
@@ -869,7 +929,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 1.6838765822405685e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -879,7 +941,6 @@
     "ref_len": 79872,
     "ref_rms": 0.0006818080397005716,
     "rel_l2": 2.4697223913347714e-06,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 112.14703721567443
    },
@@ -889,6 +950,7 @@
    "bit_flips": 0,
    "case": "wm_audioseal/sweep",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.6689300537109375e-05,
@@ -897,7 +959,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 79872,
+    "err_rms": 3.4111012393828204e-07,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -907,7 +971,6 @@
     "ref_len": 79872,
     "ref_rms": 0.3067379358999086,
     "rel_l2": 1.1120571798122467e-06,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 119.0774576320847
    },
@@ -921,7 +984,7 @@
   "sampling_rate": 16000,
   "sha256": "725e88660fd4e307277f1768fe20385a4b1371313b99f0e014d9a6fdf7bae88f"
  },
- "created_utc": "2026-10-19T12:59:09+00:00",
+ "created_utc": "2026-10-19T13:51:12+00:00",
  "evidence": [
   "signal",
   "repeat",
@@ -929,7 +992,7 @@
   "metrics"
  ],
  "failures": [],
- "git_rev": "5d29ca3fc7f569b90f34a7ad189b221a02771bbc-dirty",
+ "git_rev": "cb09102b8a4111e26ecb8cfcab8b8195373b4f83-dirty",
  "op": "apply",
  "passed": true,
  "reference": {
@@ -979,6 +1042,7 @@
   "n_cases": 31,
   "passed": true,
   "rel_l2_median": 1.7346697041900607e-07,
+  "rel_l2_median_judged": 0.0,
   "rel_l2_worst": 2.4697223913347714e-06,
   "tier": "NUMERIC"
  },

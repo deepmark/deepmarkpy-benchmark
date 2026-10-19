@@ -1,5 +1,6 @@
 {
  "candidate": {
+  "engine_config": "ecd50344",
   "engine_override": "scripts/gpu_study/gpu_engines.py:AudioSealEngineGPU",
   "env": {
    "cuda_available": true,
@@ -47,6 +48,7 @@
    "bit_flips": 0,
    "case": "clean/clipped",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.1920928955078125e-05,
@@ -55,7 +57,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 2.8068439383739526e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -65,7 +69,6 @@
     "ref_len": 80000,
     "ref_rms": 0.6717844648007243,
     "rel_l2": 4.178191198878891e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 147.58023380162788
    },
@@ -75,6 +78,7 @@
    "bit_flips": 0,
    "case": "clean/l001_aura-2-helena-en_001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.86102294921875e-06,
@@ -83,7 +87,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 7.906860954938603e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -93,7 +99,6 @@
     "ref_len": 80000,
     "ref_rms": 0.08891156973072575,
     "rel_l2": 8.89294945403059e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 141.01908352262404
    },
@@ -103,6 +108,7 @@
    "bit_flips": 0,
    "case": "clean/l003_aura-2-thalia-en_001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.7642974853515625e-05,
@@ -111,7 +117,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 6.2171702622584445e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -121,7 +129,6 @@
     "ref_len": 80000,
     "ref_rms": 0.059082505722739084,
     "rel_l2": 1.0522861524245818e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 139.55732289337516
    },
@@ -131,6 +138,7 @@
    "bit_flips": 0,
    "case": "clean/l004_aura-2-iris-en_006",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 9.5367431640625e-06,
@@ -139,7 +147,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 1.0315352180440428e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -149,7 +159,6 @@
     "ref_len": 80000,
     "ref_rms": 0.10070146252080071,
     "rel_l2": 1.0243497881979327e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 139.79103436047626
    },
@@ -159,6 +168,7 @@
    "bit_flips": 0,
    "case": "clean/l006_aura-2-atlas-en_004",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 3.814697265625e-06,
@@ -167,7 +177,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 1.102333983763297e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -177,7 +189,6 @@
     "ref_len": 80000,
     "ref_rms": 0.08978788521997198,
     "rel_l2": 1.2277090401034405e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 138.21809092529622
    },
@@ -187,6 +198,7 @@
    "bit_flips": 0,
    "case": "clean/l008_aura-2-electra-en_004",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 7.152557373046875e-06,
@@ -195,7 +207,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 2.418567841408302e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -205,7 +219,6 @@
     "ref_len": 80000,
     "ref_rms": 0.07330877019663636,
     "rel_l2": 3.2991521136161057e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 129.63195320057469
    },
@@ -215,6 +228,7 @@
    "bit_flips": 0,
    "case": "clean/l010_aura-2-asteria-en_004",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 9.5367431640625e-07,
@@ -223,7 +237,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 3.829683359234401e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -233,7 +249,6 @@
     "ref_len": 80000,
     "ref_rms": 0.05767743262160257,
     "rel_l2": 6.639829800260609e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 123.55686105647999
    },
@@ -243,6 +258,7 @@
    "bit_flips": 0,
    "case": "clean/l012_aura-2-arcas-en_001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.9073486328125e-06,
@@ -251,7 +267,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 1.8632760061672312e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -261,7 +279,6 @@
     "ref_len": 80000,
     "ref_rms": 0.02980126389902004,
     "rel_l2": 6.252338868850799e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 124.07914983607769
    },
@@ -271,6 +288,7 @@
    "bit_flips": 0,
    "case": "clean/l013_aura-2-athena-en_007",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 6.67572021484375e-06,
@@ -279,7 +297,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 7.787006518694647e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -289,7 +309,6 @@
     "ref_len": 80000,
     "ref_rms": 0.09303956207039504,
     "rel_l2": 8.369564887679596e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 141.5459423856345
    },
@@ -299,6 +318,7 @@
    "bit_flips": 0,
    "case": "clean/l015_aura-2-hermes-en_004",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.0967254638671875e-05,
@@ -307,7 +327,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 7.889335548639126e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -317,7 +339,6 @@
     "ref_len": 80000,
     "ref_rms": 0.09514940738343783,
     "rel_l2": 8.291523579170902e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 141.6273131978475
    },
@@ -327,6 +348,7 @@
    "bit_flips": 0,
    "case": "clean/l017_aura-2-luna-en_002",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.430511474609375e-06,
@@ -335,7 +357,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 5.8377728083975056e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -345,7 +369,6 @@
     "ref_len": 80000,
     "ref_rms": 0.04980224888659985,
     "rel_l2": 1.1721906016112174e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 138.62003530052718
    },
@@ -355,6 +378,7 @@
    "bit_flips": 0,
    "case": "clean/l018_aura-2-phoebe-en_007",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.9073486328125e-06,
@@ -363,7 +387,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 6.791351990659749e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -373,7 +399,6 @@
     "ref_len": 80000,
     "ref_rms": 0.0743525034292019,
     "rel_l2": 9.133992370716128e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 140.7867871095777
    },
@@ -383,6 +408,7 @@
    "bit_flips": 0,
    "case": "clean/l020_aura-2-aries-en_006",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.8596649169921875e-05,
@@ -391,7 +417,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 1.689062409547296e-07,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -401,7 +429,6 @@
     "ref_len": 80000,
     "ref_rms": 0.07492487440023905,
     "rel_l2": 2.254341329322144e-06,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 112.93960653759724
    },
@@ -411,6 +438,7 @@
    "bit_flips": 0,
    "case": "clean/len_16000",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.384185791015625e-06,
@@ -419,7 +447,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 16000,
+    "err_rms": 5.72907109883976e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -429,7 +459,6 @@
     "ref_len": 16000,
     "ref_rms": 0.07976348807850082,
     "rel_l2": 7.182573426580067e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 142.8743985114664
    },
@@ -439,6 +468,7 @@
    "bit_flips": 0,
    "case": "clean/len_480000",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.384185791015625e-06,
@@ -447,7 +477,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 480000,
+    "err_rms": 1.532664033489701e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -457,7 +489,6 @@
     "ref_len": 480000,
     "ref_rms": 0.08891651678369068,
     "rel_l2": 1.7237112843930328e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 135.27070950451093
    },
@@ -467,6 +498,7 @@
    "bit_flips": 0,
    "case": "clean/len_57143",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 9.5367431640625e-06,
@@ -475,7 +507,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 57143,
+    "err_rms": 6.563513450585917e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -485,7 +519,6 @@
     "ref_len": 57143,
     "ref_rms": 0.08967457080338166,
     "rel_l2": 7.319258282235798e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 142.71065854345852
    },
@@ -495,6 +528,7 @@
    "bit_flips": 0,
    "case": "clean/len_63999",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 7.62939453125e-06,
@@ -503,7 +537,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 63999,
+    "err_rms": 7.318412424119593e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -513,7 +549,6 @@
     "ref_len": 63999,
     "ref_rms": 0.09309332727940402,
     "rel_l2": 7.861371634246787e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 142.09003345271324
    },
@@ -523,6 +558,7 @@
    "bit_flips": 0,
    "case": "clean/len_64000",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 7.62939453125e-06,
@@ -531,7 +567,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 64000,
+    "err_rms": 5.6317182861905645e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -541,7 +579,6 @@
     "ref_len": 64000,
     "ref_rms": 0.09308753177409897,
     "rel_l2": 6.049916867338785e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 144.36501186002198
    },
@@ -551,6 +588,7 @@
    "bit_flips": 0,
    "case": "clean/len_64001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 3.814697265625e-06,
@@ -559,7 +597,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 64001,
+    "err_rms": 4.042395341239962e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -569,7 +609,6 @@
     "ref_len": 64001,
     "ref_rms": 0.09309937842194918,
     "rel_l2": 4.3420218370511955e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 127.24615993413595
    },
@@ -579,6 +618,7 @@
    "bit_flips": 0,
    "case": "clean/m008_aura-2-phoebe-en_001",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.86102294921875e-06,
@@ -587,7 +627,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 7.4223946102831846e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -597,7 +639,6 @@
     "ref_len": 80000,
     "ref_rms": 0.0834088352140522,
     "rel_l2": 8.89881100873197e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 141.01336033191538
    },
@@ -607,6 +648,7 @@
    "bit_flips": 0,
    "case": "clean/m015_aura-2-saturn-en_002",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 5.245208740234375e-06,
@@ -615,7 +657,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 6.335585999644689e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -625,7 +669,6 @@
     "ref_len": 80000,
     "ref_rms": 0.082507267109878,
     "rel_l2": 7.678821783307103e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 142.29410823547022
    },
@@ -635,6 +678,7 @@
    "bit_flips": 0,
    "case": "clean/ml001_aura-2-atlas-en_003",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.6689300537109375e-05,
@@ -643,7 +687,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 1.0308076826831802e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -653,7 +699,6 @@
     "ref_len": 80000,
     "ref_rms": 0.09648989206545433,
     "rel_l2": 1.0683063900454229e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 139.42608347755524
    },
@@ -663,6 +708,7 @@
    "bit_flips": 0,
    "case": "clean/ml005_aura-2-asteria-en_002",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 9.5367431640625e-07,
@@ -671,7 +717,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 9.605580653046018e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -681,7 +729,6 @@
     "ref_len": 80000,
     "ref_rms": 0.044685454495759766,
     "rel_l2": 2.1495989604307367e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 133.35285113208673
    },
@@ -691,6 +738,7 @@
    "bit_flips": 0,
    "case": "clean/ml009_aura-2-orion-en_002",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 3.0040740966796875e-05,
@@ -699,7 +747,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 6.229878469590359e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -709,7 +759,6 @@
     "ref_len": 80000,
     "ref_rms": 0.059991114040564945,
     "rel_l2": 1.0384668745070851e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 139.67214704465238
    },
@@ -719,6 +768,7 @@
    "bit_flips": 0,
    "case": "clean/ml012_aura-2-luna-en_003",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.430511474609375e-06,
@@ -727,7 +777,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 1.3279634607311426e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -737,7 +789,6 @@
     "ref_len": 80000,
     "ref_rms": 0.05679933654587702,
     "rel_l2": 2.3379911482919203e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 132.6231427484729
    },
@@ -747,6 +798,7 @@
    "bit_flips": 0,
    "case": "clean/ml016_aura-2-zeus-en_003",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.9073486328125e-06,
@@ -755,7 +807,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 6.467026311125294e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -765,7 +819,6 @@
     "ref_len": 80000,
     "ref_rms": 0.021733397038310367,
     "rel_l2": 2.975616881118767e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 130.5284597227848
    },
@@ -775,6 +828,7 @@
    "bit_flips": 0,
    "case": "clean/ml019_aura-2-apollo-en_003",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 2.384185791015625e-06,
@@ -783,7 +837,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 1.0329421886051622e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -793,7 +849,6 @@
     "ref_len": 80000,
     "ref_rms": 0.06560998434443095,
     "rel_l2": 1.574367375524057e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 136.0578783677958
    },
@@ -803,6 +858,7 @@
    "bit_flips": 0,
    "case": "clean/noise",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 0.0,
@@ -811,7 +867,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 4.457442009911766e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -821,7 +879,6 @@
     "ref_len": 80000,
     "ref_rms": 0.2994302477578086,
     "rel_l2": 1.4886411921607624e-07,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 136.5441993564785
    },
@@ -831,6 +888,7 @@
    "bit_flips": 0,
    "case": "clean/quiet",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 1.3113021850585938e-06,
@@ -839,7 +897,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 5.046569961280932e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -849,7 +909,6 @@
     "ref_len": 80000,
     "ref_rms": 0.00028553452649615114,
     "rel_l2": 1.767411466209834e-05,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 95.05324663633027
    },
@@ -859,6 +918,7 @@
    "bit_flips": 0,
    "case": "clean/silence",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 0.0,
@@ -867,7 +927,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 4.784665761599963e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -877,7 +939,6 @@
     "ref_len": 80000,
     "ref_rms": 0.00021347539821406922,
     "rel_l2": 2.2413195157982504e-05,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 92.9899245466151
    },
@@ -887,6 +948,7 @@
    "bit_flips": 0,
    "case": "clean/sweep",
    "conf_delta": null,
+   "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 3.528594970703125e-05,
@@ -895,7 +957,9 @@
    },
    "repeat_identical": true,
    "signal": {
+    "below_floor": true,
     "cand_len": 80000,
+    "err_rms": 1.747224134745079e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -905,7 +969,6 @@
     "ref_len": 80000,
     "ref_rms": 0.35354675710475597,
     "rel_l2": 4.941988858993766e-08,
-    "relative_applies": true,
     "same_length": true,
     "snr_db": 146.12196475975117
    },
@@ -919,7 +982,7 @@
   "sampling_rate": 16000,
   "sha256": "725e88660fd4e307277f1768fe20385a4b1371313b99f0e014d9a6fdf7bae88f"
  },
- "created_utc": "2026-10-19T12:56:07+00:00",
+ "created_utc": "2026-10-19T13:50:51+00:00",
  "evidence": [
   "signal",
   "repeat",
@@ -927,7 +990,7 @@
   "metrics"
  ],
  "failures": [],
- "git_rev": "5d29ca3fc7f569b90f34a7ad189b221a02771bbc-dirty",
+ "git_rev": "cb09102b8a4111e26ecb8cfcab8b8195373b4f83-dirty",
  "op": "embed",
  "passed": true,
  "reference": {
@@ -975,6 +1038,7 @@
   "n_cases": 31,
   "passed": true,
   "rel_l2_median": 1.0683063900454229e-07,
+  "rel_l2_median_judged": 0.0,
   "rel_l2_worst": 2.2413195157982504e-05,
   "tier": "NUMERIC"
  },
