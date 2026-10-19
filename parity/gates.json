@@ -38,6 +38,7 @@
     }
   },
   "encodec": {
+    "probe": "encodec",
     "ops": {
       "apply": {
         "tier": "QUANTIZED",
@@ -56,6 +57,7 @@
     }
   },
   "descript_audio_codec": {
+    "probe": "dac",
     "ops": {
       "apply": {
         "tier": "QUANTIZED",

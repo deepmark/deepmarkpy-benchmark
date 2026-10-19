@@ -71,6 +71,10 @@ QUANTIZED = Tier(
 )
 TIERS = {t.name: t for t in (EXACT, NUMERIC, QUANTIZED)}
 
+# QUANTIZED: a codebook choice is a near-tie when the reference run's margin,
+# (second-best distance - best) / |best|, is below this (GPU plan D1).
+NEAR_TIE_MARGIN = 1e-4
+
 
 @dataclass
 class CaseEvidence:
@@ -86,6 +90,8 @@ class CaseEvidence:
     bit_flips: Optional[int] = None
     conf_delta: Optional[float] = None
     metric_deltas: Dict[str, float] = field(default_factory=dict)
+    # Recorded in the verdict, not judged: e.g. the codec decisions that differed.
+    details: Dict = field(default_factory=dict)
 
 
 @dataclass

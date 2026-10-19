@@ -34,10 +34,11 @@ from typing import Dict, List
 
 import numpy as np
 
+from deepmarkpy.parity import codec_probe as probe_module
 from deepmarkpy.parity import runner as runner_module
 from deepmarkpy.parity.compare import bit_flips, masked_diff, waveform_diff
 from deepmarkpy.parity.corpus import _sha256, build_corpus, load_manifest, verify_inputs
-from deepmarkpy.parity.tiers import TIERS, CaseEvidence, judge
+from deepmarkpy.parity.tiers import NEAR_TIE_MARGIN, TIERS, CaseEvidence, judge
 from deepmarkpy.parity.verdicts import write_verdict
 from deepmarkpy.utils.gpu_slice import SliceUnavailable, check_slice
 
@@ -77,7 +78,8 @@ def _run_dir(service, op, label, inputs) -> Path:
     return parity_root() / "runs" / service / op / label / inputs
 
 
-def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mounts=(), env=None, mount_cache=True):
+def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mounts=(), env=None, mount_cache=True,
+               script="/parity/runner.py"):
     engine = os.environ.get("CONTAINER_ENGINE", "docker")
     root = parity_root()
     (root / "runs").mkdir(parents=True, exist_ok=True)
@@ -92,6 +94,7 @@ def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mo
         cmd += ["-e", f"{key}={value}"]
     mounts = [
         (Path(runner_module.__file__), "/parity/runner.py", "ro"),
+        (Path(probe_module.__file__), "/parity/codec_probe.py", "ro"),
         (root, "/corpus", "ro"),
         (root / "runs", "/runs", "rw"),
         # Weights downloaded at start are cached across runs. A service whose
@@ -102,7 +105,7 @@ def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mo
     ]
     for host, ctr, mode in mounts:
         cmd += ["-v", f"{host}:{ctr}:{mode}"]
-    cmd += [image_tag, "/parity/runner.py", *runner_args]
+    cmd += [image_tag, script, *runner_args]
     return cmd
 
 
@@ -212,6 +215,75 @@ def cmd_run(a):
     return 0
 
 
+def _probe_dir(service, cand, step, inputs) -> Path:
+    return parity_root() / "runs" / service / "apply" / f"probe-{cand}" / step / inputs
+
+
+def cmd_probe(a):
+    """Record codec decisions on CPU and GPU, and decode the GPU's codes on the CPU."""
+    gate = load_gates()[a.service]
+    spec = gate["ops"]["apply"]
+    if "probe" not in gate:
+        raise ParityError(f"{a.service} has no codec probe in parity/gates.json")
+    images = load_images()[a.service]
+    status = check_slice(min_free_mib=int(a.min_free_gib * 1024))
+    stage = gate.get("stage", "/app")
+    common = ["--codec", gate["probe"], "--stage", stage, "--cwd", gate.get("cwd", stage),
+              "--sampling-rate", str(a.sr), "--params", json.dumps(spec.get("params", {})), "--seed", str(a.seed)]
+    for inputs in spec["inputs"]:
+        rel = lambda step: _probe_dir(a.service, a.cand, step, inputs).relative_to(parity_root() / "runs")
+        steps = [
+            ("cpu_record", images["cpu"], None, ["--mode", "record", "--device", "cpu"]),
+            ("gpu_record", images["gpu"], status.uuid, ["--mode", "record", "--device", "cuda"]),
+            ("cpu_inject", images["cpu"], None, ["--mode", "inject", "--device", "cpu",
+                                                 "--codes-from", f"/runs/{rel('gpu_record')}"]),
+        ]
+        for step, image, uuid, extra in steps:
+            out = _probe_dir(a.service, a.cand, step, inputs)
+            if out.exists():
+                shutil.rmtree(out)
+            args = [*common, "--inputs", f"/corpus/{a.sr}/{inputs}", "--out", f"/runs/{rel(step)}", *extra]
+            env = {"NVIDIA_TF32_OVERRIDE": "0"} if uuid else {}
+            _execute(_container(image["tag"], args, gpu_uuid=uuid, cpu_threads=a.cpu_threads, env=env,
+                                mount_cache=gate.get("mount_cache", True), script="/parity/codec_probe.py"),
+                     out.parent / f"{inputs}.container.log")
+            print(json.dumps({"probe": str(rel(step))}))
+    return 0
+
+
+def _layers(path: Path):
+    z = np.load(path)
+    return [z[f"layer{i}"].ravel() for i in range(len(z.files))]
+
+
+def _tie_evidence(service, cand, inputs, stem, ref_out, cand_out, sr, frame_atol):
+    """(explained audio frames or None, failures, details) from the codec probe of one case."""
+    record_cpu = _probe_dir(service, cand, "cpu_record", inputs)
+    record_gpu = _probe_dir(service, cand, "gpu_record", inputs)
+    inject = _probe_dir(service, cand, "cpu_inject", inputs)
+    failures = []
+    if not (np.array_equal(np.load(record_cpu / f"{stem}.npy"), ref_out)
+            and np.array_equal(np.load(record_gpu / f"{stem}.npy"), cand_out)):
+        failures.append("the codec probe does not reproduce the parity runs")
+        return None, failures, {}
+    codes_cpu, codes_gpu = _layers(record_cpu / f"{stem}.codes.npz"), _layers(record_gpu / f"{stem}.codes.npz")
+    margins = _layers(record_cpu / f"{stem}.margins.npz")
+    differ = np.stack([c != g for c, g in zip(codes_cpu, codes_gpu)])
+    flips = []
+    for t in np.flatnonzero(differ.any(axis=0)):
+        layer = int(np.argmax(differ[:, t]))
+        flips.append({"codec_frame": int(t), "layer": layer, "margin": float(margins[layer][t])})
+    details = {"codec_frames": int(differ.shape[1]), "code_flips": flips}
+    untied = [f for f in flips if not f["margin"] < NEAR_TIE_MARGIN]
+    for f in untied:
+        failures.append(f"codec frame {f['codec_frame']} (layer {f['layer']}) differs with margin "
+                        f"{f['margin']:.2e}, not a near-tie (< {NEAR_TIE_MARGIN:g})")
+    if untied:
+        return (), failures, details
+    explained = waveform_diff(ref_out, np.load(inject / f"{stem}.npy"), sr, frame_atol=frame_atol).frames_over
+    return explained, failures, details
+
+
 def _results(run_dir: Path) -> Dict[str, Dict]:
     with open(run_dir / "results.jsonl") as fh:
         return {r["case"]: r for r in map(json.loads, fh)}
@@ -245,7 +317,8 @@ def _metric_deltas(clean, ref, cand, sr) -> Dict[str, float]:
 
 
 def cmd_judge(a):
-    spec = load_gates()[a.service]["ops"][a.op]
+    gate = load_gates()[a.service]
+    spec = gate["ops"][a.op]
     tier_name = a.tier or spec["tier"]
     if tier_name not in TIERS:
         raise ParityError(f"{a.service} {a.op} is {tier_name}: judged on distributions, not by a tier")
@@ -287,6 +360,11 @@ def cmd_judge(a):
             sig = waveform_diff(ref, cand, a.sr, frame_atol=tier.flip_frame_atol)
             outside = (masked_diff(ref, cand, a.sr, sig.frames_over)
                        if tier.flip_frame_atol is not None and sig.frames_over else None)
+            explained, details = None, {}
+            if tier.flip_frame_atol is not None and gate.get("probe"):
+                explained, probe_failures, details = _tie_evidence(
+                    a.service, a.cand, inputs, stem, ref, cand, a.sr, tier.flip_frame_atol)
+                extra_failures += [f"{inputs}/{stem}: {f}" for f in probe_failures]
             flips = None
             if detected_ref is not None:
                 flips = bit_flips(detected_ref.get(stem, {}).get("message"),
@@ -295,6 +373,7 @@ def cmd_judge(a):
                       if "metrics" in evidence else {})
             cases.append(CaseEvidence(
                 case=f"{inputs}/{stem}", signal=sig, signal_outside_flips=outside,
+                explained_frames=explained, details=details,
                 repeat_identical=cand_res.get(stem, {}).get("repeat_identical"),
                 bit_flips=flips, metric_deltas=deltas))
 
@@ -357,6 +436,13 @@ def main(argv=None) -> int:
     p.add_argument("model")
     p.add_argument("--label", required=True)
     p.set_defaults(func=cmd_wm)
+
+    p = sub.add_parser("probe", help="codec gates: record decisions on CPU and GPU, decode GPU codes on CPU")
+    p.add_argument("service")
+    p.add_argument("--cand", required=True, help="label of the GPU parity run the probe explains")
+    p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--min-free-gib", type=float, default=4.0)
+    p.set_defaults(func=cmd_probe)
 
     p = sub.add_parser("judge", help="judge a candidate run against a reference run; write the verdict")
     p.add_argument("service")

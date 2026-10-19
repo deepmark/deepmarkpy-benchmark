@@ -161,3 +161,40 @@ def test_baked_weights_are_not_hidden_by_the_cache_mount(root):
     flat = " ".join(cli._container("img:cpu", [], mount_cache=False))
     assert "/root/.cache" not in flat
     assert cli.load_gates()["speech_tokenization"]["mount_cache"] is False
+
+
+class TestTieEvidence:
+    """The codec probe's evidence is what lets a QUANTIZED flip pass; it must be read strictly."""
+
+    def _probe(self, root, margin, reproduce=True):
+        stem, sr = "clip", 16000
+        ref = 0.1 * np.random.default_rng(0).standard_normal(16000)
+        inject = ref.copy()
+        inject[3200:3300] += 0.01                      # what the GPU's codes do on the CPU: frame 10
+        cand = inject + 1e-7                           # the GPU output: same codes, tiny continuous difference
+        for step, codes in (("cpu_record", [[1, 2, 3, 4], [5, 6, 7, 8]]),
+                            ("gpu_record", [[1, 2, 9, 4], [5, 6, 0, 8]]),   # codec frame 2 differs from layer 0
+                            ("cpu_inject", [[1, 2, 9, 4], [5, 6, 0, 8]])):
+            d = cli._probe_dir("dac", "gpu", step, "wm")
+            d.mkdir(parents=True)
+            out = {"cpu_record": ref, "gpu_record": cand if reproduce else cand + 1, "cpu_inject": inject}[step]
+            np.save(d / f"{stem}.npy", out)
+            np.savez(d / f"{stem}.codes.npz", **{f"layer{i}": np.array(c) for i, c in enumerate(codes)})
+            np.savez(d / f"{stem}.margins.npz", layer0=np.array([1, 1, margin, 1.0]), layer1=np.ones(4))
+        return ref, cand
+
+    def test_a_near_tie_explains_the_frames_its_code_changes(self, root):
+        ref, cand = self._probe(root, margin=1.3e-5)
+        explained, failures, details = cli._tie_evidence("dac", "gpu", "wm", "clip", ref, cand, 16000, 1e-4)
+        assert failures == [] and 10 in explained
+        assert details["code_flips"] == [{"codec_frame": 2, "layer": 0, "margin": 1.3e-5}]
+
+    def test_a_decided_choice_that_flipped_is_refused(self, root):
+        ref, cand = self._probe(root, margin=5e-3)
+        explained, failures, _ = cli._tie_evidence("dac", "gpu", "wm", "clip", ref, cand, 16000, 1e-4)
+        assert explained == () and "not a near-tie" in failures[0]
+
+    def test_a_probe_that_does_not_reproduce_the_runs_is_refused(self, root):
+        ref, cand = self._probe(root, margin=1.3e-5, reproduce=False)
+        explained, failures, _ = cli._tie_evidence("dac", "gpu", "wm", "clip", ref, cand, 16000, 1e-4)
+        assert explained is None and "does not reproduce" in failures[0]
