@@ -196,21 +196,34 @@ class TestQuantizedTier:
         assert not j.passed
 
 
-class TestNearSilentReferences:
-    def test_a_silent_reference_is_judged_on_absolute_error_alone(self):
+class TestTheAbsoluteFloor:
+    """RMS error <= max(bound x reference RMS, 1e-6): -120 dBFS counts as no difference."""
+
+    def test_a_silent_reference_passes_below_the_floor(self):
         ref = np.zeros(80000)
-        cand = 5e-8 * speech_like(seed=5)  # -146 dBFS: nothing, though "infinitely" relative
+        cand = 5e-8 * speech_like(seed=5)  # RMS 5e-9: -166 dBFS
+        assert judge([evidence("silence", ref, cand)], NUMERIC, ALL).passed
+
+    def test_a_watermark_only_reference_at_minus_78_dbfs_passes(self):
+        # The wave-1 DAC case: relative 8.2e-5 against a -78 dBFS reference, absolute 4e-8.
+        ref = 1.26e-4 / 0.1 * speech_like(seed=7)
+        cand = ref + 1e-8 / 0.1 * speech_like(seed=8)
         j = judge([evidence("silence", ref, cand)], NUMERIC, ALL)
         assert j.passed, j.failures
-        assert j.rel_l2_median is None  # no loud case, so no relative statistic
+
+    def test_quiet_speech_is_held_to_the_floor_not_to_nothing(self):
+        ref = 0.1 * speech_like(seed=9)             # -40 dBFS RMS: 3e-5 x RMS = 3e-7 < floor
+        ok = ref + 5e-6 * speech_like(seed=10)      # RMS error 5e-7: under the floor
+        bad = ref + 2e-5 * speech_like(seed=10)     # RMS error 2e-6: over it
+        assert judge([evidence("q", ref, ok)], NUMERIC, ALL).passed
+        assert not judge([evidence("q", ref, bad)], NUMERIC, ALL).passed
 
     def test_but_a_real_error_on_silence_still_fails(self):
         ref = np.zeros(80000)
         cand = 2e-3 * speech_like(seed=5)  # peaks near 1e-3: well over the 1e-4 bound
         assert not judge([evidence("silence", ref, cand)], NUMERIC, ALL).passed
 
-    def test_speech_is_still_judged_relatively(self):
-        x = speech_like()
-        assert waveform_diff(x, x, SR).relative_applies
+    def test_speech_at_normal_level_is_judged_relatively(self):
+        x = speech_like()                            # RMS 0.1: 3e-5 x RMS = 3e-6 > floor
         j = judge([evidence("c", x, x + 5e-5 * speech_like(seed=6))], NUMERIC, ALL)
         assert any("relative L2" in f for f in j.failures)

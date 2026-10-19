@@ -21,11 +21,13 @@ FRAME_SECONDS = 0.02
 # reference (a valid corpus case) gives a finite number.
 REL_L2_RMS_FLOOR = 1e-6
 
-# Below this reference level (-80 dBFS RMS, the same level as the tiers'
-# 1e-4 absolute bound) a relative error says nothing. A silent reference
-# turns a -150 dBFS difference into a "large" ratio. Such cases are judged on
-# max |d| alone.
-REL_L2_MIN_REF_RMS = 1e-4
+# An RMS difference at or below this counts as no difference for the
+# relative checks: -120 dBFS, about 8 float32 steps at full scale. A case
+# passes when its RMS error is within max(bound x reference RMS, this floor),
+# so a quiet reference is not asked for agreement below what float32
+# networks resolve. Decided after wave 1: the DAC "silence" case differed by
+# 4e-8 (-148 dBFS), yet failed a relative bound of 3e-5 at -78 dBFS.
+ABS_RMS_FLOOR = 1e-6
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class WaveformDiff:
     ref_len: int
     cand_len: int
     ref_rms: float
+    err_rms: float
     finite: bool
     identical: bool
     max_abs: float
@@ -51,15 +54,19 @@ class WaveformDiff:
         return self.ref_len == self.cand_len
 
     @property
-    def relative_applies(self) -> bool:
-        """Whether the reference is loud enough for a relative error to mean anything."""
-        return self.ref_rms >= REL_L2_MIN_REF_RMS
+    def below_floor(self) -> bool:
+        """Whether the RMS difference is within the absolute floor (counts as none)."""
+        return self.err_rms <= ABS_RMS_FLOOR
+
+    def within_relative(self, bound: float) -> bool:
+        """RMS error within max(bound x reference RMS, ABS_RMS_FLOOR)."""
+        return self.err_rms <= max(bound * self.ref_rms, ABS_RMS_FLOOR)
 
     def to_dict(self) -> dict:
         out = asdict(self)
         out["frames_over"] = list(self.frames_over)
         out["same_length"] = self.same_length
-        out["relative_applies"] = self.relative_applies
+        out["below_floor"] = self.below_floor
         return out
 
 
@@ -76,7 +83,7 @@ def waveform_diff(ref, cand, sampling_rate: int, frame_atol: Optional[float] = N
     if ref.shape != cand.shape or not finite:
         return WaveformDiff(
             ref_len=ref.size, cand_len=cand.size, ref_rms=float(np.sqrt(np.mean(ref * ref))) if ref.size else 0.0,
-            finite=finite, identical=False,
+            err_rms=math.inf, finite=finite, identical=False,
             max_abs=math.inf, rel_l2=math.inf, snr_db=-math.inf,
             frame_len=frame_len, n_frames=math.ceil(ref.size / frame_len),
         )
@@ -98,7 +105,7 @@ def waveform_diff(ref, cand, sampling_rate: int, frame_atol: Optional[float] = N
         frames_over = tuple(int(i) for i in np.flatnonzero(per_frame > frame_atol))
 
     return WaveformDiff(
-        ref_len=ref.size, cand_len=cand.size, ref_rms=ref_rms, finite=finite, identical=identical,
+        ref_len=ref.size, cand_len=cand.size, ref_rms=ref_rms, err_rms=err, finite=finite, identical=identical,
         max_abs=max_abs, rel_l2=rel_l2, snr_db=snr_db,
         frame_len=frame_len, n_frames=n_frames, frames_over=frames_over,
     )

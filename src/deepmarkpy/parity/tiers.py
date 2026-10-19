@@ -151,11 +151,14 @@ def judge(cases: Sequence[CaseEvidence], tier: Tier, required: Sequence[str]) ->
                 max_abs_seen = max(max_abs_seen, judged.max_abs)
                 if tier.max_abs is not None and judged.max_abs > tier.max_abs:
                     failures.append(f"{where}: max |d| {_fmt(judged.max_abs)} > {tier.max_abs:g}")
-                # A near-silent reference is judged on max |d| alone (see compare.REL_L2_MIN_REF_RMS).
-                if sig.relative_applies:
-                    rel_l2s.append(judged.rel_l2)
-                    if tier.rel_l2_worst is not None and judged.rel_l2 > tier.rel_l2_worst:
-                        failures.append(f"{where}: relative L2 {_fmt(judged.rel_l2)} > {tier.rel_l2_worst:g}")
+                # An RMS error at or under compare.ABS_RMS_FLOOR (-120 dBFS) counts
+                # as none: quiet references are not held below float32 resolution.
+                rel_l2s.append(0.0 if judged.below_floor else judged.rel_l2)
+                if tier.rel_l2_worst is not None and not judged.within_relative(tier.rel_l2_worst):
+                    failures.append(
+                        f"{where}: relative L2 {_fmt(judged.rel_l2)} > {tier.rel_l2_worst:g} "
+                        f"(RMS error {_fmt(judged.err_rms)} over the 1e-6 floor)"
+                    )
 
         if REPEAT in required and ev.repeat_identical is not True:
             failures.append(
@@ -191,6 +194,6 @@ def judge(cases: Sequence[CaseEvidence], tier: Tier, required: Sequence[str]) ->
         n_cases=len(cases),
         rel_l2_median=median,
         rel_l2_worst=max(rel_l2s) if rel_l2s else None,
-        max_abs=max_abs_seen if cases else None,
+        max_abs=max_abs_seen if rel_l2s else None,
         flip_frames=flip_frames,
     )
