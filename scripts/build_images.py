@@ -56,8 +56,8 @@ GPU_RECIPES = {
     "diffusion": ("base",),
     "neural_vocoder": ("base",),
     "speech_enhancement1": ("base",),
-    "nisqa": ("base",),
     "speech_tokenization": ("same",),  # installs torch 2.4.1 from PyPI: the cu121 build
+    "nisqa": ("same",),  # installs torch 2.2.1 from PyPI: the cu121 build
     "speech_enhancement2": ("swap", "torch==2.13.0+cu130", "cu130"),
     "silentcipher": ("swap", "torch==2.0.0+cu118 torchaudio==2.0.1+cu118", "cu118"),
     "timbrewm": ("swap", "torch==2.0.0+cu118 torchaudio==2.0.1+cu118", "cu118"),
