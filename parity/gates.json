@@ -10,35 +10,191 @@
   ],
   "audioseal": {
     "ops": {
-      "embed":  {"tier": "NUMERIC", "inputs": ["clean"], "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"},
-      "detect": {"tier": "NUMERIC", "inputs": ["wm_audioseal", "clean"], "evidence": ["repeat", "bits", "confidence"]}
+      "embed": {
+        "tier": "NUMERIC",
+        "inputs": [
+          "clean"
+        ],
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      },
+      "detect": {
+        "tier": "NUMERIC",
+        "inputs": [
+          "wm_audioseal",
+          "clean"
+        ],
+        "evidence": [
+          "repeat",
+          "bits",
+          "confidence"
+        ]
+      }
     }
   },
   "encodec": {
-    "ops": {"apply": {"tier": "QUANTIZED", "inputs": ["wm_audioseal"], "params": {}, "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"}}
+    "ops": {
+      "apply": {
+        "tier": "QUANTIZED",
+        "inputs": [
+          "wm_audioseal"
+        ],
+        "params": {},
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      }
+    }
   },
   "descript_audio_codec": {
-    "ops": {"apply": {"tier": "QUANTIZED", "inputs": ["wm_audioseal"], "params": {"n_codebooks_dac": 9}, "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"}}
+    "ops": {
+      "apply": {
+        "tier": "QUANTIZED",
+        "inputs": [
+          "wm_audioseal"
+        ],
+        "params": {
+          "n_codebooks_dac": 9
+        },
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      }
+    }
   },
   "neural_vocoder": {
     "cwd": "/app/BigVGAN",
-    "ops": {"apply": {"tier": "NUMERIC", "inputs": ["wm_audioseal"], "params": {}, "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"}}
+    "ops": {
+      "apply": {
+        "tier": "NUMERIC",
+        "inputs": [
+          "wm_audioseal"
+        ],
+        "params": {},
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      }
+    }
   },
   "speech_tokenization": {
-    "ops": {"apply": {"tier": "NUMERIC", "inputs": ["wm_audioseal"], "params": {}, "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"}}
+    "mount_cache": false,
+    "ops": {
+      "apply": {
+        "tier": "NUMERIC",
+        "inputs": [
+          "wm_audioseal"
+        ],
+        "params": {},
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      }
+    }
   },
   "speech_enhancement1": {
-    "ops": {"apply": {"tier": "NUMERIC", "inputs": ["wm_audioseal"], "params": {"noise_strength": 0.01}, "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"}}
+    "ops": {
+      "apply": {
+        "tier": "NUMERIC",
+        "inputs": [
+          "wm_audioseal"
+        ],
+        "params": {
+          "noise_strength": 0.01
+        },
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      }
+    }
   },
   "speech_enhancement2": {
-    "ops": {"apply": {"tier": "NUMERIC", "inputs": ["wm_audioseal"], "params": {"model_name": "MossFormerGAN_SE_16K"}, "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"}}
+    "ops": {
+      "apply": {
+        "tier": "NUMERIC",
+        "inputs": [
+          "wm_audioseal"
+        ],
+        "params": {
+          "model_name": "MossFormerGAN_SE_16K"
+        },
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      }
+    }
   },
   "diffusion": {
-    "mounts": {"diffusers": "/app/diffusers"},
-    "ops": {"apply": {"tier": "STOCHASTIC", "inputs": ["wm_audioseal"], "params": {"diffusion_steps": 5}, "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"}}
+    "mounts": {
+      "diffusers": "/app/diffusers"
+    },
+    "ops": {
+      "apply": {
+        "tier": "STOCHASTIC",
+        "inputs": [
+          "wm_audioseal"
+        ],
+        "params": {
+          "diffusion_steps": 5
+        },
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      }
+    }
   },
   "vae": {
-    "mounts": {"models": "/app/models"},
-    "ops": {"apply": {"tier": "STOCHASTIC", "inputs": ["wm_audioseal"], "params": {}, "evidence": ["signal", "repeat", "bits", "metrics"], "detector": "audioseal"}}
+    "mounts": {
+      "models": "/app/models"
+    },
+    "ops": {
+      "apply": {
+        "tier": "STOCHASTIC",
+        "inputs": [
+          "wm_audioseal"
+        ],
+        "params": {},
+        "evidence": [
+          "signal",
+          "repeat",
+          "bits",
+          "metrics"
+        ],
+        "detector": "audioseal"
+      }
+    }
   }
 }

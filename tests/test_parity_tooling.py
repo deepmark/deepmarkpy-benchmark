@@ -155,3 +155,9 @@ class TestGates:
         assert gates["descript_audio_codec"]["ops"]["apply"]["params"] == {"n_codebooks_dac": 9}
         assert gates["diffusion"]["ops"]["apply"]["params"] == {"diffusion_steps": 5}
         assert gates["speech_enhancement1"]["ops"]["apply"]["params"] == {"noise_strength": 0.01}
+
+
+def test_baked_weights_are_not_hidden_by_the_cache_mount(root):
+    flat = " ".join(cli._container("img:cpu", [], mount_cache=False))
+    assert "/root/.cache" not in flat
+    assert cli.load_gates()["speech_tokenization"]["mount_cache"] is False

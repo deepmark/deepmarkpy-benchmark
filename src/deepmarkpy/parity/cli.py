@@ -77,7 +77,7 @@ def _run_dir(service, op, label, inputs) -> Path:
     return parity_root() / "runs" / service / op / label / inputs
 
 
-def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mounts=(), env=None):
+def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mounts=(), env=None, mount_cache=True):
     engine = os.environ.get("CONTAINER_ENGINE", "docker")
     root = parity_root()
     (root / "runs").mkdir(parents=True, exist_ok=True)
@@ -94,7 +94,10 @@ def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mo
         (Path(runner_module.__file__), "/parity/runner.py", "ro"),
         (root, "/corpus", "ro"),
         (root / "runs", "/runs", "rw"),
-        (root / "cache" / "home", "/root/.cache", "rw"),
+        # Weights downloaded at start are cached across runs. A service whose
+        # weights are baked into the image under /root/.cache opts out
+        # (gates.json "mount_cache": false); the mount would hide them.
+        *([(root / "cache" / "home", "/root/.cache", "rw")] if mount_cache else []),
         *extra_mounts,
     ]
     for host, ctr, mode in mounts:
@@ -190,7 +193,8 @@ def cmd_run(a):
         if a.cases:
             args += ["--cases", a.cases]
         cmd = _container(image["tag"], args, gpu_uuid=slice_info and slice_info["uuid"],
-                         cpu_threads=a.cpu_threads, extra_mounts=extra_mounts, env=env)
+                         cpu_threads=a.cpu_threads, extra_mounts=extra_mounts, env=env,
+                         mount_cache=gate.get("mount_cache", True))
         _execute(cmd, out.parent / f"{inputs}.container.log")
 
         run_env = json.loads((out / "env.json").read_text())
