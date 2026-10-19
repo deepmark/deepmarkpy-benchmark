@@ -69,9 +69,9 @@ def read_verdicts(directory: Path = VERDICT_DIR) -> Iterable[Dict]:
         yield json.loads(path.read_text())
 
 
-def shipped_engine_pass(service: str, op: str, image_id: str, device_name: str,
-                        precision: str = "float32", directory: Path = VERDICT_DIR) -> Optional[Dict]:
-    """The PASS that lets a deployment run ``service``'s ``op`` on this GPU, or None.
+def shipped_engine_verdict(service: str, op: str, image_id: str, device_name: str,
+                           precision: str = "float32", directory: Path = VERDICT_DIR) -> Optional[Dict]:
+    """The verdict, PASS or FAIL, on whether ``service``'s ``op`` may run on this GPU.
 
     It must be:
     - for this exact image;
@@ -79,11 +79,14 @@ def shipped_engine_pass(service: str, op: str, image_id: str, device_name: str,
     - from the engine the image ships, not a study override;
     - under strict numerics;
     - at the precision the service will run at.
+
+    A PASS wins over a FAIL for the same deployment.
     """
+    found = None
     for record in read_verdicts(directory):
         candidate = record.get("candidate", {})
         env = candidate.get("env", {})
-        if (record.get("service"), record.get("op")) != (service, op) or not record.get("passed"):
+        if (record.get("service"), record.get("op")) != (service, op):
             continue
         if candidate.get("image_id") != image_id or env.get("device_name") != device_name:
             continue
@@ -91,8 +94,17 @@ def shipped_engine_pass(service: str, op: str, image_id: str, device_name: str,
             continue
         if env.get("precision", "float32") != precision:
             continue
-        return record
-    return None
+        if record.get("passed"):
+            return record
+        found = record
+    return found
+
+
+def shipped_engine_pass(service: str, op: str, image_id: str, device_name: str,
+                        precision: str = "float32", directory: Path = VERDICT_DIR) -> Optional[Dict]:
+    """The PASS that lets a deployment run ``service``'s ``op`` on this GPU, or None."""
+    record = shipped_engine_verdict(service, op, image_id, device_name, precision, directory)
+    return record if record and record.get("passed") else None
 
 
 def passing_verdict(service: str, op: str, image_id: str, config: str,

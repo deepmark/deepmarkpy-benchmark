@@ -130,22 +130,25 @@ def place(services: List[str], images: Dict, gates: Dict, gpu=None, verdict_dir:
             cpu.reason = "no GPU image built (scripts/build_images.py --variant gpu)"
         else:
             precision = gate.get("gpu_precision", "float32")
-            found, missing = [], []
+            found, failed, missing = [], [], []
             for op in gate["ops"]:
-                record = verdicts.shipped_engine_pass(
+                record = verdicts.shipped_engine_verdict(
                     service, op, built["gpu"]["image_id"], gpu.name, precision, verdict_dir)
-                if record:
-                    found.append(verdicts.verdict_path(
-                        service, op, built["gpu"]["image_id"],
-                        record["candidate"]["engine_config"], verdict_dir).name)
-                else:
+                if record is None:
                     missing.append(op)
-            if not missing:
+                    continue
+                name = verdicts.verdict_path(service, op, built["gpu"]["image_id"],
+                                             record["candidate"]["engine_config"], verdict_dir).name
+                (found if record.get("passed") else failed).append(name)
+            if not failed and not missing:
                 placements.append(Placement(service, "cuda", built["gpu"]["tag"], built["gpu"]["image_id"],
                                             precision, f"PASS on {gpu.name}", found))
                 continue
-            cpu.reason = (f"no PASS for {', '.join(missing)} on {gpu.name}: "
-                          f"run deepmark-parity for {service} on this GPU")
+            if failed:
+                cpu.reason = f"parity FAIL on {gpu.name} ({', '.join(failed)})"
+            else:
+                cpu.reason = (f"no verdict for {', '.join(missing)} on {gpu.name}: "
+                              f"run deepmark-parity for {service} on this GPU")
         placements.append(cpu)
     return placements
 
@@ -203,11 +206,12 @@ def main(argv=None) -> int:
     parser.add_argument("--config", nargs="+", default=[], help="benchmark config file(s) to start services for")
     parser.add_argument("--gpu", default=None,
                         help="GPU for verified services: an index (0) or a GPU-/MIG- UUID; omit for CPU only")
-    parser.add_argument("--engine", default=os.environ.get("CONTAINER_ENGINE", "docker"))
+    parser.add_argument("--engine", default=None, help="docker or podman (default: $CONTAINER_ENGINE, else docker)")
     parser.add_argument("--dry-run", action="store_true", help="print the compose file and command; start nothing")
     a = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env_file(str(REPO / ".env"))
+    a.engine = a.engine or os.environ.get("CONTAINER_ENGINE", "docker")  # after .env, which may set it
 
     services = list(dict.fromkeys(a.services + (services_for_configs(a.config) if a.config else [])))
     if not services:

@@ -54,7 +54,19 @@ class TestPlacement:
     def test_one_missing_op_keeps_it_on_the_cpu_and_says_which(self, tmp_path):
         verdict(tmp_path, "audioseal", "embed", "sha256:aaaagpu00000")
         p = placed(tmp_path, ["audioseal"])["audioseal"]
-        assert p.device == "cpu" and "detect" in p.reason
+        assert p.device == "cpu" and "no verdict for detect" in p.reason
+
+    def test_a_measured_fail_is_cited_not_sent_back_to_the_gate(self, tmp_path):
+        verdict(tmp_path, "audioseal", "embed", "sha256:aaaagpu00000")
+        verdict(tmp_path, "audioseal", "detect", "sha256:aaaagpu00000", passed=False)
+        p = placed(tmp_path, ["audioseal"])["audioseal"]
+        assert p.device == "cpu" and p.reason.startswith("parity FAIL") and "audioseal.detect." in p.reason
+
+    def test_a_later_pass_for_the_same_deployment_wins(self, tmp_path):
+        for op in ("embed", "detect"):
+            verdict(tmp_path, "audioseal", op, "sha256:aaaagpu00000", passed=False)
+            verdict(tmp_path, "audioseal", op, "sha256:aaaagpu00000")
+        assert placed(tmp_path, ["audioseal"])["audioseal"].device == "cuda"
 
     @pytest.mark.parametrize("bad", [
         {"passed": False},
