@@ -11,7 +11,7 @@
    "engine": "engine_override.AudioSealEngineGPU",
    "engine_override": "/override/gpu_engines.py:AudioSealEngineGPU",
    "image_id": "abb59a0048162f9fcfc24d1a1655b183176cc2fc7ef258d4632bacb9d177a21a",
-   "load_s": 0.671,
+   "load_s": 0.734,
    "n_cases": 31,
    "numerics": {
     "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
@@ -19,6 +19,7 @@
     "cudnn_benchmark": false,
     "cudnn_deterministic": true,
     "cudnn_tf32": false,
+    "jit_fusion_disabled": true,
     "matmul_tf32": false,
     "strict": true
    },
@@ -918,7 +919,7 @@
   "sampling_rate": 16000,
   "sha256": "725e88660fd4e307277f1768fe20385a4b1371313b99f0e014d9a6fdf7bae88f"
  },
- "created_utc": "2026-10-19T12:34:20+00:00",
+ "created_utc": "2026-10-19T12:56:07+00:00",
  "evidence": [
   "signal",
   "repeat",
@@ -926,7 +927,7 @@
   "metrics"
  ],
  "failures": [],
- "git_rev": "4d0bc5afd93a257d7746520fedcc0c3820ccc533-dirty",
+ "git_rev": "5d29ca3fc7f569b90f34a7ad189b221a02771bbc-dirty",
  "op": "embed",
  "passed": true,
  "reference": {

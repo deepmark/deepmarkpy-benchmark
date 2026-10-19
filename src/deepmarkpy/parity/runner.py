@@ -47,12 +47,24 @@ def case_bits(stem: str, size: int):
 def _configure_numerics(strict: bool):
     import torch
 
+    jit_fusion_disabled = False
     if strict:
         torch.backends.cuda.matmul.allow_tf32 = False
         torch.backends.cudnn.allow_tf32 = False
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
+        # TorchScript's profiling executor runs a scripted function unfused on
+        # its first call(s), then switches to a fused GPU kernel that rounds
+        # differently. DAC's @torch.jit.script snake activation made its first
+        # GPU call differ from every later one by up to 1.8e-6, so a service's
+        # output depended on its request history. Unfused, every call
+        # matches, and is just as close to the CPU.
+        torch._C._jit_set_profiling_executor(False)
+        torch._C._jit_override_can_fuse_on_gpu(False)
+        torch._C._jit_set_texpr_fuser_enabled(False)
+        jit_fusion_disabled = True
     return {
+        "jit_fusion_disabled": jit_fusion_disabled,
         "strict": strict,
         "matmul_tf32": torch.backends.cuda.matmul.allow_tf32,
         "cudnn_tf32": torch.backends.cudnn.allow_tf32,
