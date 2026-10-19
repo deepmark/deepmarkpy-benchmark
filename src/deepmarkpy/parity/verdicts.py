@@ -30,13 +30,15 @@ VERDICT_DIR = Path(
 
 
 def engine_config(env: Dict) -> str:
-    """Fingerprint of what ran: engine class, numerics settings and GPU model.
+    """Fingerprint of what ran: engine class, numerics, GPU model and precision.
 
     The GPU model is part of it because numerics differ across architectures
     and libraries pick kernels by device. A verdict measured on one GPU (or
     MIG profile) says nothing about another; that one runs the gate itself.
     """
     key = {"engine": env.get("engine"), "numerics": env.get("numerics"), "device": env.get("device_name")}
+    if env.get("precision", "float32") != "float32":
+        key["precision"] = env["precision"]  # float32 keys stay as they were
     return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
 
 
@@ -65,6 +67,32 @@ def write_verdict(record: Dict, directory: Path = VERDICT_DIR) -> Path:
 def read_verdicts(directory: Path = VERDICT_DIR) -> Iterable[Dict]:
     for path in sorted(Path(directory).glob("*.json")):
         yield json.loads(path.read_text())
+
+
+def shipped_engine_pass(service: str, op: str, image_id: str, device_name: str,
+                        precision: str = "float32", directory: Path = VERDICT_DIR) -> Optional[Dict]:
+    """The PASS that lets a deployment run ``service``'s ``op`` on this GPU, or None.
+
+    It must be:
+    - for this exact image;
+    - on this GPU model (MIG profile included);
+    - from the engine the image ships, not a study override;
+    - under strict numerics;
+    - at the precision the service will run at.
+    """
+    for record in read_verdicts(directory):
+        candidate = record.get("candidate", {})
+        env = candidate.get("env", {})
+        if (record.get("service"), record.get("op")) != (service, op) or not record.get("passed"):
+            continue
+        if candidate.get("image_id") != image_id or env.get("device_name") != device_name:
+            continue
+        if candidate.get("engine_override") or not (env.get("numerics") or {}).get("strict"):
+            continue
+        if env.get("precision", "float32") != precision:
+            continue
+        return record
+    return None
 
 
 def passing_verdict(service: str, op: str, image_id: str, config: str,

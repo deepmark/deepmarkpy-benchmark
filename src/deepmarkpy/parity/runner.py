@@ -152,6 +152,8 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--device", choices=("cpu", "cuda"), required=True)
     ap.add_argument("--numerics", choices=("strict", "torch-default"), default="strict")
+    ap.add_argument("--precision", choices=("float32", "float64"), default="float32",
+                    help="passed to engines that take it (BigVGAN on the GPU runs float64)")
     ap.add_argument("--sampling-rate", type=int, default=16000)
     ap.add_argument("--params", default="{}", help="JSON of request-level params for apply")
     ap.add_argument("--seed", type=int, default=1)
@@ -174,7 +176,10 @@ def main(argv=None):
         config = json.load(fh)
     engine_cls = _load_engine_class(a.stage, a.engine_override)
     t0 = time.perf_counter()
-    engine = engine_cls(config, device=a.device)
+    kwargs = {"device": a.device}
+    if a.precision != "float32":
+        kwargs["precision"] = a.precision
+    engine = engine_cls(config, **kwargs)
     load_s = time.perf_counter() - t0
 
     params = json.loads(a.params)
@@ -236,6 +241,7 @@ def main(argv=None):
         "cuda_available": torch.cuda.is_available(),
         "device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "numerics": numerics,
+        "precision": a.precision,
         "placement": _placement(engine),
         "cuda_max_allocated_mib": (
             round(torch.cuda.max_memory_allocated() / 2**20, 1) if torch.cuda.is_available() else 0.0

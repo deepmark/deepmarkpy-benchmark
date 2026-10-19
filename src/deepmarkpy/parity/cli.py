@@ -190,6 +190,9 @@ def cmd_run(a):
         extra_mounts.append((Path(path).resolve(), f"/override/{Path(path).name}", "ro"))
         override_arg = ["--engine-override", f"/override/{Path(path).name}:{cls}"]
 
+    # The deployment's GPU precision lives in the gate ("gpu_precision"), so the
+    # parity run measures what the GPU service will run; --precision overrides.
+    precision = a.precision or (gate.get("gpu_precision", "float32") if a.variant == "gpu" else "float32")
     env = {"DEEPMARK_IMAGE_ID": image["image_id"]}
     if a.variant == "gpu" and a.numerics == "strict":
         env.update(NVIDIA_TF32_OVERRIDE="0", STUDY_TF32="0")
@@ -205,7 +208,7 @@ def cmd_run(a):
                 "--inputs", f"/corpus/{a.sr}/{inputs}", "--out", f"/runs/{out_rel}",
                 "--device", "cuda" if a.variant == "gpu" else "cpu", "--numerics", a.numerics,
                 "--sampling-rate", str(a.sr), "--params", json.dumps(spec.get("params", {})),
-                "--seed", str(a.seed), "--repeat", str(a.repeat), *override_arg]
+                "--seed", str(a.seed), "--repeat", str(a.repeat), "--precision", precision, *override_arg]
         if a.cases:
             args += ["--cases", a.cases]
         cmd = _container(image["tag"], args, gpu_uuid=slice_info and slice_info["uuid"],
@@ -217,7 +220,7 @@ def cmd_run(a):
         if a.variant == "gpu" and not run_env.get("cuda_max_allocated_mib"):
             raise ParityError(f"{a.service} {a.op}: the GPU run allocated no CUDA memory, so it ran on "
                               f"the CPU (placement {run_env.get('placement')}). Fix device placement first.")
-        record = {"service": a.service, "op": a.op, "label": a.label, "variant": a.variant,
+        record = {"service": a.service, "op": a.op, "label": a.label, "variant": a.variant, "precision": precision,
                   "inputs": inputs, "tag": image["tag"], "image_id": image["image_id"],
                   "cpu_threads": a.cpu_threads, "numerics": a.numerics, "seed": a.seed,
                   "repeat": a.repeat, "engine_override": a.engine_override or None,
@@ -445,6 +448,8 @@ def main(argv=None) -> int:
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--cases", default="", help="comma-separated subset (debugging only)")
     p.add_argument("--engine-override", default="", help="path.py:Class (study engines)")
+    p.add_argument("--precision", choices=("float32", "float64"), default=None,
+                   help="engine precision (default: the gate's gpu_precision for GPU runs, else float32)")
     p.add_argument("--min-free-gib", type=float, default=4.0)
     p.set_defaults(func=cmd_run)
 

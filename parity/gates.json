@@ -6,7 +6,8 @@
     "  so every attack sees the same watermarked audio on CPU and GPU (one variable at a time).",
     "params: the request-level parameters the benchmark's client sends (attack.py), so parity runs what runs.",
     "detector: the model whose CPU detector decodes bits from both outputs, for the 'bits' evidence.",
-    "STOCHASTIC ops are judged on distributions, not by these tiers, and are listed for completeness."
+    "STOCHASTIC ops are judged on distributions, not by these tiers, and are listed for completeness.",
+    "gpu_precision: the precision a service runs at on the GPU (DEEPMARK_PRECISION); float32 if absent."
   ],
   "audioseal": {
     "ops": {
@@ -78,6 +79,7 @@
     }
   },
   "neural_vocoder": {
+    "gpu_precision": "float64",
     "cwd": "/app/BigVGAN",
     "ops": {
       "apply": {

@@ -223,3 +223,13 @@ class TestTieEvidence:
         ref, cand = self._probe(root, margin=1.3e-5, reproduce=False)
         explained, failures, _ = cli._tie_evidence("dac", "gpu", "wm", "clip", ref, cand, 16000, 1e-4)
         assert explained is None and "does not reproduce" in failures[0]
+
+
+def test_precision_is_part_of_what_a_verdict_vouches_for():
+    env = {"engine": "plugin_inference.NeuralVocoderEngine", "numerics": {"strict": True}, "device_name": "GPU"}
+    assert engine_config({**env, "precision": "float64"}) != engine_config({**env, "precision": "float32"})
+    assert engine_config({**env, "precision": "float32"}) == engine_config(env)  # older verdicts keep their key
+
+
+def test_bigvgan_runs_float64_on_the_gpu_by_its_gate():
+    assert cli.load_gates()["neural_vocoder"]["gpu_precision"] == "float64"
