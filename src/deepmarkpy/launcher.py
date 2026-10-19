@@ -176,6 +176,37 @@ def compose_command(engine: str, override: Path, services: List[str]) -> List[st
     return [*base, "-f", str(REPO / "docker-compose.yml"), "-f", str(override), "up", "-d", "--no-build", *services]
 
 
+def wait_until_serving(services: List[str], ports: Dict[str, str], timeout_s: float,
+                       environ=os.environ, get=None, sleep=None) -> List[str]:
+    """Poll each service's /docs until it answers; return the ones still silent at the deadline.
+
+    ``compose up -d`` returns when containers start, but services load their
+    weights after that, some for minutes on a first start. The benchmark
+    waits only for model services, so an attack service still loading would
+    fail the run on its first request.
+    """
+    import time
+
+    import requests
+
+    get = get or (lambda url: requests.get(url, timeout=5))
+    sleep = sleep or time.sleep
+    deadline = time.monotonic() + timeout_s
+    pending = list(services)
+    while pending:
+        for service in list(pending):
+            try:
+                get(f"http://localhost:{environ.get(ports[service])}/docs")
+                pending.remove(service)
+                logger.info("%s is serving", service)
+            except Exception:  # noqa: BLE001 - not up yet
+                pass
+        if not pending or time.monotonic() >= deadline:
+            break
+        sleep(5)
+    return pending
+
+
 def _print_plan(placements: List[Placement], gpu) -> None:
     where = f"{gpu.name} ({gpu.uuid})" if gpu else "no GPU"
     print(f"GPU: {where}")
@@ -208,6 +239,8 @@ def main(argv=None) -> int:
                         help="GPU for verified services: an index (0) or a GPU-/MIG- UUID; omit for CPU only")
     parser.add_argument("--engine", default=None, help="docker or podman (default: $CONTAINER_ENGINE, else docker)")
     parser.add_argument("--dry-run", action="store_true", help="print the compose file and command; start nothing")
+    parser.add_argument("--wait", type=float, default=1200,
+                        help="seconds to wait for every service to answer after starting (0: do not wait)")
     a = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     load_env_file(str(REPO / ".env"))
@@ -243,6 +276,12 @@ def main(argv=None) -> int:
     result = subprocess.run(cmd, cwd=REPO)
     if result.returncode != 0:
         return result.returncode
+    if a.wait:
+        ports = compose_service_ports((REPO / "docker-compose.yml").read_text())
+        silent = wait_until_serving([p.service for p in placements], ports, a.wait)
+        if silent:
+            logger.error("not serving after %.0f s: %s (see their container logs)", a.wait, ", ".join(silent))
+            return 1
     (BUILD / "deployment.json").write_text(json.dumps({
         "created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "engine": a.engine,

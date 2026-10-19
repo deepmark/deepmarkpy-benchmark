@@ -152,3 +152,17 @@ class TestWhichServices:
             "attack_parameters": {"CrossModelAttack": {"different_model_name_cross_model": "WavMarkModel"}},
         }))
         assert launcher.services_for_configs([str(config)]) == ["audioseal", "encodec", "wavmark"]
+
+
+def test_waiting_returns_only_the_services_that_never_answered():
+    ports = {"a": "A_PORT", "b": "B_PORT"}
+    env = {"A_PORT": "1", "B_PORT": "2"}
+    calls = []
+
+    def get(url):
+        calls.append(url)
+        if url.startswith("http://localhost:2"):
+            raise ConnectionError
+    assert launcher.wait_until_serving(["a", "b"], ports, timeout_s=0, environ=env, get=get,
+                                       sleep=lambda s: None) == ["b"]
+    assert "http://localhost:1/docs" in calls
