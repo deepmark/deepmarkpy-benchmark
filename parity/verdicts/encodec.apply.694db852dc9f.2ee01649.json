@@ -1,6 +1,6 @@
 {
  "candidate": {
-  "engine_config": "07be3b8b",
+  "engine_config": "2ee01649",
   "engine_override": null,
   "env": {
    "cuda_available": true,
@@ -1397,7 +1397,7 @@
   "sampling_rate": 16000,
   "sha256": "725e88660fd4e307277f1768fe20385a4b1371313b99f0e014d9a6fdf7bae88f"
  },
- "created_utc": "2026-10-19T13:52:14+00:00",
+ "created_utc": "2026-10-19T14:40:50+00:00",
  "evidence": [
   "signal",
   "repeat",
@@ -1424,7 +1424,7 @@
   "wm_audioseal/quiet: relative L2 0.0108 > 3e-05 (RMS error 2.47e-06 over the 1e-6 floor)",
   "wm_audioseal/quiet: |\u0394pesq| 0.0637 > 0.005"
  ],
- "git_rev": "cb09102b8a4111e26ecb8cfcab8b8195373b4f83-dirty",
+ "git_rev": "6cfd649d22a7546393109387e46d91abebb498a5-dirty",
  "op": "apply",
  "passed": false,
  "reference": {

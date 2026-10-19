@@ -1,12 +1,19 @@
-"""Name the GPU slice a run may use, and refuse it when it is not ours to use.
+"""Name the GPU a run may use, and refuse it when it is not usable.
 
-GPU hosts for this benchmark are often MIG-partitioned and shared, so GPU
-services are addressed by exactly one UUID, ``DEEPMARK_GPU_DEVICE`` (a
-``MIG-...`` or ``GPU-...`` UUID as printed by ``nvidia-smi -L``), and never by
-index or ``all``. Indices silently move to another slice when an administrator
-repartitions the GPU; a UUID just stops existing, which this module reports.
+The device is one of:
+- a whole GPU by index (``0``);
+- a GPU by UUID (``GPU-...``);
+- one MIG slice of a partitioned GPU by UUID (``MIG-...``).
 
-:func:`check_slice` refuses a slice that is missing, that names a whole GPU in
+``nvidia-smi -L`` lists all three. It comes from a ``--gpu`` option, or from
+``DEEPMARK_GPU_DEVICE`` when none is given. An index is resolved to its UUID
+here, so a run records exactly which device it used.
+
+MIG slices are addressed by UUID only. Their indices move when an
+administrator repartitions the GPU; a UUID just stops existing, which this
+module reports.
+
+:func:`check_slice` refuses a device that is missing, that names a whole GPU in
 MIG mode (only its MIG devices can run work), that has less free memory than
 asked, or that runs a compute process owned by another user. A process whose
 owner cannot be read counts as another user's: refusing a free slice costs a
@@ -17,8 +24,9 @@ devices were found" on drivers where the same UUID works for CUDA. pynvml
 (``nvidia-ml-py``) is imported only when a check runs, so CPU-only installs
 never need it.
 
-    python -m deepmarkpy.utils.gpu_slice                    # vet $DEEPMARK_GPU_DEVICE
-    python -m deepmarkpy.utils.gpu_slice --min-free-gib 20
+    python -m deepmarkpy.utils.gpu_slice --gpu 0            # a whole GPU
+    python -m deepmarkpy.utils.gpu_slice --gpu MIG-...      # one MIG slice
+    python -m deepmarkpy.utils.gpu_slice                    # $DEEPMARK_GPU_DEVICE
 """
 
 import argparse
@@ -106,21 +114,33 @@ def _find_handle(nvml, uuid: str):
     return None, False
 
 
-def slice_status(uuid: str, nvml=None) -> SliceStatus:
-    """Read the name, memory and compute processes of the device ``uuid``."""
+def slice_status(device: str, nvml=None) -> SliceStatus:
+    """Read the name, memory and compute processes of ``device`` (an index or a UUID)."""
     nvml = nvml or _load_nvml()
     nvml.nvmlInit()
     try:
-        handle, parent_in_mig_mode = _find_handle(nvml, uuid)
-        if handle is None:
-            raise SliceUnavailable(
-                f"{uuid} is not on this host; `nvidia-smi -L` lists the devices "
-                "that are. The GPU may have been repartitioned."
-            )
+        if device.isdigit():
+            index = int(device)
+            if index >= nvml.nvmlDeviceGetCount():
+                raise SliceUnavailable(f"GPU {index} does not exist; `nvidia-smi -L` lists the GPUs")
+            handle = nvml.nvmlDeviceGetHandleByIndex(index)
+            uuid = _text(nvml.nvmlDeviceGetUUID(handle))
+            try:
+                parent_in_mig_mode = nvml.nvmlDeviceGetMigMode(handle)[0] == 1
+            except nvml.NVMLError:
+                parent_in_mig_mode = False
+        else:
+            uuid = device
+            handle, parent_in_mig_mode = _find_handle(nvml, uuid)
+            if handle is None:
+                raise SliceUnavailable(
+                    f"{uuid} is not on this host; `nvidia-smi -L` lists the devices "
+                    "that are. The GPU may have been repartitioned."
+                )
         if parent_in_mig_mode:
             raise SliceUnavailable(
-                f"{uuid} is a whole GPU in MIG mode; name one of its MIG "
-                "devices instead (`nvidia-smi -L`)."
+                f"{device} is a whole GPU in MIG mode; name one of its MIG "
+                "devices by UUID instead (`nvidia-smi -L`)."
             )
         memory = nvml.nvmlDeviceGetMemoryInfo(handle)
         processes = tuple(
@@ -139,28 +159,29 @@ def slice_status(uuid: str, nvml=None) -> SliceStatus:
 
 
 def check_slice(
-    uuid: Optional[str] = None,
+    device: Optional[str] = None,
     min_free_mib: int = 0,
     allow_foreign: bool = False,
     nvml=None,
 ) -> SliceStatus:
-    """Return the status of ``uuid`` (default ``$DEEPMARK_GPU_DEVICE``) if it is usable.
+    """Return the status of ``device`` (default ``$DEEPMARK_GPU_DEVICE``) if it is usable.
 
-    Raises :class:`SliceUnavailable` naming every reason it is not.
+    ``device`` is a GPU index or a GPU/MIG UUID. Raises :class:`SliceUnavailable`
+    naming every reason it is not usable.
     """
-    uuid = (uuid or os.environ.get(GPU_DEVICE_ENV, "")).strip()
-    if not uuid:
+    device = (device or os.environ.get(GPU_DEVICE_ENV, "")).strip()
+    if not device:
         raise SliceUnavailable(
-            f"{GPU_DEVICE_ENV} is not set; set it to the MIG or GPU UUID this "
-            "run may use (`nvidia-smi -L`)."
+            f"no GPU named: pass --gpu (an index such as 0, or a GPU-/MIG- UUID "
+            f"from `nvidia-smi -L`) or set {GPU_DEVICE_ENV}."
         )
-    if not uuid.startswith(("MIG-", "GPU-")):
+    if not (device.isdigit() or device.startswith(("MIG-", "GPU-"))):
         raise SliceUnavailable(
-            f"{GPU_DEVICE_ENV}={uuid!r} is not a device UUID. Indices move "
-            "when a GPU is repartitioned, so only MIG-/GPU- UUIDs are accepted."
+            f"{device!r} is not a GPU index or a GPU-/MIG- UUID (`nvidia-smi -L`)."
         )
 
-    status = slice_status(uuid, nvml)
+    status = slice_status(device, nvml)
+    uuid = status.uuid
 
     problems = []
     foreign = status.foreign_processes()
@@ -183,8 +204,8 @@ def main(argv=None) -> int:
     from deepmarkpy.utils.utils import load_env_file
 
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--device", default=None,
-                        help=f"UUID to vet (default: ${GPU_DEVICE_ENV}, read from .env too)")
+    parser.add_argument("--gpu", default=None,
+                        help=f"GPU index or GPU-/MIG- UUID (default: ${GPU_DEVICE_ENV}, read from .env too)")
     parser.add_argument("--min-free-gib", type=float, default=0.0)
     parser.add_argument("--allow-foreign", action="store_true",
                         help="report other users' processes without refusing")
@@ -194,7 +215,7 @@ def main(argv=None) -> int:
     load_env_file()
     try:
         status = check_slice(
-            args.device,
+            args.gpu,
             min_free_mib=int(args.min_free_gib * 1024),
             allow_foreign=args.allow_foreign,
         )

@@ -1,7 +1,8 @@
-"""A GPU run must use only the slice it names, and only while nobody else is on it.
+"""A GPU run must use only the device it names, and only while nobody else is on it.
 
-No GPU is needed: NVML is replaced by a fake device tree shaped like the
-shared host's (one GPU in MIG mode, several MIG devices).
+The device is a whole GPU (by index or UUID) or one MIG slice (by UUID). No GPU
+is needed: NVML is replaced by a fake device tree, a single GPU that is either
+whole or in MIG mode with several MIG devices.
 """
 
 import os
@@ -87,10 +88,21 @@ class TestTheSliceMustBeNamed:
         with pytest.raises(SliceUnavailable, match=GPU_DEVICE_ENV):
             check_slice(nvml=FakeNVML())
 
-    @pytest.mark.parametrize("name", ["2", "0", "all", "cuda:0"])
-    def test_an_index_is_refused(self, name):
-        with pytest.raises(SliceUnavailable, match="not a device UUID"):
+    @pytest.mark.parametrize("name", ["all", "cuda:0", "gpu0"])
+    def test_anything_but_an_index_or_uuid_is_refused(self, name):
+        with pytest.raises(SliceUnavailable, match="not a GPU index"):
             check_slice(name, nvml=FakeNVML())
+
+    def test_a_whole_gpu_by_index_resolves_to_its_uuid(self, owners):
+        assert check_slice("0", nvml=FakeNVML(mig_mode=False)).uuid == PARENT
+
+    def test_an_index_of_a_gpu_in_mig_mode_asks_for_a_slice(self, owners):
+        with pytest.raises(SliceUnavailable, match="MIG mode"):
+            check_slice("0", nvml=FakeNVML())
+
+    def test_an_index_past_the_last_gpu_is_refused(self, owners):
+        with pytest.raises(SliceUnavailable, match="does not exist"):
+            check_slice("3", nvml=FakeNVML(mig_mode=False))
 
     def test_the_environment_names_it(self, monkeypatch, owners):
         monkeypatch.setenv(GPU_DEVICE_ENV, OURS)

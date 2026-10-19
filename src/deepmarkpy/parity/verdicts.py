@@ -7,7 +7,8 @@ A verdict is one JSON file under ``parity/verdicts/``, named
 - the corpus hash and the git revision.
 
 It is keyed by the **candidate image's ID** and its **engine configuration**:
-the engine class that ran and the numerics settings. A rebuilt image, or the
+the engine class that ran, the numerics settings, and the GPU model it ran on
+(MIG profile included). A rebuilt image, or the
 same image run with another engine or precision, has no verdict until it is
 measured. Nothing carries over silently. BigVGAN showed why: its float32
 engine fails on the GPU and its float64 engine passes, in one image.
@@ -29,8 +30,13 @@ VERDICT_DIR = Path(
 
 
 def engine_config(env: Dict) -> str:
-    """Fingerprint of what ran inside the image: engine class and numerics settings."""
-    key = {"engine": env.get("engine"), "numerics": env.get("numerics")}
+    """Fingerprint of what ran: engine class, numerics settings and GPU model.
+
+    The GPU model is part of it because numerics differ across architectures
+    and libraries pick kernels by device. A verdict measured on one GPU (or
+    MIG profile) says nothing about another; that one runs the gate itself.
+    """
+    key = {"engine": env.get("engine"), "numerics": env.get("numerics"), "device": env.get("device_name")}
     return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:8]
 
 

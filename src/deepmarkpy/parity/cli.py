@@ -12,8 +12,10 @@ Configuration:
 - Images come from build/images.json, written by scripts/build_images.py.
 - Gates come from parity/gates.json.
 - Runs and the corpus live under $DEEPMARK_PARITY_ROOT (default build/parity).
-- The container engine is $CONTAINER_ENGINE (default docker).
-- GPU runs use only $DEEPMARK_GPU_DEVICE, vetted by deepmarkpy.utils.gpu_slice first.
+- The container engine is $CONTAINER_ENGINE (default docker); podman also works.
+- GPU runs use the device given by --gpu: an index such as 0 for a whole GPU,
+  or a GPU-/MIG- UUID. Without --gpu, $DEEPMARK_GPU_DEVICE is used. The device
+  is vetted by deepmarkpy.utils.gpu_slice first.
 
 Two checks protect the result:
 - A GPU run that allocated no CUDA memory is an error. It ran on the CPU,
@@ -78,6 +80,17 @@ def _run_dir(service, op, label, inputs) -> Path:
     return parity_root() / "runs" / service / op / label / inputs
 
 
+def _gpu_flags(engine: str, uuid: str) -> List[str]:
+    """Expose exactly one GPU (or MIG slice) to a container.
+
+    Docker uses the NVIDIA runtime's --gpus. Podman has no --gpus and takes
+    the CDI device name that nvidia-ctk generates for every GPU and MIG UUID.
+    """
+    if os.path.basename(engine) == "podman":
+        return ["--device", f"nvidia.com/gpu={uuid}"]
+    return ["--gpus", f"device={uuid}"]
+
+
 def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mounts=(), env=None, mount_cache=True,
                script="/parity/runner.py"):
     engine = os.environ.get("CONTAINER_ENGINE", "docker")
@@ -86,7 +99,7 @@ def _container(image_tag, runner_args, *, gpu_uuid=None, cpu_threads=8, extra_mo
     (root / "cache" / "home").mkdir(parents=True, exist_ok=True)
     cmd = [engine, "run", "--rm", "--entrypoint", "python", "--cpus", str(cpu_threads)]
     if gpu_uuid:
-        cmd += ["--device", f"nvidia.com/gpu={gpu_uuid}"]
+        cmd += _gpu_flags(engine, gpu_uuid)
     else:
         cmd += ["-e", "CUDA_VISIBLE_DEVICES="]
     threads = {k: str(cpu_threads) for k in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")}
@@ -163,7 +176,7 @@ def cmd_run(a):
 
     slice_info = None
     if a.variant == "gpu":
-        status = check_slice(min_free_mib=int(a.min_free_gib * 1024))
+        status = check_slice(a.gpu, min_free_mib=int(a.min_free_gib * 1024))
         slice_info = {"uuid": status.uuid, "name": status.name, "used_mib_before": status.used_mib}
 
     extra_mounts = []
@@ -226,7 +239,7 @@ def cmd_probe(a):
     if "probe" not in gate:
         raise ParityError(f"{a.service} has no codec probe in parity/gates.json")
     images = load_images()[a.service]
-    status = check_slice(min_free_mib=int(a.min_free_gib * 1024))
+    status = check_slice(a.gpu, min_free_mib=int(a.min_free_gib * 1024))
     stage = gate.get("stage", "/app")
     common = ["--codec", gate["probe"], "--stage", stage, "--cwd", gate.get("cwd", stage),
               "--sampling-rate", str(a.sr), "--params", json.dumps(spec.get("params", {})), "--seed", str(a.seed)]
@@ -410,6 +423,9 @@ def main(argv=None) -> int:
 
     parser = argparse.ArgumentParser(prog="deepmark-parity", description=__doc__.split("\n\n")[0])
     parser.add_argument("--sr", type=int, default=16000, help="corpus sampling rate")
+    parser.add_argument("--gpu", default=None,
+                        help="GPU for GPU runs: an index (0) for a whole GPU, or a GPU-/MIG- UUID "
+                             "from `nvidia-smi -L` (default: $DEEPMARK_GPU_DEVICE)")
     parser.add_argument("--cpu-threads", type=int, default=8,
                         help="CPU threads per container (CPU torch results depend on it; recorded)")
     sub = parser.add_subparsers(dest="command", required=True)

@@ -1,18 +1,18 @@
 {
  "candidate": {
-  "engine_config": "752ed834",
-  "engine_override": "scripts/gpu_study/gpu_engines.py:SpeechEnhancement2EngineGPU",
+  "engine_config": "8c74662e",
+  "engine_override": "scripts/gpu_study/gpu_engines.py:AudioSealEngineGPU",
   "env": {
    "cuda_available": true,
-   "cuda_build": "13.0",
-   "cuda_max_allocated_mib": 4496.8,
-   "cudnn": 92000,
+   "cuda_build": "12.6",
+   "cuda_max_allocated_mib": 2221.7,
+   "cudnn": 90501,
    "device_name": "NVIDIA H200 NVL MIG 2g.35gb",
    "device_requested": "cuda",
-   "engine": "engine_override.SpeechEnhancement2EngineGPU",
-   "engine_override": "/override/gpu_engines.py:SpeechEnhancement2EngineGPU",
-   "image_id": "fdc96a927bbac7914f9fe2209abeab8ce920a4140f15468b79ab61b0a31a5ca4",
-   "load_s": 0.0,
+   "engine": "engine_override.AudioSealEngineGPU",
+   "engine_override": "/override/gpu_engines.py:AudioSealEngineGPU",
+   "image_id": "abb59a0048162f9fcfc24d1a1655b183176cc2fc7ef258d4632bacb9d177a21a",
+   "load_s": 0.734,
    "n_cases": 31,
    "numerics": {
     "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
@@ -24,132 +24,42 @@
     "matmul_tf32": false,
     "strict": true
    },
-   "op": "apply",
-   "params": {
-    "model_name": "MossFormerGAN_SE_16K"
+   "op": "embed",
+   "params": {},
+   "placement": {
+    "cuda:0": 23323171
    },
-   "placement": {},
    "repeat": 2,
    "seed": 1,
-   "torch": "2.13.0+cu130"
+   "torch": "2.7.1+cu126"
   },
   "gpu_slice": {
    "name": "NVIDIA H200 NVL MIG 2g.35gb",
    "used_mib_before": 28,
    "uuid": "MIG-50bf93fa-b44c-530a-acf3-c79763c56eec"
   },
-  "image_id": "fdc96a927bbac7914f9fe2209abeab8ce920a4140f15468b79ab61b0a31a5ca4",
+  "image_id": "abb59a0048162f9fcfc24d1a1655b183176cc2fc7ef258d4632bacb9d177a21a",
   "label": "gpu",
-  "tag": "deepmark-speech_enhancement2:gpu",
+  "tag": "deepmark-audioseal:gpu",
   "variant": "gpu"
  },
  "cases": [
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/clipped",
+   "case": "clean/clipped",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 7.867813110351562e-05,
-    "stoi": 3.3988512004867744e-10,
-    "visqol": 4.7343671205624105e-08
+    "pesq": 1.1920928955078125e-05,
+    "stoi": 8.384037908371056e-11,
+    "visqol": 9.812053392010966e-10
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.4779414472177463e-07,
-    "finite": true,
-    "frame_len": 320,
-    "frames_over": [],
-    "identical": false,
-    "max_abs": 1.8477439880371094e-06,
-    "n_frames": 250,
-    "ref_len": 80000,
-    "ref_rms": 0.676956823283077,
-    "rel_l2": 5.137611923830785e-07,
-    "same_length": true,
-    "snr_db": 125.78477407653594
-   },
-   "signal_outside_flips": null
-  },
-  {
-   "bit_flips": 0,
-   "case": "wm_audioseal/l001_aura-2-helena-en_001",
-   "conf_delta": null,
-   "details": {},
-   "explained_frames": null,
-   "metric_deltas": {
-    "pesq": 2.5033950805664062e-05,
-    "stoi": 2.0716114379482065e-09,
-    "visqol": 1.1338021632667505e-07
-   },
-   "repeat_identical": true,
-   "signal": {
-    "below_floor": true,
-    "cand_len": 80000,
-    "err_rms": 3.543634448790315e-08,
-    "finite": true,
-    "frame_len": 320,
-    "frames_over": [],
-    "identical": false,
-    "max_abs": 3.8743019104003906e-07,
-    "n_frames": 250,
-    "ref_len": 80000,
-    "ref_rms": 0.08999505453030132,
-    "rel_l2": 3.937587978900745e-07,
-    "same_length": true,
-    "snr_db": 128.09539459001888
-   },
-   "signal_outside_flips": null
-  },
-  {
-   "bit_flips": 0,
-   "case": "wm_audioseal/l003_aura-2-thalia-en_001",
-   "conf_delta": null,
-   "details": {},
-   "explained_frames": null,
-   "metric_deltas": {
-    "pesq": 9.059906005859375e-06,
-    "stoi": 6.391712714659548e-10,
-    "visqol": 7.69022099333938e-08
-   },
-   "repeat_identical": true,
-   "signal": {
-    "below_floor": true,
-    "cand_len": 80000,
-    "err_rms": 2.4916959490809335e-08,
-    "finite": true,
-    "frame_len": 320,
-    "frames_over": [],
-    "identical": false,
-    "max_abs": 2.682209014892578e-07,
-    "n_frames": 250,
-    "ref_len": 80000,
-    "ref_rms": 0.06018426486549478,
-    "rel_l2": 4.140111962237306e-07,
-    "same_length": true,
-    "snr_db": 127.65975827939673
-   },
-   "signal_outside_flips": null
-  },
-  {
-   "bit_flips": 0,
-   "case": "wm_audioseal/l004_aura-2-iris-en_006",
-   "conf_delta": null,
-   "details": {},
-   "explained_frames": null,
-   "metric_deltas": {
-    "pesq": 0.0,
-    "stoi": 6.418752085401991e-09,
-    "visqol": 3.066117102434873e-07
-   },
-   "repeat_identical": true,
-   "signal": {
-    "below_floor": true,
-    "cand_len": 80000,
-    "err_rms": 4.843751999702313e-08,
+    "err_rms": 2.8068439383739526e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
@@ -157,766 +67,856 @@
     "max_abs": 4.172325134277344e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.10252614906709634,
-    "rel_l2": 4.7244064502338904e-07,
+    "ref_rms": 0.6717844648007243,
+    "rel_l2": 4.178191198878891e-08,
     "same_length": true,
-    "snr_db": 126.51305492438645
+    "snr_db": 147.58023380162788
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l006_aura-2-atlas-en_004",
+   "case": "clean/l001_aura-2-helena-en_001",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 2.47955322265625e-05,
-    "stoi": 1.5625988281087189e-09,
-    "visqol": 7.380346112029201e-09
+    "pesq": 2.86102294921875e-06,
+    "stoi": 8.389922090401569e-11,
+    "visqol": 1.3054225789232987e-07
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.6772936096379995e-08,
+    "err_rms": 7.906860954938603e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.5762786865234375e-07,
+    "max_abs": 1.3597309589385986e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.09151894687221811,
-    "rel_l2": 4.0180680999010654e-07,
+    "ref_rms": 0.08891156973072575,
+    "rel_l2": 8.89294945403059e-08,
     "same_length": true,
-    "snr_db": 127.91965413841233
+    "snr_db": 141.01908352262404
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l008_aura-2-electra-en_004",
+   "case": "clean/l003_aura-2-thalia-en_001",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 7.62939453125e-06,
-    "stoi": 3.3760205742083826e-10,
-    "visqol": 1.283256274575706e-07
+    "pesq": 1.7642974853515625e-05,
+    "stoi": 3.565890915879777e-10,
+    "visqol": 5.797731805756712e-07
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.0426020098492214e-08,
+    "err_rms": 6.2171702622584445e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.2782554626464844e-07,
+    "max_abs": 8.940696716308594e-08,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.0743285740277022,
-    "rel_l2": 4.093448649660958e-07,
+    "ref_rms": 0.059082505722739084,
+    "rel_l2": 1.0522861524245818e-07,
     "same_length": true,
-    "snr_db": 127.75821306510133
+    "snr_db": 139.55732289337516
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l010_aura-2-asteria-en_004",
+   "case": "clean/l004_aura-2-iris-en_006",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 0.0,
-    "stoi": 1.7376998728835247e-09,
-    "visqol": 2.340300175873722e-08
+    "pesq": 9.5367431640625e-06,
+    "stoi": 4.3400827376416373e-10,
+    "visqol": 5.601974084612493e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 2.6545185128648204e-08,
+    "err_rms": 1.0315352180440428e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 2.5331974029541016e-07,
+    "max_abs": 3.9581209421157837e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.058105785706862416,
-    "rel_l2": 4.568423747432979e-07,
+    "ref_rms": 0.10070146252080071,
+    "rel_l2": 1.0243497881979327e-07,
     "same_length": true,
-    "snr_db": 126.80467239193143
+    "snr_db": 139.79103436047626
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l012_aura-2-arcas-en_001",
+   "case": "clean/l006_aura-2-atlas-en_004",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 7.3909759521484375e-06,
-    "stoi": 7.845987415322497e-09,
-    "visqol": 1.5259327046379667e-07
+    "pesq": 3.814697265625e-06,
+    "stoi": 6.629587989692709e-10,
+    "visqol": 5.543830674525907e-07
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 1.2482782235731951e-08,
+    "err_rms": 1.102333983763297e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 2.086162567138672e-07,
+    "max_abs": 2.4959444999694824e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.030388383242969705,
-    "rel_l2": 4.107748061463526e-07,
+    "ref_rms": 0.08978788521997198,
+    "rel_l2": 1.2277090401034405e-07,
     "same_length": true,
-    "snr_db": 127.7279240126513
+    "snr_db": 138.21809092529622
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l013_aura-2-athena-en_007",
+   "case": "clean/l008_aura-2-electra-en_004",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 1.9311904907226562e-05,
-    "stoi": 1.0603983247037263e-09,
-    "visqol": 7.92082981426745e-08
+    "pesq": 7.152557373046875e-06,
+    "stoi": 3.1611767981054584e-08,
+    "visqol": 6.670188845703251e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.743372575216714e-08,
+    "err_rms": 2.418567841408302e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.129243850708008e-07,
+    "max_abs": 1.3289973139762878e-06,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.09481015954714801,
-    "rel_l2": 3.9482821177567764e-07,
+    "ref_rms": 0.07330877019663636,
+    "rel_l2": 3.2991521136161057e-07,
     "same_length": true,
-    "snr_db": 128.07183646246136
+    "snr_db": 129.63195320057469
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l015_aura-2-hermes-en_004",
+   "case": "clean/l010_aura-2-asteria-en_004",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 8.58306884765625e-05,
-    "stoi": 9.963674330037975e-11,
-    "visqol": 2.1025786445250105e-08
+    "pesq": 9.5367431640625e-07,
+    "stoi": 7.739258123251602e-10,
+    "visqol": 2.449348190936007e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 4.0487541594565865e-08,
+    "err_rms": 3.829683359234401e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 5.662441253662109e-07,
+    "max_abs": 1.4603137969970703e-06,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.09649311573055865,
-    "rel_l2": 4.1958994989467176e-07,
+    "ref_rms": 0.05767743262160257,
+    "rel_l2": 6.639829800260609e-07,
     "same_length": true,
-    "snr_db": 127.54349845330451
+    "snr_db": 123.55686105647999
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l017_aura-2-luna-en_002",
+   "case": "clean/l012_aura-2-arcas-en_001",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 2.7418136596679688e-05,
-    "stoi": 2.2829160783999214e-10,
-    "visqol": 4.9085763897949164e-08
+    "pesq": 1.9073486328125e-06,
+    "stoi": 3.89484455798339e-09,
+    "visqol": 2.163727739201704e-07
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 2.0671025157707597e-08,
+    "err_rms": 1.8632760061672312e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 2.2351741790771484e-07,
+    "max_abs": 8.288770914077759e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.050381449833452996,
-    "rel_l2": 4.102903990663277e-07,
+    "ref_rms": 0.02980126389902004,
+    "rel_l2": 6.252338868850799e-07,
     "same_length": true,
-    "snr_db": 127.73817291102978
+    "snr_db": 124.07914983607769
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l018_aura-2-phoebe-en_007",
+   "case": "clean/l013_aura-2-athena-en_007",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 1.9550323486328125e-05,
-    "stoi": 1.0543739215052028e-09,
-    "visqol": 1.3880550486788934e-07
+    "pesq": 6.67572021484375e-06,
+    "stoi": 2.687006173118789e-11,
+    "visqol": 1.5357483018618723e-07
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.443021280380799e-08,
+    "err_rms": 7.787006518694647e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.5762786865234375e-07,
+    "max_abs": 8.940696716308594e-08,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.07576033236502935,
-    "rel_l2": 4.5446227239231103e-07,
+    "ref_rms": 0.09303956207039504,
+    "rel_l2": 8.369564887679596e-08,
     "same_length": true,
-    "snr_db": 126.85004328610846
+    "snr_db": 141.5459423856345
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/l020_aura-2-aries-en_006",
+   "case": "clean/l015_aura-2-hermes-en_004",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 9.679794311523438e-05,
-    "stoi": 6.101300242811192e-09,
-    "visqol": 4.1985540377709185e-08
+    "pesq": 1.0967254638671875e-05,
+    "stoi": 3.5347014204489824e-10,
+    "visqol": 2.921538566624804e-10
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.121143302208137e-08,
+    "err_rms": 7.889335548639126e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.5762786865234375e-07,
+    "max_abs": 6.705522537231445e-08,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.07637615563161673,
-    "rel_l2": 4.086541508140672e-07,
+    "ref_rms": 0.09514940738343783,
+    "rel_l2": 8.291523579170902e-08,
     "same_length": true,
-    "snr_db": 127.77288170945447
+    "snr_db": 141.6273131978475
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/len_16000",
+   "case": "clean/l017_aura-2-luna-en_002",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 6.9141387939453125e-06,
-    "stoi": 2.446136515565911e-09,
-    "visqol": 1.0983587284130181e-07
+    "pesq": 1.430511474609375e-06,
+    "stoi": 3.5628733296988457e-10,
+    "visqol": 5.270242438015771e-07
+   },
+   "repeat_identical": true,
+   "signal": {
+    "below_floor": true,
+    "cand_len": 80000,
+    "err_rms": 5.8377728083975056e-09,
+    "finite": true,
+    "frame_len": 320,
+    "frames_over": [],
+    "identical": false,
+    "max_abs": 7.450580596923828e-08,
+    "n_frames": 250,
+    "ref_len": 80000,
+    "ref_rms": 0.04980224888659985,
+    "rel_l2": 1.1721906016112174e-07,
+    "same_length": true,
+    "snr_db": 138.62003530052718
+   },
+   "signal_outside_flips": null
+  },
+  {
+   "bit_flips": 0,
+   "case": "clean/l018_aura-2-phoebe-en_007",
+   "conf_delta": null,
+   "details": {},
+   "explained_frames": null,
+   "metric_deltas": {
+    "pesq": 1.9073486328125e-06,
+    "stoi": 8.301859200088302e-11,
+    "visqol": 6.02257470561085e-08
+   },
+   "repeat_identical": true,
+   "signal": {
+    "below_floor": true,
+    "cand_len": 80000,
+    "err_rms": 6.791351990659749e-09,
+    "finite": true,
+    "frame_len": 320,
+    "frames_over": [],
+    "identical": false,
+    "max_abs": 1.4901161193847656e-07,
+    "n_frames": 250,
+    "ref_len": 80000,
+    "ref_rms": 0.0743525034292019,
+    "rel_l2": 9.133992370716128e-08,
+    "same_length": true,
+    "snr_db": 140.7867871095777
+   },
+   "signal_outside_flips": null
+  },
+  {
+   "bit_flips": 0,
+   "case": "clean/l020_aura-2-aries-en_006",
+   "conf_delta": null,
+   "details": {},
+   "explained_frames": null,
+   "metric_deltas": {
+    "pesq": 1.8596649169921875e-05,
+    "stoi": 1.9573669574057817e-08,
+    "visqol": 1.559652806903955e-07
+   },
+   "repeat_identical": true,
+   "signal": {
+    "below_floor": true,
+    "cand_len": 80000,
+    "err_rms": 1.689062409547296e-07,
+    "finite": true,
+    "frame_len": 320,
+    "frames_over": [],
+    "identical": false,
+    "max_abs": 9.03010368347168e-06,
+    "n_frames": 250,
+    "ref_len": 80000,
+    "ref_rms": 0.07492487440023905,
+    "rel_l2": 2.254341329322144e-06,
+    "same_length": true,
+    "snr_db": 112.93960653759724
+   },
+   "signal_outside_flips": null
+  },
+  {
+   "bit_flips": 0,
+   "case": "clean/len_16000",
+   "conf_delta": null,
+   "details": {},
+   "explained_frames": null,
+   "metric_deltas": {
+    "pesq": 2.384185791015625e-06,
+    "stoi": 1.0380762915929154e-10,
+    "visqol": 4.0220665287193924e-07
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 16000,
-    "err_rms": 3.72348366133565e-08,
+    "err_rms": 5.72907109883976e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 4.172325134277344e-07,
+    "max_abs": 2.9802322387695312e-08,
     "n_frames": 50,
     "ref_len": 16000,
-    "ref_rms": 0.08096351266263238,
-    "rel_l2": 4.598965063251478e-07,
+    "ref_rms": 0.07976348807850082,
+    "rel_l2": 7.182573426580067e-08,
     "same_length": true,
-    "snr_db": 126.74679779197099
+    "snr_db": 142.8743985114664
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/len_480000",
+   "case": "clean/len_480000",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 1.5497207641601562e-05,
-    "stoi": 2.5947949344740096e-09,
-    "visqol": 2.737588022938553e-08
+    "pesq": 2.384185791015625e-06,
+    "stoi": 4.341405013263966e-10,
+    "visqol": 4.293356035134366e-07
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 480000,
-    "err_rms": 4.197542372216735e-08,
+    "err_rms": 1.532664033489701e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 4.172325134277344e-07,
+    "max_abs": 9.145587682723999e-07,
     "n_frames": 1500,
     "ref_len": 480000,
-    "ref_rms": 0.09003622514926675,
-    "rel_l2": 4.6620594824559007e-07,
+    "ref_rms": 0.08891651678369068,
+    "rel_l2": 1.7237112843930328e-07,
     "same_length": true,
-    "snr_db": 126.62844379375386
+    "snr_db": 135.27070950451093
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/len_57143",
+   "case": "clean/len_57143",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 9.512901306152344e-05,
-    "stoi": 7.172075155992275e-10,
-    "visqol": 5.2047003151756144e-08
+    "pesq": 9.5367431640625e-06,
+    "stoi": 3.4714453533979395e-11,
+    "visqol": 1.9959085939547094e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 57143,
-    "err_rms": 4.0366338683572715e-08,
+    "err_rms": 6.563513450585917e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.2782554626464844e-07,
+    "max_abs": 1.6670674085617065e-07,
     "n_frames": 179,
     "ref_len": 57143,
-    "ref_rms": 0.09088408521657598,
-    "rel_l2": 4.441518951022072e-07,
+    "ref_rms": 0.08967457080338166,
+    "rel_l2": 7.319258282235798e-08,
     "same_length": true,
-    "snr_db": 127.04936961016713
+    "snr_db": 142.71065854345852
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/len_63999",
-   "conf_delta": null,
-   "details": {},
-   "explained_frames": null,
-   "metric_deltas": {
-    "pesq": 4.363059997558594e-05,
-    "stoi": 1.8625567754781969e-09,
-    "visqol": 1.9541995577299076e-07
-   },
-   "repeat_identical": true,
-   "signal": {
-    "below_floor": true,
-    "cand_len": 63999,
-    "err_rms": 3.8779681983942074e-08,
-    "finite": true,
-    "frame_len": 320,
-    "frames_over": [],
-    "identical": false,
-    "max_abs": 3.2782554626464844e-07,
-    "n_frames": 200,
-    "ref_len": 63999,
-    "ref_rms": 0.09405957146766916,
-    "rel_l2": 4.122885250149338e-07,
-    "same_length": true,
-    "snr_db": 127.6959750498882
-   },
-   "signal_outside_flips": null
-  },
-  {
-   "bit_flips": 0,
-   "case": "wm_audioseal/len_64000",
-   "conf_delta": null,
-   "details": {},
-   "explained_frames": null,
-   "metric_deltas": {
-    "pesq": 1.621246337890625e-05,
-    "stoi": 2.404062504623994e-10,
-    "visqol": 2.2603677329868788e-07
-   },
-   "repeat_identical": true,
-   "signal": {
-    "below_floor": true,
-    "cand_len": 64000,
-    "err_rms": 3.710321457672522e-08,
-    "finite": true,
-    "frame_len": 320,
-    "frames_over": [],
-    "identical": false,
-    "max_abs": 3.2782554626464844e-07,
-    "n_frames": 200,
-    "ref_len": 64000,
-    "ref_rms": 0.09410066464680007,
-    "rel_l2": 3.942928003323824e-07,
-    "same_length": true,
-    "snr_db": 128.08362305881272
-   },
-   "signal_outside_flips": null
-  },
-  {
-   "bit_flips": 0,
-   "case": "wm_audioseal/len_64001",
+   "case": "clean/len_63999",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
     "pesq": 7.62939453125e-06,
-    "stoi": 5.774063449592859e-10,
-    "visqol": 1.4061164677059423e-08
+    "stoi": 3.738174214618084e-10,
+    "visqol": 4.250102030312064e-07
+   },
+   "repeat_identical": true,
+   "signal": {
+    "below_floor": true,
+    "cand_len": 63999,
+    "err_rms": 7.318412424119593e-09,
+    "finite": true,
+    "frame_len": 320,
+    "frames_over": [],
+    "identical": false,
+    "max_abs": 2.300366759300232e-07,
+    "n_frames": 200,
+    "ref_len": 63999,
+    "ref_rms": 0.09309332727940402,
+    "rel_l2": 7.861371634246787e-08,
+    "same_length": true,
+    "snr_db": 142.09003345271324
+   },
+   "signal_outside_flips": null
+  },
+  {
+   "bit_flips": 0,
+   "case": "clean/len_64000",
+   "conf_delta": null,
+   "details": {},
+   "explained_frames": null,
+   "metric_deltas": {
+    "pesq": 7.62939453125e-06,
+    "stoi": 2.677091881508886e-10,
+    "visqol": 2.766746742821624e-08
+   },
+   "repeat_identical": true,
+   "signal": {
+    "below_floor": true,
+    "cand_len": 64000,
+    "err_rms": 5.6317182861905645e-09,
+    "finite": true,
+    "frame_len": 320,
+    "frames_over": [],
+    "identical": false,
+    "max_abs": 5.960464477539063e-08,
+    "n_frames": 200,
+    "ref_len": 64000,
+    "ref_rms": 0.09308753177409897,
+    "rel_l2": 6.049916867338785e-08,
+    "same_length": true,
+    "snr_db": 144.36501186002198
+   },
+   "signal_outside_flips": null
+  },
+  {
+   "bit_flips": 0,
+   "case": "clean/len_64001",
+   "conf_delta": null,
+   "details": {},
+   "explained_frames": null,
+   "metric_deltas": {
+    "pesq": 3.814697265625e-06,
+    "stoi": 3.0272871986980476e-09,
+    "visqol": 9.677247536643563e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 64001,
-    "err_rms": 3.7679995089234986e-08,
+    "err_rms": 4.042395341239962e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 2.682209014892578e-07,
+    "max_abs": 1.9511207938194275e-06,
     "n_frames": 201,
     "ref_len": 64001,
-    "ref_rms": 0.09425259575496485,
-    "rel_l2": 3.9977673598713756e-07,
+    "ref_rms": 0.09309937842194918,
+    "rel_l2": 4.3420218370511955e-07,
     "same_length": true,
-    "snr_db": 127.96364964339652
+    "snr_db": 127.24615993413595
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/m008_aura-2-phoebe-en_001",
+   "case": "clean/m008_aura-2-phoebe-en_001",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 1.71661376953125e-05,
-    "stoi": 2.5789035351664324e-09,
-    "visqol": 2.0562353242326026e-07
+    "pesq": 2.86102294921875e-06,
+    "stoi": 1.6986110296102197e-09,
+    "visqol": 7.654154732250618e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.5642651905600016e-08,
+    "err_rms": 7.4223946102831846e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.5762786865234375e-07,
+    "max_abs": 8.940696716308594e-08,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.08440382232814929,
-    "rel_l2": 4.222871775525376e-07,
+    "ref_rms": 0.0834088352140522,
+    "rel_l2": 8.89881100873197e-08,
     "same_length": true,
-    "snr_db": 127.48784210831083
+    "snr_db": 141.01336033191538
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/m015_aura-2-saturn-en_002",
+   "case": "clean/m015_aura-2-saturn-en_002",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 0.00020694732666015625,
-    "stoi": 3.355244160285764e-08,
-    "visqol": 1.8743406826615683e-08
+    "pesq": 5.245208740234375e-06,
+    "stoi": 7.377069510816625e-09,
+    "visqol": 1.3211879705821161e-06
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.975035332142463e-08,
+    "err_rms": 6.335585999644689e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 4.470348358154297e-07,
+    "max_abs": 5.960464477539063e-08,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.08313195141129434,
-    "rel_l2": 4.781597526173809e-07,
+    "ref_rms": 0.082507267109878,
+    "rel_l2": 7.678821783307103e-08,
     "same_length": true,
-    "snr_db": 126.40853963725252
+    "snr_db": 142.29410823547022
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/ml001_aura-2-atlas-en_003",
+   "case": "clean/ml001_aura-2-atlas-en_003",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 7.319450378417969e-05,
-    "stoi": 7.052509687355268e-10,
-    "visqol": 1.0463096700163987e-07
+    "pesq": 1.6689300537109375e-05,
+    "stoi": 2.9813895796593215e-10,
+    "visqol": 8.47599235243024e-09
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 4.017397583205152e-08,
+    "err_rms": 1.0308076826831802e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.688037395477295e-07,
+    "max_abs": 3.3527612686157227e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.09749739407014658,
-    "rel_l2": 4.120517908729693e-07,
+    "ref_rms": 0.09648989206545433,
+    "rel_l2": 1.0683063900454229e-07,
     "same_length": true,
-    "snr_db": 127.70096387949549
+    "snr_db": 139.42608347755524
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/ml005_aura-2-asteria-en_002",
+   "case": "clean/ml005_aura-2-asteria-en_002",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 2.1457672119140625e-06,
-    "stoi": 1.7227690385368533e-09,
-    "visqol": 9.42031794792797e-08
+    "pesq": 9.5367431640625e-07,
+    "stoi": 4.1076406720463865e-09,
+    "visqol": 1.5356022977641715e-06
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 2.013340819226419e-08,
+    "err_rms": 9.605580653046018e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 2.682209014892578e-07,
+    "max_abs": 3.6135315895080566e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.044885587692035156,
-    "rel_l2": 4.4854950614441476e-07,
+    "ref_rms": 0.044685454495759766,
+    "rel_l2": 2.1495989604307367e-07,
     "same_length": true,
-    "snr_db": 126.96379234297476
+    "snr_db": 133.35285113208673
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/ml009_aura-2-orion-en_002",
+   "case": "clean/ml009_aura-2-orion-en_002",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 3.5762786865234375e-06,
-    "stoi": 1.3641876517311857e-10,
-    "visqol": 1.1262442534132333e-07
+    "pesq": 3.0040740966796875e-05,
+    "stoi": 1.0191364419043225e-09,
+    "visqol": 8.002552140951025e-07
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 2.9488554670250683e-08,
+    "err_rms": 6.229878469590359e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.5762786865234375e-07,
+    "max_abs": 6.705522537231445e-08,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.06064082865976157,
-    "rel_l2": 4.862821851545363e-07,
+    "ref_rms": 0.059991114040564945,
+    "rel_l2": 1.0384668745070851e-07,
     "same_length": true,
-    "snr_db": 126.26223280854592
+    "snr_db": 139.67214704465238
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/ml012_aura-2-luna-en_003",
+   "case": "clean/ml012_aura-2-luna-en_003",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 1.8835067749023438e-05,
-    "stoi": 1.4514516255559329e-09,
-    "visqol": 7.732982432173685e-08
+    "pesq": 1.430511474609375e-06,
+    "stoi": 5.707508909935655e-10,
+    "visqol": 1.0808164221387528e-06
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 2.332082751946623e-08,
+    "err_rms": 1.3279634607311426e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 2.980232238769531e-07,
+    "max_abs": 5.438923835754395e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.05758378800364227,
-    "rel_l2": 4.049894654028517e-07,
+    "ref_rms": 0.05679933654587702,
+    "rel_l2": 2.3379911482919203e-07,
     "same_length": true,
-    "snr_db": 127.85112547036904
+    "snr_db": 132.6231427484729
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/ml016_aura-2-zeus-en_003",
+   "case": "clean/ml016_aura-2-zeus-en_003",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 1.3113021850585938e-05,
-    "stoi": 1.2323441489492382e-08,
-    "visqol": 2.185093572748542e-08
+    "pesq": 1.9073486328125e-06,
+    "stoi": 8.172458265676141e-10,
+    "visqol": 1.1011174194663909e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 9.05839772546948e-09,
+    "err_rms": 6.467026311125294e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 1.1920928955078125e-07,
+    "max_abs": 1.1362135410308838e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.022024574424533785,
-    "rel_l2": 4.112859368296842e-07,
+    "ref_rms": 0.021733397038310367,
+    "rel_l2": 2.975616881118767e-07,
     "same_length": true,
-    "snr_db": 127.71712280284754
+    "snr_db": 130.5284597227848
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/ml019_aura-2-apollo-en_003",
+   "case": "clean/ml019_aura-2-apollo-en_003",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 2.193450927734375e-05,
-    "stoi": 1.836575336255919e-11,
-    "visqol": 3.899952982777677e-08
+    "pesq": 2.384185791015625e-06,
+    "stoi": 6.323842560718163e-10,
+    "visqol": 3.0619577096047124e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 3.345745653905919e-08,
+    "err_rms": 1.0329421886051622e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.725290298461914e-07,
+    "max_abs": 2.644956111907959e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.06664565544961959,
-    "rel_l2": 5.020200688753248e-07,
+    "ref_rms": 0.06560998434443095,
+    "rel_l2": 1.574367375524057e-07,
     "same_length": true,
-    "snr_db": 125.98557842094039
+    "snr_db": 136.0578783677958
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/noise",
+   "case": "clean/noise",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 5.9604644775390625e-06,
-    "stoi": 5.712455064532662e-09,
-    "visqol": 5.364429567222828e-09
-   },
-   "repeat_identical": true,
-   "signal": {
-    "below_floor": false,
-    "cand_len": 80000,
-    "err_rms": 2.1335290133454273e-06,
-    "finite": true,
-    "frame_len": 320,
-    "frames_over": [],
-    "identical": false,
-    "max_abs": 2.288818359375e-05,
-    "n_frames": 250,
-    "ref_len": 80000,
-    "ref_rms": 3.466814006738419,
-    "rel_l2": 6.154149052122507e-07,
-    "same_length": true,
-    "snr_db": 124.21663978890669
-   },
-   "signal_outside_flips": null
-  },
-  {
-   "bit_flips": 0,
-   "case": "wm_audioseal/quiet",
-   "conf_delta": null,
-   "details": {},
-   "explained_frames": null,
-   "metric_deltas": {
-    "pesq": 1.1920928955078125e-07,
-    "stoi": 2.203214222173955e-09,
-    "visqol": 1.04749230178669e-07
+    "pesq": 0.0,
+    "stoi": 1.5884278337097157e-09,
+    "visqol": 1.939664784345041e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 6.794615775590081e-08,
+    "err_rms": 4.457442009911766e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 4.936009645462036e-07,
+    "max_abs": 1.6689300537109375e-06,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.11126219055623261,
-    "rel_l2": 6.106850621600911e-07,
+    "ref_rms": 0.2994302477578086,
+    "rel_l2": 1.4886411921607624e-07,
     "same_length": true,
-    "snr_db": 124.28365406121867
+    "snr_db": 136.5441993564785
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/silence",
+   "case": "clean/quiet",
+   "conf_delta": null,
+   "details": {},
+   "explained_frames": null,
+   "metric_deltas": {
+    "pesq": 1.3113021850585938e-06,
+    "stoi": 2.4678964616331456e-07,
+    "visqol": 9.424345037700732e-08
+   },
+   "repeat_identical": true,
+   "signal": {
+    "below_floor": true,
+    "cand_len": 80000,
+    "err_rms": 5.046569961280932e-09,
+    "finite": true,
+    "frame_len": 320,
+    "frames_over": [],
+    "identical": false,
+    "max_abs": 6.05359673500061e-08,
+    "n_frames": 250,
+    "ref_len": 80000,
+    "ref_rms": 0.00028553452649615114,
+    "rel_l2": 1.767411466209834e-05,
+    "same_length": true,
+    "snr_db": 95.05324663633027
+   },
+   "signal_outside_flips": null
+  },
+  {
+   "bit_flips": 0,
+   "case": "clean/silence",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
@@ -929,60 +929,60 @@
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 6.735741904755517e-08,
+    "err_rms": 4.784665761599963e-09,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 3.129243850708008e-07,
+    "max_abs": 2.1420419216156006e-08,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.1184376888412947,
-    "rel_l2": 5.687160878140186e-07,
+    "ref_rms": 0.00021347539821406922,
+    "rel_l2": 2.2413195157982504e-05,
     "same_length": true,
-    "snr_db": 124.90208972544264
+    "snr_db": 92.9899245466151
    },
    "signal_outside_flips": null
   },
   {
    "bit_flips": 0,
-   "case": "wm_audioseal/sweep",
+   "case": "clean/sweep",
    "conf_delta": null,
    "details": {},
    "explained_frames": null,
    "metric_deltas": {
-    "pesq": 1.1920928955078125e-07,
-    "stoi": 6.525837958903935e-08,
-    "visqol": 1.221618801672264e-07
+    "pesq": 3.528594970703125e-05,
+    "stoi": 6.9113612553017845e-06,
+    "visqol": 2.8934316276263417e-08
    },
    "repeat_identical": true,
    "signal": {
     "below_floor": true,
     "cand_len": 80000,
-    "err_rms": 1.8746265187114405e-07,
+    "err_rms": 1.747224134745079e-08,
     "finite": true,
     "frame_len": 320,
     "frames_over": [],
     "identical": false,
-    "max_abs": 2.9802322387695312e-06,
+    "max_abs": 4.470348358154297e-07,
     "n_frames": 250,
     "ref_len": 80000,
-    "ref_rms": 0.206654678127904,
-    "rel_l2": 9.071299695190955e-07,
+    "ref_rms": 0.35354675710475597,
+    "rel_l2": 4.941988858993766e-08,
     "same_length": true,
-    "snr_db": 120.84660969427397
+    "snr_db": 146.12196475975117
    },
    "signal_outside_flips": null
   }
  ],
  "corpus": {
   "inputs": [
-   "wm_audioseal"
+   "clean"
   ],
   "sampling_rate": 16000,
   "sha256": "725e88660fd4e307277f1768fe20385a4b1371313b99f0e014d9a6fdf7bae88f"
  },
- "created_utc": "2026-10-19T13:51:33+00:00",
+ "created_utc": "2026-10-19T14:39:25+00:00",
  "evidence": [
   "signal",
   "repeat",
@@ -990,8 +990,8 @@
   "metrics"
  ],
  "failures": [],
- "git_rev": "cb09102b8a4111e26ecb8cfcab8b8195373b4f83-dirty",
- "op": "apply",
+ "git_rev": "6cfd649d22a7546393109387e46d91abebb498a5-dirty",
+ "op": "embed",
  "passed": true,
  "reference": {
   "cpu_threads": 8,
@@ -1002,10 +1002,10 @@
    "cudnn": null,
    "device_name": null,
    "device_requested": "cpu",
-   "engine": "plugin_inference.SpeechEnhancement2Engine",
+   "engine": "plugin_inference.AudioSealEngine",
    "engine_override": null,
-   "image_id": "4b1bb47be2c084cf7e41ad661d7eebebbe2147344a73af40deae359f328e4825",
-   "load_s": 0.0,
+   "image_id": "6c890a51fc5f6438580ffe6eaeafd2c5d43eec6440a0a0fbb95379c68650c297",
+   "load_s": 3.916,
    "n_cases": 31,
    "numerics": {
     "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
@@ -1016,30 +1016,30 @@
     "matmul_tf32": false,
     "strict": true
    },
-   "op": "apply",
-   "params": {
-    "model_name": "MossFormerGAN_SE_16K"
+   "op": "embed",
+   "params": {},
+   "placement": {
+    "cpu": 23323171
    },
-   "placement": {},
    "repeat": 2,
    "seed": 1,
-   "torch": "2.13.0+cpu"
+   "torch": "2.7.1+cpu"
   },
-  "image_id": "4b1bb47be2c084cf7e41ad661d7eebebbe2147344a73af40deae359f328e4825",
+  "image_id": "6c890a51fc5f6438580ffe6eaeafd2c5d43eec6440a0a0fbb95379c68650c297",
   "label": "cpu",
-  "tag": "deepmark-speech_enhancement2:cpu",
+  "tag": "deepmark-audioseal:cpu",
   "variant": "cpu"
  },
- "service": "speech_enhancement2",
+ "service": "audioseal",
  "summary": {
   "failures": [],
   "flip_frames": 0,
-  "max_abs": 2.288818359375e-05,
+  "max_abs": 9.03010368347168e-06,
   "n_cases": 31,
   "passed": true,
-  "rel_l2_median": 4.222871775525376e-07,
+  "rel_l2_median": 1.0683063900454229e-07,
   "rel_l2_median_judged": 0.0,
-  "rel_l2_worst": 9.071299695190955e-07,
+  "rel_l2_worst": 2.2413195157982504e-05,
   "tier": "NUMERIC"
  },
  "tier": "NUMERIC"

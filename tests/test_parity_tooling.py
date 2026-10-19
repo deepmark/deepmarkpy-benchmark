@@ -44,7 +44,13 @@ class TestContainerFlags:
     def _flags(self, cmd):
         return " ".join(cmd)
 
-    def test_a_gpu_run_gets_exactly_our_slice(self, root):
+    def test_docker_gets_the_gpu_through_the_nvidia_runtime(self, root, monkeypatch):
+        monkeypatch.setenv("CONTAINER_ENGINE", "docker")
+        flat = self._flags(cli._container("img:gpu", [], gpu_uuid="GPU-69e9f719"))
+        assert "--gpus device=GPU-69e9f719" in flat and "nvidia.com/gpu" not in flat
+
+    def test_a_gpu_run_gets_exactly_our_slice(self, root, monkeypatch):
+        monkeypatch.setenv("CONTAINER_ENGINE", "podman")
         cmd = cli._container("img:gpu", ["--op", "apply"], gpu_uuid=UUID,
                              env={"NVIDIA_TF32_OVERRIDE": "0"})
         flat = self._flags(cmd)
@@ -108,8 +114,16 @@ class TestPerCaseRandomness:
 
 
 class TestVerdicts:
-    F32 = {"engine": "plugin_inference.NeuralVocoderEngine", "numerics": {"strict": True}}
-    F64 = {"engine": "engine_override.NeuralVocoderEngineF64", "numerics": {"strict": True}}
+    F32 = {"engine": "plugin_inference.NeuralVocoderEngine", "numerics": {"strict": True},
+           "device_name": "NVIDIA H200 NVL MIG 2g.35gb"}
+    F64 = {"engine": "engine_override.NeuralVocoderEngineF64", "numerics": {"strict": True},
+           "device_name": "NVIDIA H200 NVL MIG 2g.35gb"}
+
+    def test_a_pass_on_one_gpu_does_not_vouch_for_another(self, tmp_path):
+        write_verdict(self._record("sha256:ffffffffffff", env=self.F64), tmp_path)
+        elsewhere = {**self.F64, "device_name": "NVIDIA L4"}
+        assert passing_verdict("encodec", "apply", "sha256:ffffffffffff", engine_config(self.F64), tmp_path)
+        assert passing_verdict("encodec", "apply", "sha256:ffffffffffff", engine_config(elsewhere), tmp_path) is None
 
     def _record(self, image_id, passed=True, env=None):
         return {"service": "encodec", "op": "apply", "tier": "QUANTIZED", "passed": passed,
