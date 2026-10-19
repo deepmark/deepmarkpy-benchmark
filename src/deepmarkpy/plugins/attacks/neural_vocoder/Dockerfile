@@ -14,6 +14,12 @@ RUN pip install --no-cache-dir -r BigVGAN/requirements.txt -c constraints.builde
 
 FROM ml-services-base:latest
 
+# ENV does not cross stages: without these, EXPOSE below expands to nothing
+# (buildah, and so Podman, refuses to build) and uvicorn gets an empty --host.
+ENV APP_PORT=10004
+ARG HOST="0.0.0.0"
+ENV HOST=${HOST}
+
 # Copy BigVGAN from builder
 COPY --from=builder /app/BigVGAN /app/BigVGAN
 
