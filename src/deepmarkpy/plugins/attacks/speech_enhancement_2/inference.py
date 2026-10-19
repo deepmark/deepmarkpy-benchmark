@@ -31,6 +31,22 @@ SPEECH_ENHANCEMENT_MODELS = frozenset({
 })
 
 
+def _pin_clearvoice_device(device: str) -> None:
+    """Make ClearVoice run on the service's device, and only there.
+
+    ClearVoice picks its own device. When CUDA is visible it asks
+    get_free_gpu(), which parses nvidia-smi: an index means that GPU, None
+    means the CPU. Under MIG that query prints "[Insufficient Permissions]",
+    the parse fails, and SE2 silently ran on the CPU (16.4 s instead of
+    1.3 s per call). A CPU service in an image that can see a GPU would
+    take the GPU anyway. The container exposes at most one GPU, so index 0
+    is exact. Without CUDA visible, ClearVoice never asks.
+    """
+    from clearvoice.networks import SpeechModel
+
+    SpeechModel.get_free_gpu = (lambda self: 0) if device == "cuda" else (lambda self: None)
+
+
 class SpeechEnhancement2Engine(BaseAttackEngine):
     """ClearVoice speech-enhancement attack.
 
@@ -39,8 +55,10 @@ class SpeechEnhancement2Engine(BaseAttackEngine):
     """
 
     def __init__(self, config: dict, device: str | None = None):
-        """Store config; no weights load here by design (per-request model)."""
+        """Store config and pin ClearVoice to ``device``; weights load per request by design."""
         self.config = config
+        self.device = str(device or "cpu")
+        _pin_clearvoice_device(self.device)
 
     def apply(self, audio: list, sampling_rate: int, **params) -> np.ndarray:
         """Enhance ``audio`` with the request's ClearVoice ``model_name``.
