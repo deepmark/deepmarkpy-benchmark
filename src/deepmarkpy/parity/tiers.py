@@ -149,11 +149,13 @@ def judge(cases: Sequence[CaseEvidence], tier: Tier, required: Sequence[str]) ->
                         else:
                             judged = ev.signal_outside_flips
                 max_abs_seen = max(max_abs_seen, judged.max_abs)
-                rel_l2s.append(judged.rel_l2)
                 if tier.max_abs is not None and judged.max_abs > tier.max_abs:
                     failures.append(f"{where}: max |d| {_fmt(judged.max_abs)} > {tier.max_abs:g}")
-                if tier.rel_l2_worst is not None and judged.rel_l2 > tier.rel_l2_worst:
-                    failures.append(f"{where}: relative L2 {_fmt(judged.rel_l2)} > {tier.rel_l2_worst:g}")
+                # A near-silent reference is judged on max |d| alone (see compare.REL_L2_MIN_REF_RMS).
+                if sig.relative_applies:
+                    rel_l2s.append(judged.rel_l2)
+                    if tier.rel_l2_worst is not None and judged.rel_l2 > tier.rel_l2_worst:
+                        failures.append(f"{where}: relative L2 {_fmt(judged.rel_l2)} > {tier.rel_l2_worst:g}")
 
         if REPEAT in required and ev.repeat_identical is not True:
             failures.append(
@@ -189,6 +191,6 @@ def judge(cases: Sequence[CaseEvidence], tier: Tier, required: Sequence[str]) ->
         n_cases=len(cases),
         rel_l2_median=median,
         rel_l2_worst=max(rel_l2s) if rel_l2s else None,
-        max_abs=max_abs_seen if rel_l2s else None,
+        max_abs=max_abs_seen if cases else None,
         flip_frames=flip_frames,
     )

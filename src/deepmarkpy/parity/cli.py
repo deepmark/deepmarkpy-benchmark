@@ -363,7 +363,7 @@ def main(argv=None) -> int:
     p.set_defaults(func=cmd_judge)
 
     a = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     load_env_file(str(REPO / ".env"))
     try:
         return a.func(a)

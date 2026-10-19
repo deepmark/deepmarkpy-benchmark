@@ -18,9 +18,14 @@ import numpy as np
 FRAME_SECONDS = 0.02
 
 # Floor for the reference's RMS when forming the relative error, so a silent
-# reference (a valid corpus case) gives a finite number. -120 dBFS sits well
-# below any difference the tiers accept; max |d| still bounds such cases.
+# reference (a valid corpus case) gives a finite number.
 REL_L2_RMS_FLOOR = 1e-6
+
+# Below this reference level (-80 dBFS RMS, the same level as the tiers'
+# 1e-4 absolute bound) a relative error says nothing. A silent reference
+# turns a -150 dBFS difference into a "large" ratio. Such cases are judged on
+# max |d| alone.
+REL_L2_MIN_REF_RMS = 1e-4
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,7 @@ class WaveformDiff:
 
     ref_len: int
     cand_len: int
+    ref_rms: float
     finite: bool
     identical: bool
     max_abs: float
@@ -44,10 +50,16 @@ class WaveformDiff:
     def same_length(self) -> bool:
         return self.ref_len == self.cand_len
 
+    @property
+    def relative_applies(self) -> bool:
+        """Whether the reference is loud enough for a relative error to mean anything."""
+        return self.ref_rms >= REL_L2_MIN_REF_RMS
+
     def to_dict(self) -> dict:
         out = asdict(self)
         out["frames_over"] = list(self.frames_over)
         out["same_length"] = self.same_length
+        out["relative_applies"] = self.relative_applies
         return out
 
 
@@ -63,7 +75,8 @@ def waveform_diff(ref, cand, sampling_rate: int, frame_atol: Optional[float] = N
 
     if ref.shape != cand.shape or not finite:
         return WaveformDiff(
-            ref_len=ref.size, cand_len=cand.size, finite=finite, identical=False,
+            ref_len=ref.size, cand_len=cand.size, ref_rms=float(np.sqrt(np.mean(ref * ref))) if ref.size else 0.0,
+            finite=finite, identical=False,
             max_abs=math.inf, rel_l2=math.inf, snr_db=-math.inf,
             frame_len=frame_len, n_frames=math.ceil(ref.size / frame_len),
         )
@@ -85,7 +98,7 @@ def waveform_diff(ref, cand, sampling_rate: int, frame_atol: Optional[float] = N
         frames_over = tuple(int(i) for i in np.flatnonzero(per_frame > frame_atol))
 
     return WaveformDiff(
-        ref_len=ref.size, cand_len=cand.size, finite=finite, identical=identical,
+        ref_len=ref.size, cand_len=cand.size, ref_rms=ref_rms, finite=finite, identical=identical,
         max_abs=max_abs, rel_l2=rel_l2, snr_db=snr_db,
         frame_len=frame_len, n_frames=n_frames, frames_over=frames_over,
     )

@@ -194,3 +194,23 @@ class TestQuantizedTier:
         y += 1e-3 * speech_like(seed=4)  # broad error everywhere
         j = judge([self._ev(x, y, explained=tuple(range(250)))], QUANTIZED, ALL)
         assert not j.passed
+
+
+class TestNearSilentReferences:
+    def test_a_silent_reference_is_judged_on_absolute_error_alone(self):
+        ref = np.zeros(80000)
+        cand = 5e-8 * speech_like(seed=5)  # -146 dBFS: nothing, though "infinitely" relative
+        j = judge([evidence("silence", ref, cand)], NUMERIC, ALL)
+        assert j.passed, j.failures
+        assert j.rel_l2_median is None  # no loud case, so no relative statistic
+
+    def test_but_a_real_error_on_silence_still_fails(self):
+        ref = np.zeros(80000)
+        cand = 2e-3 * speech_like(seed=5)  # peaks near 1e-3: well over the 1e-4 bound
+        assert not judge([evidence("silence", ref, cand)], NUMERIC, ALL).passed
+
+    def test_speech_is_still_judged_relatively(self):
+        x = speech_like()
+        assert waveform_diff(x, x, SR).relative_applies
+        j = judge([evidence("c", x, x + 5e-5 * speech_like(seed=6))], NUMERIC, ALL)
+        assert any("relative L2" in f for f in j.failures)
