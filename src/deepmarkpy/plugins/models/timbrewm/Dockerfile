@@ -1,4 +1,7 @@
-FROM ml-services-base:latest AS builder
+# ml-services-base:latest is the CPU build; scripts/build_images.py passes the
+# CUDA build of the same base for the GPU variant.
+ARG BASE_IMAGE=ml-services-base:latest
+FROM ${BASE_IMAGE} AS builder
 
 # Clone and set up TimbreWatermarking
 RUN git clone https://github.com/TimbreWatermarking/TimbreWatermarking.git && \
@@ -24,7 +27,7 @@ RUN sed -i 's|ckpt = torch.load("./hifigan/model/VCTK_V1/generator_v1")|gpu_avai
 # Fix path in hifigan model loading
 RUN sed -i 's|./hifigan/model/VCTK_V1/generator_v1|TimbreWatermarking/watermarking_model/hifigan/model/VCTK_V1/generator_v1|g' TimbreWatermarking/watermarking_model/wm_model/conv2_mel_modules.py
 
-FROM ml-services-base:latest
+FROM ${BASE_IMAGE}
 
 # Default port; overridden at runtime by docker-compose (APP_PORT from .env)
 ENV APP_PORT=9001
