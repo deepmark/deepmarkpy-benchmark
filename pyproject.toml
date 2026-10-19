@@ -42,6 +42,7 @@ all = ["deepmarkpy[metrics,native-attacks]"]
 
 [project.scripts]
 deepmark-benchmark = "deepmarkpy.run:main"
+deepmark-parity = "deepmarkpy.parity.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/deepmark/deepmarkpy-benchmark"
