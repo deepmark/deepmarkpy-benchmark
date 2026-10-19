@@ -168,19 +168,12 @@ def main(argv=None):
     manifest = json.loads(args.manifest.read_text()) if args.manifest.exists() else {}
     rev = git_rev()
 
-    built = []
-    if not args.skip_base:
-        built.append(("ml-services-base", build_base(args.engine, args.variant, args)))
-    for service in selected:
-        tag = build_service(args.engine, service, services[service], args.variant, args)
-        if tag:
-            built.append((service, tag))
-
-    if args.dry_run:
-        return 0
-
     failures = []
-    for service, tag in built:
+
+    def record(service, tag):
+        # Written after every image, so a later failure keeps what was built.
+        if args.dry_run or not tag:
+            return
         image_id, torch_info = inspect(args.engine, tag)
         manifest.setdefault(service, {})[args.variant] = {
             "tag": tag,
@@ -189,12 +182,17 @@ def main(argv=None):
             "built_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
             "torch": torch_info,
         }
+        args.manifest.parent.mkdir(parents=True, exist_ok=True)
+        args.manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         logger.info("%-22s %-5s %s %s", service, args.variant, image_id[:12], torch_info)
         if args.variant == "gpu" and torch_info and not torch_info.get("cuda"):
             failures.append(f"{service}: GPU variant has torch {torch_info['torch']} without CUDA")
 
-    args.manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.manifest.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    if not args.skip_base:
+        record("ml-services-base", build_base(args.engine, args.variant, args))
+    for service in selected:
+        record(service, build_service(args.engine, service, services[service], args.variant, args))
+
     if failures:
         raise SystemExit("\n".join(failures))
     return 0
