@@ -1,7 +1,4 @@
-# ml-services-base:latest is the CPU build; scripts/build_images.py passes the
-# CUDA build of the same base for the GPU variant.
-ARG BASE_IMAGE=ml-services-base:latest
-FROM ${BASE_IMAGE}
+FROM ml-services-base:latest
 
 # Default port; overridden at runtime by docker-compose (APP_PORT from .env)
 ENV APP_PORT=10006
