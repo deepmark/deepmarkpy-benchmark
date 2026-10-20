@@ -504,6 +504,43 @@ than rendered as a table of `N/A`s or dropped without a word. With
 processing-time tables, and `container_footprint` adds a Container Memory
 section.
 
+### 7. Run Services on a GPU (Optional)
+
+Services run on the CPU by default. These five can run on a GPU instead,
+each only where a parity check on that GPU has shown it gives the same
+numbers as the CPU:
+- AudioSeal;
+- DescriptAudioCodec;
+- NeuralVocoder (BigVGAN, in float64);
+- SpeechEnhancement1;
+- SpeechEnhancement2.
+
+Everything else stays on the CPU, and so does the benchmark CLI itself.
+
+```bash
+# Build CPU and GPU image variants (image IDs go to build/images.json)
+python scripts/build_images.py --variant cpu
+python scripts/build_images.py --variant gpu
+
+# Start the services a config needs. --gpu is a GPU index, or a GPU-/MIG- UUID from nvidia-smi -L
+deepmark-services plan --config my.json --gpu 0   # what would run where, and why
+deepmark-services up   --config my.json --gpu 0
+
+deepmark-benchmark --config my.json
+```
+
+`deepmark-services` puts a service on the GPU only with a passing verdict
+in `build/verdicts/` for that image and GPU model; `plan` says why
+anything stays on the CPU. Verdicts are not shared between machines.
+
+On a new GPU, produce them once with `deepmark-parity`:
+- its docstring lists the steps;
+- `src/deepmarkpy/parity/tiers.py` has the tolerances;
+- `parity/gates.json` has the per-service settings.
+
+`run_metadata.json` records which services ran where. With Podman, set
+`CONTAINER_ENGINE=podman`.
+
 ## Adding a New Plugin
 
 DeepMark Benchmark is designed to allow easy addition of new attacks and watermarking models.

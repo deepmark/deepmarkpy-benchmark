@@ -1,8 +1,6 @@
 """Tolerance tiers, and the judgement of one component's parity evidence.
 
-The bounds are the ones agreed in the GPU plan, §3.2 of
-docs/gpu/plan.md. They are derived from what the
-GPU study measured with TF32 off.
+The bounds come from CPU/GPU measurements with TF32 off.
 
 - **EXACT**: no difference at all. For changes that must not alter a single
   bit: transport, caching, scheduling.

@@ -71,9 +71,13 @@ One config file per mode (`benchmark`, `no_attacks`, `detection_reliability`) ho
 
 ## Development Conventions
 
-- **CPU only** — no service requests a GPU and none is expected to. Install
-  `+cpu` torch wheels; never pin `nvidia-*`, `triton`, or a `+cuXXX` build.
-  The default wheel now bundles CUDA on arm64 too, so an unconstrained
+- **CPU by default; a GPU only by verified variant** — a service runs on the
+  CPU unless its container sets `DEEPMARK_DEVICE=cuda`. `deepmark-services`
+  sets that only for a service with a passing parity verdict for that image
+  and GPU model (`src/deepmarkpy/parity`). Pin files stay CPU: install `+cpu`
+  torch wheels; never pin `nvidia-*`, `triton`, or a `+cuXXX` build. GPU
+  variants come from build arguments (`scripts/build_images.py`), not from pin
+  files. The default wheel now bundles CUDA on arm64 too, so an unconstrained
   `pip install torch` silently adds gigabytes that cannot execute.
   `tests/test_cpu_only_builds.py` enforces this across every pin file
 
