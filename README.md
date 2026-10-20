@@ -516,12 +516,13 @@ where they give the same results as on the CPU:
 
 Everything else stays on the CPU, and so does the benchmark CLI itself.
 
-```bash
-# Build the GPU image variants once
-python scripts/build_images.py --variant gpu
+Build and start them like the CPU services, adding the GPU override.
+`DEEPMARK_GPU_DEVICE` is a GPU index (0), or a GPU-/MIG- UUID from
+`nvidia-smi -L` (a MIG slice needs its UUID).
 
-# Start services as usual, adding the GPU override. DEEPMARK_GPU_DEVICE is a
-# GPU index (0) or a GPU-/MIG- UUID from nvidia-smi -L (a MIG slice needs its UUID).
+```bash
+docker build -f Dockerfile.base --build-arg TORCH_VARIANT=cu126 -t ml-services-base:cu126 .
+DEEPMARK_GPU_DEVICE=0 docker compose -f docker-compose.yml -f docker-compose.gpu.yml build
 DEEPMARK_GPU_DEVICE=0 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 

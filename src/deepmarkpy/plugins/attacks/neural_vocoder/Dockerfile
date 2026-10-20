@@ -1,5 +1,5 @@
-# ml-services-base:latest is the CPU build; scripts/build_images.py passes the
-# CUDA build of the same base for the GPU variant.
+# ml-services-base:latest is the CPU build; docker-compose.gpu.yml passes the
+# CUDA build of the same base (ml-services-base:cu126) for the GPU variant.
 ARG BASE_IMAGE=ml-services-base:latest
 FROM ${BASE_IMAGE} AS builder
 

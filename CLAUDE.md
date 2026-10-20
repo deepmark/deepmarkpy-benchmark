@@ -76,7 +76,7 @@ One config file per mode (`benchmark`, `no_attacks`, `detection_reliability`) ho
   `docker-compose.gpu.yml` does for the services verified to match the CPU
   on a GPU; add a service there only after verifying it. Pin files stay CPU: install `+cpu`
   torch wheels; never pin `nvidia-*`, `triton`, or a `+cuXXX` build. GPU
-  variants come from build arguments (`scripts/build_images.py`), not from pin
+  variants come from build arguments in `docker-compose.gpu.yml`, not from pin
   files. The default wheel now bundles CUDA on arm64 too, so an unconstrained
   `pip install torch` silently adds gigabytes that cannot execute.
   `tests/test_cpu_only_builds.py` enforces this across every pin file
