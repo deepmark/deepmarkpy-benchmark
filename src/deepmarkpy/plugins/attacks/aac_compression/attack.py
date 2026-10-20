@@ -15,24 +15,13 @@ logger = logging.getLogger(__name__)
 class AacCompressionAttack(BaseAttack):
     """Lossy AAC transcode-and-decode attack.
 
-    Encodes with ffmpeg's built-in `aac` encoder (LC profile, avoiding the
-    nonfree `libfdk_aac` build) at a configurable bitrate and decodes back
-    to PCM — the role Mp3CompressionAttack fills for MP3, but AAC is the
-    codec that actually sits in most of today's real distribution paths
-    (YouTube/M4A, Apple Music, TikTok/Instagram/WhatsApp re-encodes,
-    Bluetooth A2DP).
+    Encodes with ffmpeg's built-in AAC-LC encoder at the configured target
+    bitrate (64 kbps by default), then decodes back to PCM with ffmpeg.
 
-    Transcodes through `.m4a`, not raw ADTS (`.aac`): AAC's encoder has an
-    inherent ~1024-sample priming delay, and only a container with an edit
-    list (MP4/`.m4a`) records where real audio starts so a decoder can trim
-    it back out. Measured on this machine's ffmpeg (8.1.2): raw ADTS
-    round-trips leave a 1024-sample leading offset with zero trimming (a
-    desync artifact unrelated to AAC's actual lossy damage); `.m4a`
-    round-trips come back sample-aligned, matching what players on the
-    platforms above actually do.
-
-    libsndfile has no AAC decoder, so the decode step goes through ffmpeg
-    too.
+    Uses an MP4 (`.m4a`) container so the decoder can account for encoder
+    priming delay. Raw ADTS (`.aac`) does not carry the edit list needed
+    for this alignment. Trailing frame padding is trimmed to the input
+    length after decoding.
     """
 
     def apply(self, audio: np.ndarray, **kwargs) -> np.ndarray:
