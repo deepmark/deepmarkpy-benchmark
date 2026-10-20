@@ -60,3 +60,30 @@ def test_a_swap_recipe_names_cuda_builds_only(service):
     assert re.fullmatch(r"cu\d+", index)
     for package in packages.split():
         assert package.endswith("+" + index), f"{service}: {package} is not a {index} build"
+
+
+class TestGpuComposeOverride:
+    """docker-compose.gpu.yml runs exactly the verified services on the GPU, as verified."""
+
+    VERIFIED = {"audioseal", "descript_audio_codec", "neural_vocoder", "speech_enhancement1", "speech_enhancement2"}
+
+    @pytest.fixture(scope="class")
+    def override(self):
+        import yaml
+
+        return yaml.safe_load((REPO / "docker-compose.gpu.yml").read_text())["services"]
+
+    def test_it_lists_exactly_the_verified_services(self, override):
+        assert set(override) == self.VERIFIED
+
+    @pytest.mark.parametrize("service", sorted(VERIFIED))
+    def test_each_runs_its_gpu_image_on_the_named_gpu_with_strict_numerics(self, override, service):
+        spec = override[service]
+        assert spec["image"] == f"deepmark-{service}:gpu"
+        assert build_images.GPU_RECIPES[service][0] in ("base", "swap", "same")
+        assert {"DEEPMARK_DEVICE=cuda", "NVIDIA_TF32_OVERRIDE=0"} <= set(spec["environment"])
+        device = spec["deploy"]["resources"]["reservations"]["devices"][0]
+        assert device["device_ids"] == ["${DEEPMARK_GPU_DEVICE:-0}"] and device["capabilities"] == ["gpu"]
+
+    def test_bigvgan_runs_in_float64(self, override):
+        assert "DEEPMARK_PRECISION=float64" in override["neural_vocoder"]["environment"]

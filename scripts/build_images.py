@@ -25,8 +25,8 @@ Every built image is recorded in build/images.json:
 - the torch version and its CUDA/cuDNN build, read from inside the image.
 
 A GPU variant whose torch has no CUDA build fails the build rather than
-quietly running on CPU. GPU parity verdicts are keyed by the image ID
-recorded here, so a rebuilt image needs a new verdict.
+quietly running on CPU. docker-compose.gpu.yml runs the
+deepmark-<service>:gpu tags built here.
 """
 
 import argparse

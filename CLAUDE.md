@@ -72,9 +72,9 @@ One config file per mode (`benchmark`, `no_attacks`, `detection_reliability`) ho
 ## Development Conventions
 
 - **CPU by default; a GPU only by verified variant** — a service runs on the
-  CPU unless its container sets `DEEPMARK_DEVICE=cuda`. `deepmark-services`
-  sets that only for a service with a passing parity verdict for that image
-  and GPU model (`src/deepmarkpy/parity`). Pin files stay CPU: install `+cpu`
+  CPU unless its container sets `DEEPMARK_DEVICE=cuda`, which
+  `docker-compose.gpu.yml` does for the services verified to match the CPU
+  on a GPU; add a service there only after verifying it. Pin files stay CPU: install `+cpu`
   torch wheels; never pin `nvidia-*`, `triton`, or a `+cuXXX` build. GPU
   variants come from build arguments (`scripts/build_images.py`), not from pin
   files. The default wheel now bundles CUDA on arm64 too, so an unconstrained

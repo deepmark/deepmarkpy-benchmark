@@ -1,13 +1,12 @@
 """Where a service's engine runs, and the numerics it runs with.
 
-A service runs on the CPU unless its container sets ``DEEPMARK_DEVICE=cuda``.
-The GPU compose override does that only for services whose GPU path passed
-the parity gate (:mod:`deepmarkpy.parity`). Asking for ``cuda`` where no GPU
+A service runs on the CPU unless its container sets ``DEEPMARK_DEVICE=cuda``,
+which docker-compose.gpu.yml does for the services verified to give the same
+numbers on a GPU. Asking for ``cuda`` where no GPU
 is visible is an error, never a quiet fallback: under MIG, SE2 once ran on
 the CPU while its container had a GPU, and nothing said so.
 
-On a GPU the numerics are the ones the parity gate measures (see
-``deepmarkpy.parity.runner._configure_numerics``; the two must stay in step):
+On a GPU the numerics are the ones the services were verified with:
 - TF32 off for matmul and cuDNN: with it on, the GPU study saw decoded bits
   flip and codecs fall to 20-40 dB;
 - deterministic cuDNN without autotuning;
@@ -63,7 +62,7 @@ def service_precision() -> str:
 
 
 def configure_numerics() -> None:
-    """Apply the GPU numerics the parity gate measured. Call before the first CUDA work."""
+    """Apply the GPU numerics the services were verified with. Call before the first CUDA work."""
     # Read when cuBLAS creates its handle, so it must be set before any CUDA work.
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     import torch

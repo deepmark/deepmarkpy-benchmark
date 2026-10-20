@@ -1,0 +1,42 @@
+# GPU override: runs the services verified to give the same numbers on a GPU
+# as on the CPU, on one GPU. Everything not listed here stays on the CPU.
+#
+#   python scripts/build_images.py --variant gpu          # build the GPU images first
+#   DEEPMARK_GPU_DEVICE=0 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# DEEPMARK_GPU_DEVICE is a GPU index (0) or a GPU-/MIG- UUID from nvidia-smi -L;
+# a MIG slice needs its UUID. Without this file, every service runs on the CPU.
+
+x-gpu: &gpu
+  environment:
+    - DEEPMARK_DEVICE=cuda
+    - NVIDIA_TF32_OVERRIDE=0
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ["${DEEPMARK_GPU_DEVICE:-0}"]
+            capabilities: [gpu]
+
+services:
+  audioseal:
+    <<: *gpu
+    image: deepmark-audioseal:gpu
+  descript_audio_codec:
+    <<: *gpu
+    image: deepmark-descript_audio_codec:gpu
+  neural_vocoder:
+    <<: *gpu
+    image: deepmark-neural_vocoder:gpu
+    environment:
+      - DEEPMARK_DEVICE=cuda
+      - NVIDIA_TF32_OVERRIDE=0
+      # float32 on the GPU is measurably less accurate than on the CPU; float64 matches.
+      - DEEPMARK_PRECISION=float64
+  speech_enhancement1:
+    <<: *gpu
+    image: deepmark-speech_enhancement1:gpu
+  speech_enhancement2:
+    <<: *gpu
+    image: deepmark-speech_enhancement2:gpu

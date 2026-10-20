@@ -108,9 +108,3 @@ def sample_results_with_cross_model():
             },
         },
     }
-
-
-@pytest.fixture(autouse=True)
-def _no_recorded_deployment(monkeypatch):
-    """Tests never see a developer's build/deployment.json (written by deepmark-services)."""
-    monkeypatch.setenv("DEEPMARK_DEPLOYMENT", "none")

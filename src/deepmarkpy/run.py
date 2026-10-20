@@ -20,8 +20,7 @@ from typing import Optional
 import logging
 
 from deepmarkpy import __version__
-from deepmarkpy.benchmark import Benchmark, expand_attacks, resolve_cross_model_name
-from deepmarkpy.deployment import deployment_summary
+from deepmarkpy.benchmark import Benchmark, expand_attacks
 from deepmarkpy.config import (
     ConfigError,
     MODE_KEYS,
@@ -573,21 +572,6 @@ def main(argv=None):
         benchmark, configs, wait=not args.validate_only,
     )
 
-    # Services started by deepmark-services must still be the images it
-    # started, GPU placements included, before anything is measured.
-    if not args.validate_only and not unreachable:
-        from deepmarkpy.deployment import deployment_path, verify_running_deployment
-
-        drifted = verify_running_deployment()
-        if drifted:
-            _report_config_error(
-                f"The running services do not match {deployment_path()}:\n    "
-                + "\n    ".join(drifted)
-                + "\n    Start them again with deepmark-services up, or set "
-                  "DEEPMARK_DEPLOYMENT=none to run without a recorded deployment."
-            )
-            return EXIT_CONFIG_ERROR
-
     if args.validate_only:
         # An unreachable service is reported but does not fail validation.
         for config, settings in plans:
@@ -883,17 +867,13 @@ def _log_efficiency(config, stats):
             efficiency.log("    %s: %s", attack, ", ".join(parts))
 
 
-def service_endpoints(benchmark, config, model_names, cross_model=False):
-    """``[(kind, name, url)]`` for every service a run of ``config`` touches.
+def _container_rows(benchmark, config, model_names):
+    """Memory of the services this run used, when container_footprint is on."""
+    if not config.resolver.is_enabled(None, "container_footprint"):
+        return []
 
-    Covers:
-    - the benchmarked models;
-    - the dockerized attacks (native ones have no url);
-    - the NISQA metric service, when any NISQA metric is on.
+    from deepmarkpy.utils import efficiency
 
-    ``cross_model`` adds CrossModelAttack's second model. A run needs that
-    service up, but the container-footprint report has never listed it.
-    """
     entries = []
     for name in model_names:
         entry = benchmark.models.get(name)
@@ -920,30 +900,12 @@ def service_endpoints(benchmark, config, model_names, cross_model=False):
             instance, "base_url", None)
         if url and not any(e[1] == name for e in entries):
             entries.append(("Attack", name, url))
-        if cross_model and name == "CrossModelAttack":
-            second = resolve_cross_model_name(
-                config.parameters_for(name, None), benchmark.attacks, benchmark.models,
-            )
-            if not any(e[1] == second for e in entries):
-                url = getattr(benchmark.models[second]["class"](), "base_url", None)
-                if url:
-                    entries.append(("Model", second, url))
 
     # Enabled anywhere counts, per attack group included, not just the defaults.
     if any(m in config.resolver.all_signal_metrics() for m in NISQA_METRICS):
         port = os.environ.get("NISQA_PORT", "10030")
         entries.append(("Metric", "NISQA", f"http://localhost:{port}"))
-    return entries
 
-
-def _container_rows(benchmark, config, model_names):
-    """Memory of the services this run used, when container_footprint is on."""
-    if not config.resolver.is_enabled(None, "container_footprint"):
-        return []
-
-    from deepmarkpy.utils import efficiency
-
-    entries = service_endpoints(benchmark, config, model_names)
     rows = efficiency.container_snapshot(entries)
     for kind, name, container, used, limit in rows:
         efficiency.log("%s %s holds %.0f MiB in %s", kind.lower(), name,
@@ -1152,9 +1114,6 @@ def write_run_metadata(report_dir, args, benchmark, model_names, extra=None):
         # A metric that could not run leaves N/A cells that look identical to
         # a metric that ran and had nothing to say.
         "metrics": {"nisqa": nisqa_status()},
-        # Which services ran where (CPU or GPU) and on what parity evidence,
-        # when deepmark-services started them; None for a hand-started stack.
-        "deployment": deployment_summary(),
     }
     if extra:
         metadata.update(extra)

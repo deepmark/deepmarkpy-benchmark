@@ -1,19 +1,16 @@
-"""A service runs on the device its container names, with the numerics the parity gate measured.
+"""A service runs on the device its container names, with strict GPU numerics.
 
 torch is not installed in the test environment, so a small fake stands in for
 it and records what was set.
 """
 
-import re
 import sys
 import types
-from pathlib import Path
 
 import pytest
 
 from deepmarkpy.serving import device as dev
 
-REPO = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
@@ -117,10 +114,3 @@ class TestMigFallback:
         assert dev.with_cudnn_fallback(fn) == "ok"
         assert state == {"calls": 2, "cudnn_off_on_retry": True}
 
-
-def test_services_and_the_parity_gate_set_the_same_numerics():
-    """The gate must measure what production runs; a flag set in one place only is drift."""
-    flags = re.compile(r"(torch\.backends\.[\w.]+\s*=\s*\w+|torch\._C\._jit_\w+\(\w+\))")
-    serving = set(flags.findall((REPO / "src/deepmarkpy/serving/device.py").read_text()))
-    runner = set(flags.findall((REPO / "src/deepmarkpy/parity/runner.py").read_text()))
-    assert serving and serving == runner
