@@ -30,11 +30,8 @@ class NeuralVocoderEngine(BaseAttackEngine):
     def __init__(self, config: dict, device: str | None = None, precision: str = "float32"):
         """Load BigVGAN onto ``device`` (default: cuda if available) in ``precision``.
 
-        ``float64`` exists for the GPU. There, float32 is measurably less
-        accurate than float32 on the CPU (1.4-6x the CPU's error against a
-        float64 reference), while float64 matches that reference to ~1e-13
-        and is still ~10x faster than the CPU. The mel spectrogram stays
-        float32, computed on the CPU, on every path.
+        float64 is for the GPU, where float32 is less accurate than on the CPU.
+        The mel spectrogram stays float32 on every path.
         """
         self.config = config
         if device is None:

@@ -858,12 +858,8 @@ class Benchmark:
                     if attack_class_name == "CrossModelAttack":
                         results[filepath]["attacks"][attack_name]["accuracy_cross_model"] = different_accuracy
                 except Exception:
-                    # Say which attack and file failed: a library's own message
-                    # often names neither (a read-only buffer inside pywt
-                    # stopped the GPU study's first run). The exception itself
-                    # goes on unchanged, because callers tell infrastructure
-                    # failures (a model skipped) from bugs (the run stops) by
-                    # its type.
+                    # Name the attack and file; keep the exception's type, which
+                    # callers use to tell infrastructure failures from bugs.
                     logger.error(
                         "Attack %s failed on %s", attack_display_name, filepath,
                     )

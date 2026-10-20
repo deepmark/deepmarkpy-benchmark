@@ -68,11 +68,7 @@ class TestCodecIsLossless:
         assert decode_audio(None) is None
 
     def test_decoded_audio_is_writable(self):
-        """Attacks receive a model's output as decoded here, and some write to it.
-
-        PyWavelets rejects read-only buffers; the first file of any run with
-        a dockerized model and WaveletAttack used to abort on it.
-        """
+        """Attacks receive a model's output as decoded here, and some (pywt) need it writable."""
         out = decode_audio(encode_audio(np.array([1.0, 2.0, 3.0])))
         assert out.flags.writeable
         out[0] = 5.0  # must not raise

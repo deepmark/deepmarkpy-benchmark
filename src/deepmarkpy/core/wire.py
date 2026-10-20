@@ -38,9 +38,7 @@ def decode_audio(payload) -> np.ndarray:
     if payload is None:
         return None
     if isinstance(payload, str):
-        # A bytearray, not the bytes b64decode returns: frombuffer over bytes
-        # is read-only, and every HTTP model's watermarked audio used to reach
-        # the attacks that way. PyWavelets rejects read-only input, so a run
-        # with a dockerized model and WaveletAttack aborted at the first file.
+        # bytearray, not bytes: frombuffer over bytes is read-only, and some
+        # attacks (pywt in WaveletAttack) need a writable array.
         return np.frombuffer(bytearray(base64.b64decode(payload)), dtype=np.float64)
     return np.asarray(payload, dtype=np.float64)

@@ -1,25 +1,10 @@
 """Where a service's engine runs, and the numerics it runs with.
 
-A service runs on the CPU unless its container sets ``DEEPMARK_DEVICE=cuda``,
-which docker-compose.gpu.yml does for the services verified to give the same
-numbers on a GPU. Asking for ``cuda`` where no GPU
-is visible is an error, never a quiet fallback: under MIG, SE2 once ran on
-the CPU while its container had a GPU, and nothing said so.
-
-On a GPU the numerics are the ones the services were verified with:
-- TF32 off for matmul and cuDNN: with it on, the GPU study saw decoded bits
-  flip and codecs fall to 20-40 dB;
-- deterministic cuDNN without autotuning;
-- TorchScript's profiling executor and GPU fusion off: fused kernels made a
-  service's first call differ from its later ones.
-
-The CPU path is left exactly as it was.
-
-``DEEPMARK_PRECISION=float64`` runs an engine that supports it in double
-precision. BigVGAN does, because its float32 GPU path is measurably less
-accurate than the CPU's.
-
-torch is imported inside the functions, so the module stays importable without it.
+A service runs on the CPU unless its container sets ``DEEPMARK_DEVICE=cuda``
+(docker-compose.gpu.yml). A requested GPU that is not visible is an error, not
+a fallback to the CPU. On the GPU, TF32, cuDNN autotuning and TorchScript
+fusion are off, so results match the CPU and repeat. The CPU path is untouched.
+``DEEPMARK_PRECISION=float64`` is read by engines that support it (BigVGAN).
 """
 
 import logging
@@ -77,19 +62,14 @@ def configure_numerics() -> None:
 
 
 def is_mig_allocator_assert(exc: BaseException) -> bool:
-    """The MIG-only failure: cuDNN asks for workspace, and PyTorch's allocator
-    reports through NVML, which MIG forbids. On a whole GPU this is an ordinary
-    out-of-memory error that PyTorch recovers from by itself."""
+    """PyTorch's allocator assert under MIG (it reports through NVML, which MIG forbids)."""
     return isinstance(exc, RuntimeError) and "NVML_SUCCESS" in str(exc)
 
 
 def with_cudnn_fallback(fn):
-    """Run ``fn()``. If it hits the MIG allocator assert, run it once more without cuDNN.
+    """Run ``fn()``; on the MIG allocator assert, run it once more without cuDNN.
 
-    Under MIG, inputs of 64,000 samples or fewer made the AudioSeal detector
-    fail this way; the GPU study measured TimeStretch at 50% accuracy where
-    the CPU gives 87.5%. The retry changes nothing on a whole GPU, where the
-    assert does not occur.
+    Under MIG the AudioSeal detector hits it on short inputs; a whole GPU never does.
     """
     try:
         return fn()

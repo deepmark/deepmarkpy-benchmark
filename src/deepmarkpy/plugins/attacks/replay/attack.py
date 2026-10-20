@@ -38,13 +38,9 @@ class ReplayAttack(BaseAttack):
         if ir_sr != audio_sr:
             ir = librosa.resample(ir, orig_sr=ir_sr, target_sr=audio_sr)
 
-        # Direct np.convolve with a 3 s response (48,000 taps at 16 kHz) runs
-        # one long BLAS dot per output sample: 0.7 s per call with 8 BLAS
-        # threads and 355 s with the 64 a large host defaults to. The FFT form
-        # takes ~6 ms whatever the thread count. librosa loads the response as
-        # float32, which np.convolve upcast exactly, so it is widened here
-        # too; a float32 FFT would differ by ~1e-7. In float64 the two agree
-        # to ~1e-15.
+        # FFT: direct convolution with a 48,000-tap response is slow and scales
+        # badly with BLAS threads. The response is widened to float64 as
+        # np.convolve did, so the result matches it to ~1e-15.
         convolved = fftconvolve(audio, ir.astype(np.float64), mode='full')
         convolved = convolved[:len(audio)]
 

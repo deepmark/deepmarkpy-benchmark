@@ -39,10 +39,8 @@ class AudioSealEngine(BaseModelEngine):
             module.to(self.device)
 
     def _grad_mode(self):
-        """inference_mode on the GPU only. On the CPU, switching autograd off
-        sends the generator's LSTM down another code path, which moves the
-        watermarked output by ~6e-8. The CPU keeps exactly the shipped
-        behaviour, which its contract fixtures pin."""
+        """inference_mode on the GPU only: on the CPU it changes the LSTM's code
+        path, and with it the output (~6e-8)."""
         return torch.inference_mode() if self.device.type == "cuda" else contextlib.nullcontext()
 
     def embed(self, audio: list, watermark_data: list, sampling_rate: int) -> np.ndarray:
@@ -91,8 +89,7 @@ class AudioSealEngine(BaseModelEngine):
         watermarked_audio = torch.tensor(watermarked_audio, dtype=torch.float32).to(self.device)
 
         try:
-            # The MIG retry sits inside this try: the RuntimeError below would
-            # otherwise turn the assert into an empty result, scored at 50%.
+            # Inside the try: the except below would turn the MIG assert into an empty result.
             with self._grad_mode():
                 confidence, message = with_cudnn_fallback(
                     lambda: detector.detect_watermark(watermarked_audio, sampling_rate)

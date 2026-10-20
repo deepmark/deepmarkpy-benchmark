@@ -11,19 +11,12 @@ from deepmarkpy.utils.utils import resample_audio
 
 from deepmarkpy.core.inference import BaseAttackEngine
 
-# The snapshot the Dockerfile bakes into the image. Loading without it let a
-# newer upstream "main" replace the weights at service start.
+# The snapshot the Dockerfile bakes into the image.
 MODEL_REVISION = "e412427ed30f0cf9d5e3c95562113deb10a32d03"
 
-# At every load, transformers warns that 74 CodecEnc weights are "newly
-# initialized". The checkpoint stores those weight-normed convolutions as
-# weight_g / weight_v, and the model names them parametrizations...original0 /
-# original1. transformers compares the names before loading. PyTorch's
-# weight-norm parametrization then renames the old keys in a load hook, so the
-# weights do load: all 74 tensors equal the checkpoint's. The warning is a
-# false alarm. GPU study §4.1 read it as a random encoder; that was wrong.
-# Correctness rests on that hook, so it is checked rather than assumed, and a
-# version that stops honouring it fails here instead of running half-random.
+# transformers reports these weight-norm keys as newly initialized, but
+# PyTorch's load hook renames weight_g/weight_v to them, so they do load. The
+# load checks that rather than relying on it.
 _WEIGHT_NORM_KEYS = (
     (".parametrizations.weight.original0", ".weight_g"),
     (".parametrizations.weight.original1", ".weight_v"),
