@@ -1,7 +1,7 @@
 """Tolerance tiers, and the judgement of one component's parity evidence.
 
 The bounds are the ones agreed in the GPU plan, §3.2 of
-scripts/gpu_study/PLAN-gpu-implementation.md. They are derived from what the
+docs/gpu/plan.md. They are derived from what the
 GPU study measured with TF32 off.
 
 - **EXACT**: no difference at all. For changes that must not alter a single

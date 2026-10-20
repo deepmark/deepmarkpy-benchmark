@@ -1,7 +1,7 @@
 """The parity gate must pass what the study showed is equivalent and fail everything else.
 
 The numbers come from the GPU study's TF32-off measurements
-(scripts/gpu_study/results/raw/parity/). A tier that rejected those, or
+(restated in docs/gpu/plan.md §3.2). A tier that rejected those, or
 accepted TF32's damage, would be the wrong gate.
 """
 
