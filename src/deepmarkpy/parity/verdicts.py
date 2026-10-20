@@ -1,6 +1,6 @@
 """Parity verdicts on disk, and the question placement asks: may this run on GPU?
 
-A verdict is one JSON file under ``parity/verdicts/``, named
+A verdict is one JSON file under ``build/verdicts/``, named
 ``<service>.<op>.<image id prefix>.json``. It records:
 - the judgement and every case's evidence;
 - both runs' environments;
@@ -21,11 +21,13 @@ import os
 from pathlib import Path
 from typing import Dict, Iterable, Optional
 
-# The repository's parity/verdicts/ when run from a checkout; set
-# DEEPMARK_VERDICT_DIR when the package is installed elsewhere.
+# Verdicts are local output, like build/images.json, and not committed. They
+# vouch only for the image IDs and GPU model they were measured on, so each
+# machine produces its own by running the gate. Set DEEPMARK_VERDICT_DIR
+# when the package is installed outside a checkout.
 VERDICT_DIR = Path(
     os.environ.get("DEEPMARK_VERDICT_DIR")
-    or Path(__file__).resolve().parents[3] / "parity" / "verdicts"
+    or Path(__file__).resolve().parents[3] / "build" / "verdicts"
 )
 
 

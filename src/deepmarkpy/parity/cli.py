@@ -6,7 +6,7 @@
     deepmark-parity wm audioseal --label cpu                      # attack inputs: the CPU-watermarked corpus
     deepmark-parity run encodec apply --variant cpu --label cpu
     deepmark-parity run encodec apply --variant gpu --label gpu
-    deepmark-parity judge encodec apply --ref cpu --cand gpu      # writes parity/verdicts/..., exit 0 = PASS
+    deepmark-parity judge encodec apply --ref cpu --cand gpu      # writes build/verdicts/..., exit 0 = PASS
 
 Configuration:
 - Images come from build/images.json, written by scripts/build_images.py.

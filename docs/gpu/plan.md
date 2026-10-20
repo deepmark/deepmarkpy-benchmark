@@ -7,6 +7,7 @@
 >   - **GPU:** AudioSeal (embed and detect), SE1, SE2 all PASS. BigVGAN goes to GPU **in float64**: user decision; exact, and ~10× faster than CPU float32.
 >   - **CPU (user decision):** EnCodec, because it fails the approved QUANTIZED rule as written, and XCodec2, because its float32 decoder is ill-conditioned on any device.
 >   - **Pending:** DAC. Its two code flips meet the approved near-tie rule; the verdict follows from the probe run.
+> - **Verdicts are local, not committed** (2026-10-20). They count only for the image IDs and GPU model they were measured on, so each machine runs the gate itself. They live in `build/verdicts/`; §3.4's "committed with the change" is superseded.
 > - **Tolerance amendments** (to §3.2): relative checks pass when RMS error ≤ max(bound × reference RMS, 1e-6), a −120 dBFS floor. The QUANTIZED rule stays as approved, now fed by `codec_probe.py` evidence.
 > - **Numerics** (add to §3.2): strict mode also disables TorchScript GPU fusion. Otherwise DAC's first GPU call differed from later ones.
 > - **Corrections:**
@@ -153,7 +154,7 @@ The study shows that PyTorch's default (cuDNN TF32 on) alone causes bit flips (1
 ```
 deepmark-parity capture  --service S --op OP --image <cpu image>                 # once per CPU image digest
 deepmark-parity run      --service S --op OP --image <gpu image> --gpu $DEEPMARK_GPU_DEVICE --repeat 2
-deepmark-parity verdict  --service S --op OP --tier NUMERIC                      # writes parity/verdicts/S.OP.<digest>.json
+deepmark-parity verdict  --service S --op OP --tier NUMERIC                      # writes build/verdicts/S.OP.<digest>.json
 deepmark-parity e2e      --runs A B --classes parity/attack_classes.yaml          # gate E
 ```
 
@@ -166,7 +167,7 @@ It's committed with the change, and the commit message quotes PASS plus the wors
 
 ### 3.5 Enforcement
 
-The placement layer (§5, `execution/placement.py`) reads `parity/verdicts/`. A (service, op) may be placed on GPU only if a PASS verdict exists for the **digest of the image actually running**; the service reports its digest and device at `/capabilities`. An unverified GPU path fails the run at startup, naming the missing verdict. `run_metadata.json` records the verdict IDs used.
+The placement layer (§5, `execution/placement.py`) reads `build/verdicts/`. A (service, op) may be placed on GPU only if a PASS verdict exists for the **digest of the image actually running**; the service reports its digest and device at `/capabilities`. An unverified GPU path fails the run at startup, naming the missing verdict. `run_metadata.json` records the verdict IDs used.
 
 ---
 
@@ -353,7 +354,7 @@ Build and deploy:
 | Service Dockerfiles | `ARG BASE_IMAGE` (and `ARG TORCH_INDEX` for SE2 cu130, SilentCipher/TimbreWM cu118, XCodec2 cu121). One Dockerfile per service, with variants by build argument instead of copies. |
 | `docker-compose.gpu.yml` (repo root) | Override for GPU-placed services only. CDI `devices: [nvidia.com/gpu=${DEEPMARK_GPU_DEVICE}]` (works for Podman and CDI-enabled Docker), `DEEPMARK_DEVICE=cuda`, `NVIDIA_TF32_OVERRIDE=0`, image tags `:cu126` etc. NetworkTransmission replicas. |
 | `scripts/gpu_slice_guard.py` | Refuses to start unless `DEEPMARK_GPU_DEVICE` exists, is the expected MIG device, has no foreign processes on its GPU instance, and has enough free memory. Replaces the three stale UUID references. |
-| `tools/parity/` | `deepmark-parity`, promoted from `parity_apply.py`, `parity_compare.py`, `compare_runs.py`, `replay_*.py`. Adds thresholds and verdicts. `parity/tolerances.yaml`, `parity/attack_classes.yaml`, `parity/verdicts/`. |
+| `tools/parity/` | `deepmark-parity`, promoted from `parity_apply.py`, `parity_compare.py`, `compare_runs.py`, `replay_*.py`. Adds thresholds and verdicts. `parity/tolerances.yaml`, `parity/attack_classes.yaml`, `build/verdicts/` (local, not committed). |
 
 Tests:
 

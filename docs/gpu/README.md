@@ -29,7 +29,7 @@ Everything else runs on the CPU:
 
 CPU behaviour is unchanged. Each touched engine was checked bit for bit against the shipped CPU output.
 
-The verdicts in `parity/verdicts/` were measured on an H200 NVL MIG slice (`2g.35gb`). A different GPU model has no verdicts until the gate is run on it (below), and until then every service stays on the CPU.
+These results were measured on an H200 NVL MIG slice (`2g.35gb`); `wave1-findings.md` has the numbers. Verdicts are local output, like `build/images.json`: written to `build/verdicts/` and not committed. Each one counts only for the image IDs and GPU model it was measured on, so every machine runs the gate once on its own GPU. Until it has, every service there stays on the CPU.
 
 ## Using it
 
@@ -70,7 +70,7 @@ deepmark-parity wm audioseal --label cpu                             # attacks' 
 deepmark-parity run descript_audio_codec apply --variant cpu --label cpu
 deepmark-parity run descript_audio_codec apply --variant gpu --label gpu --gpu 0
 deepmark-parity probe descript_audio_codec --cand gpu --gpu 0        # codecs: tie-break evidence
-deepmark-parity judge descript_audio_codec apply --ref cpu --cand gpu  # writes parity/verdicts/...
+deepmark-parity judge descript_audio_codec apply --ref cpu --cand gpu  # writes build/verdicts/...
 ```
 
 The tiers:

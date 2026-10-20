@@ -13,7 +13,7 @@ The services a config needs are the ones the benchmark itself would call:
 - NISQA, when a NISQA metric is on.
 
 With ``--gpu`` (an index such as 0, or a GPU-/MIG- UUID), a service runs on
-that GPU only when ``parity/verdicts/`` holds a PASS for every operation in
+that GPU only when ``build/verdicts/`` holds a PASS for every operation in
 its gate. The PASS must be for the exact image recorded in build/images.json,
 on this GPU model, from the engine the image ships, at the precision the gate
 sets. Anything else runs on the CPU, and ``plan`` says why. Nothing
