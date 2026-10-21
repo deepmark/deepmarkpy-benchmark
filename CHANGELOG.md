@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.1.0 — Unreleased
+
+### Added
+
+- `AacCompressionAttack`: an AAC-LC encode/decode round trip through ffmpeg,
+  using an `.m4a` container to account for encoder priming delay. The target
+  bitrate defaults to 64 kbps and is configurable with `bitrate_aac`.
+- AAC is included in `audio_editing` and the `compression_quantization`
+  report subsection. Runs selecting all attacks or the audio-editing group
+  now include AAC; existing attacks retain their behavior.
+
+The AAC golden fixture remains deferred to the canonical recording setup.
+
 ## v3.0.0 — 2026-10-07
 
 **Measurement settings move from flags into one JSON config file per mode.**
