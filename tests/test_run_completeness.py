@@ -162,9 +162,10 @@ class TestCrossModelReceivesItsSecondModel:
 
         from deepmarkpy import benchmark as benchmark_module
 
-        source = inspect.getsource(benchmark_module.Benchmark.run)
+        # Both executors apply an attack through _apply_entry.
+        source = inspect.getsource(benchmark_module.Benchmark._apply_entry)
         assert 'current_attack_kwargs[\n' \
-               '                        "different_model_name_cross_model"]' in source \
+               '                "different_model_name_cross_model"]' in source \
             or '"different_model_name_cross_model"] = different_model_name' in source, (
                 "the resolved name is not passed to the attack"
             )
