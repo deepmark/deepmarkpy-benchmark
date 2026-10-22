@@ -3,7 +3,7 @@ import numpy as np
 import os
 import random
 import librosa
-from scipy.signal import butter, sosfilt
+from scipy.signal import butter, fftconvolve, sosfilt
 
 from deepmarkpy.core.base_attack import BaseAttack
 
@@ -38,7 +38,10 @@ class ReplayAttack(BaseAttack):
         if ir_sr != audio_sr:
             ir = librosa.resample(ir, orig_sr=ir_sr, target_sr=audio_sr)
 
-        convolved = np.convolve(audio, ir, mode='full')
+        # FFT: direct convolution with a 48,000-tap response is slow and scales
+        # badly with BLAS threads. The response is widened to float64 as
+        # np.convolve did, so the result matches it to ~1e-15.
+        convolved = fftconvolve(audio, ir.astype(np.float64), mode='full')
         convolved = convolved[:len(audio)]
 
         max_val = np.max(np.abs(convolved))

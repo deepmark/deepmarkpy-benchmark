@@ -209,9 +209,12 @@ it.
 of every run**), `--seed` (off by default; it seeds host-side RNGs only, so
 the diffusion, VAE, speech_enhancement_2 and network_transmission services
 stay stochastic), `--save_audio`, `--verbose`, `--plugins_dir` (also
-`DEEPMARK_PLUGINS_DIR`) and `--version`, plus the 2.x flags below. Of the
-operational flags, all but `--config`, `--init`, `--validate-only` and
-`--version` also exist under `general` in the config file, and the flag wins.
+`DEEPMARK_PLUGINS_DIR`), `--version`, and `--executor` with its limits
+`--workers`, `--files_in_flight`, `--service_lanes` and
+`--service_concurrency` ([step 8](#8-run-faster-with-the-pipelined-executor-optional)),
+plus the 2.x flags below. Of the operational flags, `--save_audio`,
+`--verbose`, `--plugins_dir`, `--seed`, `--wav_files_dir` and `--report_dir`
+also exist under `general` in the config file, and the flag wins.
 
 Exit codes: `0` the run finished. A model skipped after an infrastructure
 failure, or a report that failed to render, is logged as an error but still
@@ -503,6 +506,65 @@ than rendered as a table of `N/A`s or dropped without a word. With
 `efficiency` enabled, every report but the comparative one adds
 processing-time tables, and `container_footprint` adds a Container Memory
 section.
+
+### 7. Run Services on a GPU (Optional)
+
+Services run on the CPU by default. These five can run on a GPU instead,
+where they give the same results as on the CPU:
+- AudioSeal;
+- DescriptAudioCodec;
+- NeuralVocoder (BigVGAN, in float64);
+- SpeechEnhancement1;
+- SpeechEnhancement2.
+
+Everything else stays on the CPU, and so does the benchmark CLI itself.
+
+Build and start them like the CPU services, adding the GPU override.
+`DEEPMARK_GPU_DEVICE` is a GPU index (0), or a GPU-/MIG- UUID from
+`nvidia-smi -L` (a MIG slice needs its UUID).
+
+```bash
+docker build -f Dockerfile.base --build-arg TORCH_VARIANT=cu126 -t ml-services-base:cu126 .
+DEEPMARK_GPU_DEVICE=0 docker compose -f docker-compose.yml -f docker-compose.gpu.yml build
+DEEPMARK_GPU_DEVICE=0 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+A service started with the override refuses to start if no GPU is visible
+to it, rather than running on the CPU unnoticed.
+
+### 8. Run Faster with the Pipelined Executor (Optional)
+
+`--executor pipelined` gives the same results as the default sequential run,
+in less time. It runs at once the work whose result does not depend on order:
+- the dockerized attacks, next to the attacks that run in the CLI;
+- detection, and the quality metrics in `--workers` processes (default 8);
+- several files, up to `--files_in_flight` (default 4).
+
+Everything whose result can depend on what ran before it in the CLI process
+still runs in the sequential order, on one thread: loading, drawing each
+watermark, embedding, and every attack that runs in the CLI. So `--seed`
+draws the same numbers, and Codec2 sees the same history. If an attack changes
+its input in place, or the host RNG is drawn from off that thread, the run
+stops with an error rather than give results a sequential run would not.
+Only benchmark mode is pipelined.
+
+The dockerized attacks share one lane, so their services run one at a time,
+as they do sequentially: a service on the CPU uses every core, and two of them
+at once slow each other down. Give a lane of its own (`--service_lanes`) to
+each service that does not compete for the CPU: those on a GPU, and
+NetworkTransmission, which waits in real time and has its own lane by default.
+With the GPU override of step 7:
+
+```bash
+deepmark-benchmark --config my_config.json --executor pipelined \
+  --service_lanes NetworkTransmissionAttack OpusCodecAttack DescriptAudioCodecAttack \
+                  NeuralVocoderAttack SpeechEnhancement1Attack SpeechEnhancement2Attack
+```
+
+Attacks joined by `+` share a lane (`--service_lanes VAEAttack+EncodecAttack`).
+The run log ends with each lane's busy time; the busiest lane limits the run.
+Latencies (`efficiency`) are measured while other work runs, so they come out
+higher than in a sequential run.
 
 ## Adding a New Plugin
 

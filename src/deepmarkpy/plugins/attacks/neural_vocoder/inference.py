@@ -27,8 +27,12 @@ class NeuralVocoderEngine(BaseAttackEngine):
     The vocoder loads once at construction.
     """
 
-    def __init__(self, config: dict, device: str | None = None):
-        """Load BigVGAN onto ``device`` (default: cuda if available)."""
+    def __init__(self, config: dict, device: str | None = None, precision: str = "float32"):
+        """Load BigVGAN onto ``device`` (default: cuda if available) in ``precision``.
+
+        float64 is for the GPU, where float32 is less accurate than on the CPU.
+        The mel spectrogram stays float32 on every path.
+        """
         self.config = config
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,6 +43,9 @@ class NeuralVocoderEngine(BaseAttackEngine):
         )
         self.model.remove_weight_norm()
         self.model.eval().to(self.device)
+        self.dtype = {"float32": torch.float32, "float64": torch.float64}[precision]
+        if self.dtype != torch.float32:
+            self.model = self.model.to(self.dtype)
 
     def apply(self, audio: list, sampling_rate: int, **params) -> np.ndarray:
         """Resynthesize ``audio`` through the 44.1 kHz mel round-trip."""
@@ -46,7 +53,7 @@ class NeuralVocoderEngine(BaseAttackEngine):
         audio_arr = resample_audio(audio_arr, input_sr=sampling_rate, target_sr=44100)
         audio_arr = torch.FloatTensor(audio_arr).unsqueeze(0)
 
-        mel = get_mel_spectrogram(audio_arr, self.model.h).to(self.device)
+        mel = get_mel_spectrogram(audio_arr, self.model.h).to(self.device, dtype=self.dtype)
 
         with torch.inference_mode():
             output = self.model(mel)

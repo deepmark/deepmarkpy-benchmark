@@ -162,9 +162,10 @@ class TestCrossModelReceivesItsSecondModel:
 
         from deepmarkpy import benchmark as benchmark_module
 
-        source = inspect.getsource(benchmark_module.Benchmark.run)
+        # Both executors apply an attack through _apply_entry.
+        source = inspect.getsource(benchmark_module.Benchmark._apply_entry)
         assert 'current_attack_kwargs[\n' \
-               '                        "different_model_name_cross_model"]' in source \
+               '                "different_model_name_cross_model"]' in source \
             or '"different_model_name_cross_model"] = different_model_name' in source, (
                 "the resolved name is not passed to the attack"
             )
@@ -261,3 +262,53 @@ class TestAVersionIsNeverSilentlyDropped:
 
         with pytest.raises(TypeError, match="bug in the plugin"):
             instantiate_attack(self._RaisesInside, "X", "mild")
+
+
+class TestAFailingAttackIsNamed:
+    """A failure must say which attack and file, and keep its own type.
+
+    run_multiple_models skips a model on OSError/ConnectionError/MemoryError
+    (infrastructure) and stops on anything else (a bug), so the exception
+    has to reach it unchanged; only the log gains the attack and file.
+    """
+
+    def _run(self, tmp_path, exc):
+        import numpy as np
+        import soundfile as sf
+
+        from deepmarkpy.core.base_attack import BaseAttack
+
+        class FakeModel:
+            config = {"sampling_rate": 16000, "watermark_size": 16}
+
+            def generate_watermark(self):
+                return np.zeros(16, dtype=np.int32)
+
+            def embed(self, audio, watermark_data, sampling_rate):
+                return np.asarray(audio, dtype=np.float64)
+
+            def detect(self, audio, sampling_rate):
+                return np.zeros(16, dtype=np.int32)
+
+        class BoomAttack(BaseAttack):
+            def apply(self, audio, **kwargs):
+                raise exc
+
+        wav = tmp_path / "clip.wav"
+        sf.write(wav, 0.1 * np.random.default_rng(0).standard_normal(16000), 16000)
+        bench = Benchmark.__new__(Benchmark)
+        bench.attacks = {"BoomAttack": {"class": BoomAttack, "config": {}}}
+        bench.models = {"FakeModel": {"class": FakeModel, "config": FakeModel.config}}
+        bench.plugin_manager = type("PM", (), {"failed": {}})()
+        bench.run(filepaths=[str(wav)], wm_model="FakeModel", attack_types=["BoomAttack"],
+                  calculate_quality_metrics=False)
+
+    def test_an_infrastructure_failure_keeps_its_type(self, tmp_path, caplog):
+        with caplog.at_level("ERROR"), pytest.raises(OSError, match="service gone"):
+            self._run(tmp_path, OSError("service gone"))
+        assert "Attack BoomAttack failed on" in caplog.text and "clip.wav" in caplog.text
+
+    def test_a_bug_keeps_its_type(self, tmp_path, caplog):
+        with caplog.at_level("ERROR"), pytest.raises(ValueError, match="buffer source array is read-only"):
+            self._run(tmp_path, ValueError("buffer source array is read-only"))
+        assert "Attack BoomAttack failed on" in caplog.text

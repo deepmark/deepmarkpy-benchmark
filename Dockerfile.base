@@ -8,12 +8,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# cpu (the default), or a CUDA build such as cu126 for the GPU variant of the
+# services docker-compose.gpu.yml runs. The constraint pins torch==2.7.1,
+# which either local build satisfies.
+ARG TORCH_VARIANT=cpu
+
 COPY constraints.base.txt /constraints.base.txt
 RUN pip install --no-cache-dir --timeout 600 \
     -c /constraints.base.txt \
-    torch==2.7.1+cpu \
-    torchaudio==2.7.1+cpu \
-    --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.7.1+${TORCH_VARIANT} \
+    torchaudio==2.7.1+${TORCH_VARIANT} \
+    --extra-index-url https://download.pytorch.org/whl/${TORCH_VARIANT} \
     numpy \
     scipy \
     fastapi \

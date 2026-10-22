@@ -31,6 +31,17 @@ SPEECH_ENHANCEMENT_MODELS = frozenset({
 })
 
 
+def _pin_clearvoice_device(device: str) -> None:
+    """Pin ClearVoice to the service's device.
+
+    ClearVoice picks its own device by parsing nvidia-smi, which fails under
+    MIG and ignores the service's choice. The container sees at most one GPU.
+    """
+    from clearvoice.networks import SpeechModel
+
+    SpeechModel.get_free_gpu = (lambda self: 0) if device == "cuda" else (lambda self: None)
+
+
 class SpeechEnhancement2Engine(BaseAttackEngine):
     """ClearVoice speech-enhancement attack.
 
@@ -39,8 +50,10 @@ class SpeechEnhancement2Engine(BaseAttackEngine):
     """
 
     def __init__(self, config: dict, device: str | None = None):
-        """Store config; no weights load here by design (per-request model)."""
+        """Store config and pin ClearVoice to ``device``; weights load per request by design."""
         self.config = config
+        self.device = str(device or "cpu")
+        _pin_clearvoice_device(self.device)
 
     def apply(self, audio: list, sampling_rate: int, **params) -> np.ndarray:
         """Enhance ``audio`` with the request's ClearVoice ``model_name``.

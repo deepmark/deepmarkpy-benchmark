@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from inference import SpeechEnhancement2Engine
 from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
 from deepmarkpy.core.wire import decode_audio, encode_audio
+from deepmarkpy.serving.device import service_device
 from deepmarkpy.utils.utils import load_config
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-engine = SpeechEnhancement2Engine(config)
+engine = SpeechEnhancement2Engine(config, device=service_device())
 
 
 class AttackRequest(BaseModel):

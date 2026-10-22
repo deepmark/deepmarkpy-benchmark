@@ -2,6 +2,8 @@ import inspect
 import logging
 import os
 import re
+from dataclasses import dataclass, field
+from typing import Mapping, Tuple
 
 import numpy as np
 import soundfile as sf
@@ -31,6 +33,36 @@ _BENCHMARK_INTERNAL_KEYS = frozenset({
     "sampling_rate", "model", "models", "watermark_data",
     "orig_audio", "original_audio_collusion",
 })
+
+# Marks a result row that has no second model's score: any value, None
+# included, is a score CrossModelAttack recorded.
+_NO_CROSS_MODEL = object()
+
+EXECUTORS = ("sequential", "pipelined")
+
+
+@dataclass(frozen=True)
+class Parallelism:
+    """How much the pipelined executor runs at once.
+
+    Attributes:
+        workers: processes computing quality metrics.
+        files_in_flight: files under way at once, at most.
+        service_lanes: groups of dockerized attacks (class names) that get a
+            lane each. The rest share one lane and run one at a time, as
+            sequentially: a CPU service uses every core, so two at once slow
+            each other down. Name services that do not compete for the CPU:
+            those on a GPU, or NetworkTransmissionAttack, which mostly waits.
+        service_concurrency: requests in flight to an attack with a lane to
+            itself; 1 if not listed. Only at 1 do they keep sequential order.
+        detect_concurrency: detect requests in flight to a dockerized model.
+    """
+
+    workers: int = 8
+    files_in_flight: int = 4
+    service_lanes: Tuple[Tuple[str, ...], ...] = (("NetworkTransmissionAttack",),)
+    service_concurrency: Mapping[str, int] = field(default_factory=dict)
+    detect_concurrency: int = 2
 
 
 def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, attack_kwargs):
@@ -562,6 +594,8 @@ class Benchmark:
         metric_resolver=None,
         attack_parameters=None,
         extra_attack_versions=None,
+        executor="sequential",
+        parallelism=None,
         **kwargs,
     ):
         """
@@ -585,6 +619,12 @@ class Benchmark:
                 version cannot reach another. See ``expand_attacks``.
             extra_attack_versions (dict, optional): versions the config
                 defines that the plugin does not; see ``expand_attacks``.
+            executor (str, optional): ``"sequential"`` (default), one file
+                and one attack at a time, or ``"pipelined"``, which overlaps
+                independent work and returns the same results; see
+                ``deepmarkpy.execution.pipelined``.
+            parallelism (Parallelism, optional): the pipelined executor's
+                limits. Defaults to ``Parallelism()``.
             **kwargs: Additional parameters for specific attacks.
 
         Returns:
@@ -592,6 +632,10 @@ class Benchmark:
         """
         if isinstance(filepaths, str):
             filepaths = [filepaths]
+        if executor not in EXECUTORS:
+            raise ValueError(
+                f"Unknown executor '{executor}'; expected one of {list(EXECUTORS)}."
+            )
 
         resolver = metric_resolver or MetricResolver.from_attack_groups(
             calculate_quality_metrics=calculate_quality_metrics,
@@ -663,6 +707,26 @@ class Benchmark:
             "models": self.models,
         }
 
+        if executor == "pipelined":
+            from deepmarkpy.execution.pipelined import PipelinedRun
+
+            return PipelinedRun(
+                self,
+                filepaths=filepaths,
+                model_instance=model_instance,
+                model_config=model_config,
+                expanded_attacks=expanded_attacks,
+                attack_kwargs=attack_kwargs,
+                watermark_data=watermark_data,
+                sampling_rate=sampling_rate,
+                resolver=resolver,
+                crop_before_attack=crop_before_attack,
+                save_audio=save_audio,
+                output_dir=output_dir,
+                verbose=verbose,
+                parallelism=parallelism or Parallelism(),
+            ).run(on_file_complete)
+
         for filepath in filepaths:
             if verbose:
                 logger.info(f"\nProcessing file: {filepath}")
@@ -673,53 +737,13 @@ class Benchmark:
             # Get base filename without extension
             base_filename = os.path.splitext(os.path.basename(filepath))[0]
 
-            # Generate a fresh watermark for each file if none was supplied by the user
-            file_watermark = watermark_data if watermark_data is not None else model_instance.generate_watermark()
+            (audio, watermarked_audio, sampling_rate, file_watermark,
+             file_timings) = self._prepare_file(
+                filepath, model_instance, watermark_data, sampling_rate,
+                crop_before_attack, resolver, save_audio, output_dir,
+            )
             attack_kwargs["watermark_data"] = file_watermark
-
-            # Load audio
-            audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
-            logger.info(f"Sampling rate is: {sampling_rate}")
-
-            # Embed watermark
-            file_timings = {}
-            with efficiency.measure(file_timings, "embed_latency",
-                                    resolver.is_enabled(None, "embed_latency")):
-                watermarked_audio = model_instance.embed(
-                    audio=audio, watermark_data=file_watermark,
-                    sampling_rate=sampling_rate
-                )
-
-            # Optionally crop the beginning of the watermarked audio right
-            # after embedding, so every downstream attack sees the cropped
-            # signal. Apply the same crop to the original audio so quality
-            # metrics and attacks that splice samples by index between the
-            # two (CollusionAttack, ZeroBitCollusionAttack) stay length-
-            # matched and time-aligned.
-            if crop_before_attack is not None:
-                if "CropBeginningAttack" in self.attacks:
-                    pre_crop = self.attacks["CropBeginningAttack"]["class"]()
-                    watermarked_audio = pre_crop.apply(
-                        watermarked_audio,
-                        sampling_rate=sampling_rate,
-                        crop_percentage_beginning=crop_before_attack,
-                    )
-                    audio = pre_crop.apply(
-                        audio,
-                        sampling_rate=sampling_rate,
-                        crop_percentage_beginning=crop_before_attack,
-                    )
-                else:
-                    samples_to_crop = int(len(watermarked_audio) * (crop_before_attack / 100.0))
-                    watermarked_audio = watermarked_audio[samples_to_crop:]
-                    audio = audio[samples_to_crop:]
             attack_kwargs["orig_audio"] = audio
-
-            # Save watermarked audio
-            if save_audio:
-                watermarked_filename = f"{base_filename}_watermarked.wav"
-                watermarked_path = os.path.join(output_dir, watermarked_filename)
-                sf.write(watermarked_path, watermarked_audio, sampling_rate)
 
             sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
 
@@ -736,126 +760,56 @@ class Benchmark:
 
             # Apply each attack and compute metrics
             for attack_class_name, attack_display_name, attack_overrides, attack_version in expanded_attacks:
-                if attack_class_name not in self.attacks:
-                    logger.warning(f"Attack '{attack_class_name}' not found. Skipping.")
-                    continue
+                try:
+                    if attack_class_name not in self.attacks:
+                        logger.warning(f"Attack '{attack_class_name}' not found. Skipping.")
+                        continue
 
-                if verbose:
-                    logger.info(f"  Applying attack: {attack_display_name}")
-
-                attack_instance = instantiate_attack(
-                    self.attacks[attack_class_name]["class"],
-                    attack_class_name, attack_version,
-                )
-                attack_name = attack_display_name
-
-                # Merge bitrate overrides into kwargs for this attack
-                current_attack_kwargs = {**attack_kwargs, **attack_overrides}
-
-                if attack_class_name == "CrossModelAttack":
-                    # Read the entry's own kwargs, not the run-level ones:
-                    # per-attack parameters travel with each expanded entry.
-                    different_model_name = resolve_cross_model_name(
-                        current_attack_kwargs, self.attacks, self.models,
+                    attack_name = attack_display_name
+                    (attacked_audio, different_watermark, attack_timings,
+                     cross_model) = self._apply_entry(
+                        (attack_class_name, attack_display_name,
+                         attack_overrides, attack_version),
+                        attack_kwargs, watermarked_audio, audio,
+                        sampling_rate, resolver, base_filename, save_audio,
+                        output_dir, verbose,
                     )
-                    logger.info(f"Different model is chosen and it's {different_model_name}")
-                    different_model_cls = self.models[different_model_name]["class"]
-                    different_model_instance = different_model_cls()
-                    current_attack_kwargs[
-                        "different_model_name_cross_model"] = different_model_name
+                    if cross_model is not None:
+                        different_model_name, different_model_instance = cross_model
 
-                attack_timings = {}
-                with efficiency.measure(attack_timings, "attack_latency",
-                                        resolver.is_enabled(None, "attack_latency")):
-                    attacked_audio, different_watermark = apply_attack(
-                        attack_instance,
-                        attack_class_name,
-                        target_audio=watermarked_audio,
-                        clean_audio=audio,
-                        attack_kwargs=current_attack_kwargs,
-                    )
-
-                # Ensure consistent shape for all attacks
-                if isinstance(attacked_audio, np.ndarray):
-                    attacked_audio = np.squeeze(attacked_audio)
-
-                # Save attacked audio. Use a separate variable so the 2D
-                # reshape required by sf.write doesn't leak into detect(),
-                # which expects a 1D signal.
-                if save_audio:
-                    attacked_to_save = (
-                        np.expand_dims(attacked_audio, axis=1)
-                        if attacked_audio.ndim == 1
-                        else attacked_audio
-                    )
-                    attacked_filename = f"{base_filename}_{audio_filename_label(attack_name)}.wav"
-                    attacked_path = os.path.join(output_dir, attacked_filename)
-                    sf.write(attacked_path, attacked_to_save, sampling_rate)
-                    if verbose:
-                        logger.info(f"Saved attacked audio: {attacked_filename}")
-                
-                confidence = None
-                with efficiency.measure(attack_timings, "detect_latency",
-                                        resolver.is_enabled(None, "detect_latency")):
-                    if returns_confidence:
-                        detected_message, confidence = model_instance.detect(attacked_audio, sampling_rate)
-                    else:
-                        detected_message = model_instance.detect(attacked_audio, sampling_rate)
-
-                if attack_class_name == "CrossModelAttack":
-                    different_detected_message = different_model_instance.detect(attacked_audio, sampling_rate)
-                    diff_model_config = self.models.get(different_model_name, {}).get("config") or {}
-                    diff_is_zero_bit = diff_model_config.get("is_zero_bit", False)
-                    diff_returns_confidence = diff_model_config.get("returns_confidence", False)
-                    if diff_is_zero_bit:
-                        if isinstance(different_detected_message, np.ndarray):
-                            different_accuracy = different_detected_message.tolist()
+                    confidence = None
+                    with efficiency.measure(attack_timings, "detect_latency",
+                                            resolver.is_enabled(None, "detect_latency")):
+                        if returns_confidence:
+                            detected_message, confidence = model_instance.detect(attacked_audio, sampling_rate)
                         else:
-                            different_accuracy = different_detected_message
-                    elif diff_returns_confidence:
-                        different_watermark_detected, _ = different_detected_message
-                        different_accuracy = self.compare_watermarks(different_watermark, different_watermark_detected)
-                    else:
-                        different_accuracy = self.compare_watermarks(different_watermark, different_detected_message)
-                
+                            detected_message = model_instance.detect(attacked_audio, sampling_rate)
 
-                attacked_audio_quality_wm = self._compute_attack_quality(
-                    resolver, attack_name, audio, attacked_audio, sr_scalar,
-                )
+                    different_accuracy = _NO_CROSS_MODEL
+                    if attack_class_name == "CrossModelAttack":
+                        different_detected_message = different_model_instance.detect(attacked_audio, sampling_rate)
+                        different_accuracy = self._cross_model_accuracy(
+                            different_model_name, different_watermark,
+                            different_detected_message,
+                        )
 
-                if is_zero_bit:
-                    raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
-                    accuracy = float(raw) * 100
-                    detection_valid = True
-                else:
-                    # False when the detector returned nothing usable, in which
-                    # case `accuracy` is the RANDOM_GUESS_ACCURACY sentinel
-                    # rather than a measured bit-agreement.
-                    detection_valid = not self._is_invalid_detection(
-                        detected_message, file_watermark
+                    attacked_audio_quality_wm = self._compute_attack_quality(
+                        resolver, attack_name, audio, attacked_audio, sr_scalar,
                     )
-                    accuracy = self.compare_watermarks(file_watermark, detected_message)
 
-                results[filepath]["attacks"][attack_name] = {
-                    "accuracy": accuracy,
-                    "detection_valid": detection_valid,
-                    "attack_snr_db": self._attack_snr_db(
-                        watermarked_audio, attacked_audio
-                    ),
-                    "attacked_audio_quality_wm": attacked_audio_quality_wm,
-                    # Embedding happens once per file, not once per attack,
-                    # so its time is repeated here rather than measured
-                    # again -- the attack tables need a figure per row.
-                    **attack_timings,
-                    **file_timings,
-                }
-
-                # Add confidence for models that return it
-                if confidence is not None:
-                    results[filepath]["attacks"][attack_name]["confidence"] = confidence
-
-                if attack_class_name == "CrossModelAttack":
-                    results[filepath]["attacks"][attack_name]["accuracy_cross_model"] = different_accuracy
+                    results[filepath]["attacks"][attack_name] = self._attack_entry(
+                        is_zero_bit, file_watermark, watermarked_audio,
+                        attacked_audio, detected_message, confidence,
+                        attacked_audio_quality_wm, attack_timings,
+                        file_timings, different_accuracy,
+                    )
+                except Exception:
+                    # Name the attack and file; keep the exception's type, which
+                    # callers use to tell infrastructure failures from bugs.
+                    logger.error(
+                        "Attack %s failed on %s", attack_display_name, filepath,
+                    )
+                    raise
 
             # Each file's results go out as soon as the file finishes, so
             # an interruption at file N of M keeps the files already done.
@@ -877,6 +831,186 @@ class Benchmark:
         if not relevant:
             return None
         return compute_metrics(original, attacked, sr, metrics=relevant)
+
+    def _prepare_file(self, filepath, model_instance, watermark_data,
+                      sampling_rate, crop_before_attack, resolver, save_audio,
+                      output_dir):
+        """Load, watermark and crop one file: what every attack on it starts from.
+
+        Returns ``(audio, watermarked_audio, sampling_rate, file_watermark,
+        file_timings)``, ``audio`` being the clean signal cropped like the
+        watermarked one.
+        """
+        # Generate a fresh watermark for each file if none was supplied by the user
+        file_watermark = watermark_data if watermark_data is not None else model_instance.generate_watermark()
+
+        # Load audio
+        audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
+        logger.info(f"Sampling rate is: {sampling_rate}")
+
+        # Embed watermark
+        file_timings = {}
+        with efficiency.measure(file_timings, "embed_latency",
+                                resolver.is_enabled(None, "embed_latency")):
+            watermarked_audio = model_instance.embed(
+                audio=audio, watermark_data=file_watermark,
+                sampling_rate=sampling_rate
+            )
+
+        # Optionally crop the beginning of the watermarked audio right
+        # after embedding, so every downstream attack sees the cropped
+        # signal. Apply the same crop to the original audio so quality
+        # metrics and attacks that splice samples by index between the
+        # two (CollusionAttack, ZeroBitCollusionAttack) stay length-
+        # matched and time-aligned.
+        if crop_before_attack is not None:
+            if "CropBeginningAttack" in self.attacks:
+                pre_crop = self.attacks["CropBeginningAttack"]["class"]()
+                watermarked_audio = pre_crop.apply(
+                    watermarked_audio,
+                    sampling_rate=sampling_rate,
+                    crop_percentage_beginning=crop_before_attack,
+                )
+                audio = pre_crop.apply(
+                    audio,
+                    sampling_rate=sampling_rate,
+                    crop_percentage_beginning=crop_before_attack,
+                )
+            else:
+                samples_to_crop = int(len(watermarked_audio) * (crop_before_attack / 100.0))
+                watermarked_audio = watermarked_audio[samples_to_crop:]
+                audio = audio[samples_to_crop:]
+
+        # Save watermarked audio
+        if save_audio:
+            base_filename = os.path.splitext(os.path.basename(filepath))[0]
+            watermarked_filename = f"{base_filename}_watermarked.wav"
+            watermarked_path = os.path.join(output_dir, watermarked_filename)
+            sf.write(watermarked_path, watermarked_audio, sampling_rate)
+
+        return audio, watermarked_audio, sampling_rate, file_watermark, file_timings
+
+    def _apply_entry(self, entry, attack_kwargs, watermarked_audio, audio,
+                     sampling_rate, resolver, base_filename, save_audio,
+                     output_dir, verbose):
+        """Apply one expanded attack entry to one file's watermarked audio.
+
+        Returns ``(attacked_audio, extra, attack_timings, cross_model)``:
+        ``extra`` is the second element a tuple-returning attack gives back,
+        and ``cross_model`` is ``(name, instance)`` of CrossModelAttack's
+        second model, else None.
+        """
+        attack_class_name, attack_display_name, attack_overrides, attack_version = entry
+        if verbose:
+            logger.info(f"  Applying attack: {attack_display_name}")
+
+        attack_instance = instantiate_attack(
+            self.attacks[attack_class_name]["class"],
+            attack_class_name, attack_version,
+        )
+
+        # Merge bitrate overrides into kwargs for this attack
+        current_attack_kwargs = {**attack_kwargs, **attack_overrides}
+
+        cross_model = None
+        if attack_class_name == "CrossModelAttack":
+            # Read the entry's own kwargs, not the run-level ones:
+            # per-attack parameters travel with each expanded entry.
+            different_model_name = resolve_cross_model_name(
+                current_attack_kwargs, self.attacks, self.models,
+            )
+            logger.info(f"Different model is chosen and it's {different_model_name}")
+            different_model_cls = self.models[different_model_name]["class"]
+            cross_model = (different_model_name, different_model_cls())
+            current_attack_kwargs[
+                "different_model_name_cross_model"] = different_model_name
+
+        attack_timings = {}
+        with efficiency.measure(attack_timings, "attack_latency",
+                                resolver.is_enabled(None, "attack_latency")):
+            attacked_audio, extra = apply_attack(
+                attack_instance,
+                attack_class_name,
+                target_audio=watermarked_audio,
+                clean_audio=audio,
+                attack_kwargs=current_attack_kwargs,
+            )
+
+        # Ensure consistent shape for all attacks
+        if isinstance(attacked_audio, np.ndarray):
+            attacked_audio = np.squeeze(attacked_audio)
+
+        # Save attacked audio. Use a separate variable so the 2D
+        # reshape required by sf.write doesn't leak into detect(),
+        # which expects a 1D signal.
+        if save_audio:
+            attacked_to_save = (
+                np.expand_dims(attacked_audio, axis=1)
+                if attacked_audio.ndim == 1
+                else attacked_audio
+            )
+            attacked_filename = f"{base_filename}_{audio_filename_label(attack_display_name)}.wav"
+            attacked_path = os.path.join(output_dir, attacked_filename)
+            sf.write(attacked_path, attacked_to_save, sampling_rate)
+            if verbose:
+                logger.info(f"Saved attacked audio: {attacked_filename}")
+
+        return attacked_audio, extra, attack_timings, cross_model
+
+    def _cross_model_accuracy(self, model_name, watermark, detected):
+        """CrossModelAttack's second score: ``model_name``'s detection of the watermark it embedded."""
+        config = self.models.get(model_name, {}).get("config") or {}
+        if config.get("is_zero_bit", False):
+            if isinstance(detected, np.ndarray):
+                return detected.tolist()
+            return detected
+        if config.get("returns_confidence", False):
+            detected, _ = detected
+        return self.compare_watermarks(watermark, detected)
+
+    def _attack_entry(self, is_zero_bit, file_watermark, watermarked_audio,
+                      attacked_audio, detected_message, confidence, quality,
+                      attack_timings, file_timings,
+                      cross_model_accuracy=_NO_CROSS_MODEL):
+        """One file's result row for one attack.
+
+        ``cross_model_accuracy`` is ``_NO_CROSS_MODEL`` for every attack but
+        CrossModelAttack.
+        """
+        if is_zero_bit:
+            raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
+            accuracy = float(raw) * 100
+            detection_valid = True
+        else:
+            # False when the detector returned nothing usable, in which
+            # case `accuracy` is the RANDOM_GUESS_ACCURACY sentinel
+            # rather than a measured bit-agreement.
+            detection_valid = not self._is_invalid_detection(
+                detected_message, file_watermark
+            )
+            accuracy = self.compare_watermarks(file_watermark, detected_message)
+
+        entry = {
+            "accuracy": accuracy,
+            "detection_valid": detection_valid,
+            "attack_snr_db": self._attack_snr_db(
+                watermarked_audio, attacked_audio
+            ),
+            "attacked_audio_quality_wm": quality,
+            # Embedding happens once per file, not once per attack,
+            # so its time is repeated here rather than measured
+            # again -- the attack tables need a figure per row.
+            **attack_timings,
+            **file_timings,
+        }
+
+        # Add confidence for models that return it
+        if confidence is not None:
+            entry["confidence"] = confidence
+
+        if cross_model_accuracy is not _NO_CROSS_MODEL:
+            entry["accuracy_cross_model"] = cross_model_accuracy
+        return entry
 
     def compute_mean_accuracy(self, results, resolver=None, is_zero_bit=False):
         """

@@ -14,13 +14,13 @@ import sys
 import os
 import random
 import shutil
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 import logging
 
 from deepmarkpy import __version__
-from deepmarkpy.benchmark import Benchmark, expand_attacks
+from deepmarkpy.benchmark import EXECUTORS, Benchmark, Parallelism, expand_attacks
 from deepmarkpy.config import (
     ConfigError,
     MODE_KEYS,
@@ -104,6 +104,9 @@ class RunSettings:
     save_audio: bool
     # Whether this invocation runs more than one mode.
     several_modes: bool = False
+    # How benchmark mode executes; the other modes run sequentially.
+    executor: str = "sequential"
+    parallelism: Parallelism = field(default_factory=Parallelism)
 
 
 def _resolve_settings(args, config) -> RunSettings:
@@ -122,7 +125,51 @@ def _resolve_settings(args, config) -> RunSettings:
         seed=pick(args.seed, "seed"),
         verbose=bool(pick(args.verbose, "verbose", False)),
         save_audio=bool(pick(args.save_audio, "save_audio", False)),
+        # getattr: a caller may resolve settings from its own namespace.
+        executor=getattr(args, "executor", None) or "sequential",
+        parallelism=Parallelism(
+            workers=getattr(args, "workers", None) or Parallelism.workers,
+            files_in_flight=(getattr(args, "files_in_flight", None)
+                             or Parallelism.files_in_flight),
+            service_lanes=(tuple(getattr(args, "service_lanes", None) or ())
+                           or Parallelism.service_lanes),
+            service_concurrency=dict(getattr(args, "service_concurrency", None) or {}),
+        ),
     )
+
+
+def _service_lane(value):
+    """``ATTACK[+ATTACK...]`` for --service_lanes."""
+    group = tuple(name for name in value.split("+"))
+    if not all(group):
+        raise argparse.ArgumentTypeError(
+            f"expected attack names joined by '+', e.g. DiffusionAttack+VAEAttack; got {value!r}"
+        )
+    return group
+
+
+def _service_concurrency(value):
+    """``ATTACK=N`` for --service_concurrency."""
+    name, sep, count = value.partition("=")
+    try:
+        slots = int(count)
+    except ValueError:
+        slots = 0
+    if not sep or not name or slots < 1:
+        raise argparse.ArgumentTypeError(
+            f"expected ATTACK=N with N at least 1, e.g. DiffusionAttack=2; got {value!r}"
+        )
+    return name, slots
+
+
+def _positive_int(value):
+    try:
+        number = int(value)
+    except ValueError:
+        number = 0
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"expected an integer of at least 1; got {value!r}")
+    return number
 
 
 def _build_parser():
@@ -233,6 +280,64 @@ def _build_parser():
             "(attack.py/model.py + config.json). Overrides "
             "general.plugins_dir; also settable via the DEEPMARK_PLUGINS_DIR "
             "environment variable."
+        ),
+    )
+    parser.add_argument(
+        "--executor",
+        choices=list(EXECUTORS),
+        default="sequential",
+        help=(
+            "How benchmark mode runs. 'sequential' (default) runs one file "
+            "and one attack at a time. 'pipelined' gives the same results: "
+            "it overlaps the dockerized attacks, detection and metrics with "
+            "the attacks that run in this process, which still run in the "
+            "sequential order. The other modes always run sequentially."
+        ),
+    )
+    defaults = Parallelism()
+    parser.add_argument(
+        "--workers",
+        type=_positive_int,
+        default=defaults.workers,
+        help=f"Processes computing quality metrics under --executor pipelined (default: {defaults.workers}).",
+    )
+    parser.add_argument(
+        "--files_in_flight",
+        type=_positive_int,
+        default=defaults.files_in_flight,
+        help=(
+            "Files under way at once under --executor pipelined "
+            f"(default: {defaults.files_in_flight})."
+        ),
+    )
+    parser.add_argument(
+        "--service_lanes",
+        type=_service_lane,
+        nargs="+",
+        default=None,
+        metavar="ATTACK[+ATTACK...]",
+        help=(
+            "Under --executor pipelined, dockerized attacks share one lane, "
+            "so their services run one at a time as they do sequentially: a "
+            "service on the CPU uses every core. Each GROUP named here gets a "
+            "lane of its own instead; name the services that do not compete "
+            "for the CPU, such as those on a GPU. Default: "
+            + " ".join("+".join(g) for g in Parallelism.service_lanes) + "."
+        ),
+    )
+    parser.add_argument(
+        "--service_concurrency",
+        type=_service_concurrency,
+        nargs="+",
+        default=None,
+        metavar="ATTACK=N",
+        help=(
+            "Requests in flight to a dockerized attack with a lane to itself "
+            "(see --service_lanes) under --executor pipelined, e.g. "
+            "DiffusionAttack=2 (default 1). Above 1 the requests no longer "
+            "reach the service in the sequential order, and only a service "
+            "that answers several at once gains: use it for stochastic "
+            "services with replicas."
         ),
     )
     parser.add_argument(
@@ -1179,7 +1284,9 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
         )
 
     results = benchmark.run(
-        filepaths=filepaths, on_file_complete=_persist, **run_kwargs
+        filepaths=filepaths, on_file_complete=_persist,
+        executor=settings.executor, parallelism=settings.parallelism,
+        **run_kwargs
     )
 
     with open(results_path, "w") as fp:
@@ -1234,6 +1341,9 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
             "attack_parameters_resolved": resolved_attack_parameters(
                 benchmark, config,
             ),
+            "executor": settings.executor,
+            **({"parallelism": asdict(settings.parallelism)}
+               if settings.executor == "pipelined" else {}),
         },
     )
 
