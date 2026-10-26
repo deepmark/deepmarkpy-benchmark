@@ -3,7 +3,7 @@
 # resolved dependency set.
 accelerate==1.15.0
 aiohappyeyeballs==2.4.0
-aiohttp==3.14.3
+aiohttp==3.14.4
 aiosignal==1.3.1
 annotated-doc==0.0.5
 annotated-types==0.7.0
