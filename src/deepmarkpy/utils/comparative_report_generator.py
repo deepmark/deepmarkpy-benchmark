@@ -5,10 +5,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from deepmarkpy.utils.latex_helpers import (
+    DETECTION_COUNTS,
     build_longtable,
     compile_latex,
+    detection_rate,
     display_attack_name,
     figure_block,
+    has_detection_counts,
     make_preamble,
     stat_header,
 )
@@ -96,13 +99,30 @@ class ComparativeReportGenerator:
             return float(entry) if statistic == "mean" else None
         return entry.get(f"accuracy_{statistic}")
 
-    def _primary_value(self, entry, attack_name, statistic=None):
+    def _model_value(self, model_name, entry, statistic):
+        """``_value``, except a zero-bit model's score is its TP rate.
+
+        A zero-bit model has no accuracy, only detection counts; the share of
+        files it detected is what its column has always shown. A spread has
+        no such counterpart, so its ``std`` is None.
+        """
+        if (self._is_zero_bit(model_name) and isinstance(entry, dict)
+                and entry.get("tp_n") is not None):
+            return None if statistic == "std" else detection_rate(entry, "tp")
+        return self._value(entry, statistic)
+
+    def _primary_value(self, entry, attack_name, statistic=None, model_name=None):
         """The radar's value for an attack.
 
         ``statistic`` (by default ``_radar_statistic()``) when the attack has
         it, else its group's first configured accuracy statistic other than
-        ``std`` that has a value, else the mean.
+        ``std`` that has a value, else the mean. A zero-bit ``model_name``'s
+        value is its TP rate.
         """
+        if model_name is not None and self._is_zero_bit(model_name):
+            value = self._model_value(model_name, entry, "mean")
+            if value is not None:
+                return float(value)
         statistic = statistic or self._radar_statistic()
         group_key = self.resolver.group_for_attack(attack_name)
         candidates = [statistic] + self.resolver.statistics_for(group_key,
@@ -228,7 +248,7 @@ class ComparativeReportGenerator:
         for attack in attacks:
             display = self._display_name(attack)
             values = [
-                self._value(all_stats[m].get(attack), statistic)
+                self._model_value(m, all_stats[m].get(attack), statistic)
                 for m in model_names
             ]
             # Rank only among comparable (multi-bit) columns.
@@ -254,9 +274,41 @@ class ComparativeReportGenerator:
                 f"across model families -- see the notes below the table."
             ),
             label=label,
-        ) + (self._comparability_note(model_names, zero_bit) if with_note else "")
+        ) + (self._comparability_note(model_names, zero_bit, all_stats) if with_note else "")
 
-    def _comparability_note(self, model_names, zero_bit):
+    def generate_detection_table(self, all_stats, prefix, label=None):
+        """TP or FP rate (\\%) by attack and model; ``prefix`` is ``tp`` or ``fp``.
+
+        Only models declaring ``returns_is_watermarked`` have these counts;
+        the others show N/A. A higher TP rate ranks better, a lower FP rate.
+        """
+        model_names, attacks = self.aggregate_stats(all_stats)
+        rows = []
+        for attack in attacks:
+            values = [detection_rate(all_stats[m].get(attack), prefix)
+                      for m in model_names]
+            cells = [
+                self._colored_val(value, values, higher_is_better=(prefix == "tp"),
+                                  fmt=".1f")
+                for value in values
+            ]
+            rows.append(f"    {self._display_name(attack)} & "
+                        + " & ".join(cells) + " \\\\")
+        what = (
+            "the share of attacked watermarked files the model detected"
+            if prefix == "tp" else
+            "the share of clean files, put through the same attack, the model "
+            "reported as watermarked"
+        )
+        return build_longtable(
+            "l" + "c" * len(model_names),
+            "Attack Type & " + " & ".join(self._short_model_name(m) for m in model_names),
+            rows,
+            caption=f"{dict(DETECTION_COUNTS)[prefix]} rate (\\%) by attack type: {what}.",
+            label=label or f"tab:comparison_{prefix}",
+        )
+
+    def _comparability_note(self, model_names, zero_bit, all_stats=None):
         """Spell out what makes the columns non-comparable, per model."""
         if not self.model_meta:
             return ""
@@ -267,7 +319,12 @@ class ComparativeReportGenerator:
             rate = meta.get("sampling_rate")
             n = meta.get("n_files")
             desc = [self._short_model_name(name) + ":"]
-            desc.append("detection rate" if meta.get("is_zero_bit") else "bit accuracy")
+            if meta.get("is_zero_bit"):
+                desc.append("detection rate")
+            elif has_detection_counts((all_stats or {}).get(name, {}).values()):
+                desc.append("bit accuracy over the files it detected")
+            else:
+                desc.append("bit accuracy")
             if bits:
                 desc.append(f"{bits}-bit payload")
             if rate:
@@ -337,7 +394,7 @@ class ComparativeReportGenerator:
         statistic = self._radar_statistic(all_stats)
         for idx, model in enumerate(model_names):
             values = [
-                self._primary_value(all_stats[model].get(a), a, statistic) or 0
+                self._primary_value(all_stats[model].get(a), a, statistic, model) or 0
                 for a in attacks
             ]
             values_closed = values + [values[0]]
@@ -473,6 +530,19 @@ class ComparativeReportGenerator:
                 + "\n\n".join(blocks)
             )
 
+        detection = ""
+        if any(has_detection_counts(stats.values()) for stats in all_stats.values()):
+            detection = (
+                "\n\n\\section{Detection Comparison}\n\n"
+                "\\noindent For the models that decide themselves whether a "
+                "watermark is present: true positives on the attacked "
+                "watermarked files and false positives on the clean files put "
+                "through the same attack. Their accuracy above covers the "
+                "detected files only.\n\n"
+                + "\n\n".join(self.generate_detection_table(all_stats, prefix)
+                              for prefix, _ in DETECTION_COUNTS)
+            )
+
         # Radar chart right after accuracy table
         radar_figure = ""
         if include_radar:
@@ -510,6 +580,7 @@ class ComparativeReportGenerator:
             f"{color_legend}\n\n"
             f"{radar_figure}\n"
             f"{secondary}\n"
+            f"{detection}\n"
             f"\\end{{document}}"
         )
 

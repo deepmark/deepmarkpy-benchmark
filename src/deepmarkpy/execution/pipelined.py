@@ -12,6 +12,9 @@ returns, entry for entry and in the same order.
   in-process model they stay on the ordered lane, whose detection may depend
   on what it embedded last.
 - **Detection** by a dockerized model, ``detect_concurrency`` at once.
+- **False positives**, for a model declaring ``returns_is_watermarked``: each
+  attack is applied to the clean audio right after the watermarked audio, on
+  the same lane, and both detections go to the detection lane.
 - **Metrics** in ``workers`` processes with this process's BLAS thread counts,
   which MCD and SI-SDR depend on.
 
@@ -41,7 +44,9 @@ from deepmarkpy.benchmark import (
     _NEEDS_CLEAN_ORIGINAL,
     _NO_CROSS_MODEL,
     _TUPLE_RETURNING_ATTACKS,
+    read_detection,
 )
+from deepmarkpy.core.base_model import returns_is_watermarked
 from deepmarkpy.utils import efficiency
 from deepmarkpy.utils.metrics import compute_metrics
 
@@ -170,8 +175,12 @@ class _Task:
         self.attacked_audio = None
         self.attack_timings = None
         self.cross_model_accuracy = _NO_CROSS_MODEL
-        self.detection = None         # (message, confidence, timings) or its Future
+        self.detection = None         # (message, confidence, detected, timings) or its Future
         self.quality = None           # Future of the metrics, or None
+        # The false-positive half, for a model declaring returns_is_watermarked:
+        # the same attack on the clean audio, and whether it was detected.
+        self.attacked_clean = None
+        self.clean_detection = None   # bool or its Future
 
 
 class PipelinedRun:
@@ -186,6 +195,7 @@ class PipelinedRun:
         self.model = model_instance
         self.returns_confidence = model_config.get("returns_confidence", False)
         self.is_zero_bit = model_config.get("is_zero_bit", False)
+        self.returns_presence = returns_is_watermarked(model_config)
         self.attack_kwargs = attack_kwargs
         self.watermark_data = watermark_data
         self.sampling_rate = sampling_rate
@@ -346,13 +356,17 @@ class PipelinedRun:
                 detection = task.detection
                 if isinstance(detection, Future):
                     detection = detection.result()
-                detected_message, confidence, detect_timings = detection
+                detected_message, confidence, detected, detect_timings = detection
+                detected_clean = task.clean_detection
+                if isinstance(detected_clean, Future):
+                    detected_clean = detected_clean.result()
                 quality = self._quality(task.quality)
                 entry = self.bench._attack_entry(
                     self.is_zero_bit, job.watermark, job.watermarked_audio,
                     task.attacked_audio, detected_message, confidence, quality,
                     {**task.attack_timings, **detect_timings},
                     job.file_timings, task.cross_model_accuracy,
+                    detected=detected, detected_clean=detected_clean,
                 )
             except Exception:
                 # Name the attack and file; keep the exception's type, which
@@ -425,6 +439,14 @@ class PipelinedRun:
         task.attacked_audio = attacked_audio
         return extra, cross_model
 
+    def _apply_clean(self, job, task):
+        """The same attack on the clean audio, for the false-positive check."""
+        task.attacked_clean = self.bench._apply_entry(
+            task.entry, job.attack_kwargs, job.watermarked_audio, job.audio,
+            job.sampling_rate, self.resolver, job.base_filename,
+            self.save_audio, self.output_dir, self.verbose, clean=True,
+        )[0]
+
     def _ordered_attack(self, job, task):
         extra, cross_model = self._apply(job, task)
         if not self.model_in_service:
@@ -434,19 +456,35 @@ class PipelinedRun:
             task.cross_model_accuracy = self.bench._cross_model_accuracy(
                 name, extra, instance.detect(task.attacked_audio, job.sampling_rate),
             )
+        if self.returns_presence:
+            # After the watermarked half, where the sequential loop runs it.
+            self._apply_clean(job, task)
+            if not self.model_in_service:
+                task.clean_detection = self._run_clean_detect(
+                    task.attacked_clean, job.sampling_rate,
+                )
         self._check_inputs(job, task.display_name)
         self._after_attack(job, task)
 
     def _service_attack(self, job, task):
         self._apply(job, task)
+        if self.returns_presence:
+            # Same lane, right after the watermarked request, so the service
+            # receives the two in the sequential order.
+            self._apply_clean(job, task)
         self._after_attack(job, task)
 
     def _after_attack(self, job, task):
-        """Queue the attacked audio's detection and metrics."""
+        """Queue the attacked audio's detections and metrics."""
         if task.detection is None:
             task.detection = self._detect.submit(
                 self._lane, DETECT_LANE, self._run_detect,
                 task.attacked_audio, job.sampling_rate,
+            )
+        if self.returns_presence and task.clean_detection is None:
+            task.clean_detection = self._detect.submit(
+                self._lane, DETECT_LANE, self._run_clean_detect,
+                task.attacked_clean, job.sampling_rate,
             )
         relevant = set(self.resolver.metrics_for_attack(task.display_name))
         if relevant:
@@ -456,14 +494,19 @@ class PipelinedRun:
 
     def _run_detect(self, attacked_audio, sampling_rate):
         timings = {}
-        confidence = None
         with efficiency.measure(timings, "detect_latency",
                                 self.resolver.is_enabled(None, "detect_latency")):
-            if self.returns_confidence:
-                detected_message, confidence = self.model.detect(attacked_audio, sampling_rate)
-            else:
-                detected_message = self.model.detect(attacked_audio, sampling_rate)
-        return detected_message, confidence, timings
+            detected_message, confidence, detected = read_detection(
+                self.model, attacked_audio, sampling_rate,
+                self.returns_confidence, self.returns_presence,
+            )
+        return detected_message, confidence, detected, timings
+
+    def _run_clean_detect(self, attacked_clean, sampling_rate):
+        """Whether the model reports a watermark in the attacked clean audio; untimed."""
+        return read_detection(
+            self.model, attacked_clean, sampling_rate, self.returns_confidence, True,
+        )[2]
 
     # -- guards ----------------------------------------------------------
 

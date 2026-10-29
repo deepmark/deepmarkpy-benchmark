@@ -1,5 +1,55 @@
 # Changelog
 
+## Unreleased
+
+**A model that decides whether a watermark is present is scored on that
+decision in benchmark mode, now the only mode, and eight attack defaults
+change.** Results for the changed attacks, and for AudioSeal, AWARE and Perth
+on every attack, are not comparable with earlier runs.
+
+### Added
+
+- `returns_is_watermarked` in a model's `config.json`. A declaring model is
+  scored on its own `is_watermarked()`: benchmark mode also applies every
+  attack to the clean file and reports true and false positives per attack
+  (`tp_count`/`tp_n`, `fp_count`/`fp_n`), with accuracy and BER over the
+  detected files only and EMR as the files detected with every bit right,
+  over all files. Both executors run it, in the same order. AudioSeal,
+  AWARE and Perth declare it; SilentCipher, TimbreWM and WavMark are measured
+  as before. The basic, detailed and comparative reports gain TP and FP
+  columns.
+- The `NoAttack` attack: the audio unchanged, the no-attack baseline as a row
+  of benchmark mode. It belongs to no group.
+- `E047`: a model declaring `returns_is_watermarked` without implementing
+  `is_watermarked()`, or a zero-bit model not declaring it.
+
+### Changed
+
+- Default attack parameters: `GaussianNoiseAttack` 25 dB (was 35),
+  `PinkNoiseAttack` 35 dB (was 25), `BandstopFilterAttack` 1000-1200 Hz (was
+  350-500), `Mp3CompressionAttack` quality 9 (was 3), `SpeechEnhancement1Attack`
+  noise 0 (was 0.01), `TimeStretchAttack` rate 1.25 (was 1.4),
+  `InvertedTimeStretchAttack` rate 1.4 (was 0.8), and `LowpassFilterAttack`
+  3400 Hz at every sampling rate (was 3500 at 16 kHz up to 6000 at 44.1 and
+  48 kHz). The native goldens were re-recorded, on Linux x86_64 (rubberband
+  4.0.0, ffmpeg 7.0.2): rubberband's output differs between Linux and macOS
+  arm64 by more than the cross-environment tolerance, so the time-stretch,
+  inverted-time-stretch and pitch-shift goldens now hold on Linux and not
+  on macOS, where until now it was the other way round.
+- A zero-bit model has no accuracy, BER or EMR: TP and FP are its whole
+  measurement.
+
+### Removed
+
+- The `no_attacks` mode, with `--no_attacks`, `--init no_attacks`, its report
+  and `E028`. The `NoAttack` attack replaces it.
+- The `detection_reliability` mode, with `--detection_reliability`, `--init
+  detection_reliability`, its report and `E012`, `E025` and `E044`. Benchmark
+  mode reports the same true and false positives for a declaring model (a
+  false negative is a missing true positive), and `NoAttack` gives them
+  without an attack. A config file still naming either removed mode is told
+  what replaced it (`E005`).
+
 ## v3.0.0 — 2026-10-07
 
 **Measurement settings move from flags into one JSON config file per mode.**

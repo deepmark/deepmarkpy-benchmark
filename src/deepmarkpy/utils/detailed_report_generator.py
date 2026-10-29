@@ -22,6 +22,9 @@ from deepmarkpy.utils.attack_groups import (
     ATTACK_SUBGROUPS,
 )
 from deepmarkpy.utils.latex_helpers import (
+    DETECTION_COUNTS,
+    DETECTION_NOTE,
+    ZERO_BIT_NOTE,
     MetricCaveats,
     compact_header,
     compile_latex,
@@ -31,6 +34,7 @@ from deepmarkpy.utils.latex_helpers import (
     duration_label_tex,
     efficiency_tables,
     embedding_cost_line,
+    format_detection_cell,
     format_emr_cell,
     format_metric_cell,
     grid_table,
@@ -171,11 +175,18 @@ class DetailedReportGenerator:
                 if attack_name not in attack_data:
                     attack_data[attack_name] = {
                         "accuracy": [], "confidence": [],
+                        "detected": [], "detected_clean": [],
                         "metrics": {m: [] for m in metrics},
                         "timings": {m: [] for m in timing_metrics},
                     }
 
-                attack_data[attack_name]["accuracy"].append(data["accuracy"])
+                # A model that decides presence itself is scored on the files
+                # it detected; a zero-bit model's rows carry no accuracy.
+                if "accuracy" in data and data.get("detected", True):
+                    attack_data[attack_name]["accuracy"].append(data["accuracy"])
+                for key in ("detected", "detected_clean"):
+                    if key in data:
+                        attack_data[attack_name][key].append(bool(data[key]))
                 if "confidence" in data:
                     attack_data[attack_name]["confidence"].append(data["confidence"])
 
@@ -211,6 +222,21 @@ class DetailedReportGenerator:
             }
             if data["confidence"]:
                 entry["confidence"] = _statistics(data["confidence"])
+            if data["detected"] and not is_zero_bit:
+                # Exact recovery over every file: an undetected file is not
+                # recovered, though its row is left out of the accuracy.
+                exact = entry["accuracy"].get("emr_count", 0)
+                entry["accuracy"].update(
+                    emr_count=exact, emr_n=len(data["detected"]),
+                    emr_rate=exact / len(data["detected"]),
+                )
+            detection = {}
+            for key, prefix in (("detected", "tp"), ("detected_clean", "fp")):
+                if data[key]:
+                    detection[f"{prefix}_count"] = int(sum(data[key]))
+                    detection[f"{prefix}_n"] = len(data[key])
+            if detection:
+                entry["detection"] = detection
             aggregated["attacks"][attack_name] = entry
 
         return aggregated
@@ -235,15 +261,19 @@ class DetailedReportGenerator:
         has_confidence = any(
             "confidence" in aggregated["attacks"][a] for a in available
         )
-        statistics = self.resolver.statistics_for(group_key, "accuracy")
+        # Rows from a model declaring returns_is_watermarked carry TP and FP;
+        # a zero-bit one's carry nothing else.
+        detection = any("detection" in aggregated["attacks"][a] for a in available)
+        tp_only = is_zero_bit and detection
+        statistics = [] if tp_only else self.resolver.statistics_for(group_key, "accuracy")
 
         ber_statistics = self.resolver.statistics_for(group_key, "ber")
         show_ber = not is_zero_bit and self.resolver.is_enabled(group_key, "ber")
         inline_ber = show_ber and len(ber_statistics) == 1
-        show_emr = self.resolver.is_enabled(group_key, "emr")
+        show_emr = self.resolver.is_enabled(group_key, "emr") and not tp_only
 
         headers = [stat_header(s) for s in statistics]
-        if is_zero_bit:
+        if is_zero_bit and not tp_only:
             headers.append("Detected")
         if inline_ber:
             headers.append(metric_label("ber"))
@@ -251,6 +281,8 @@ class DetailedReportGenerator:
             headers.append(metric_label("emr"))
         if has_confidence:
             headers.append("Confidence")
+        if detection:
+            headers += [header for _, header in DETECTION_COUNTS]
 
         rows = []
         for attack in available:
@@ -258,7 +290,7 @@ class DetailedReportGenerator:
             accuracy = data["accuracy"]
             cells = [format_metric_cell("accuracy", accuracy.get(s), "--")
                      for s in statistics]
-            if is_zero_bit:
+            if is_zero_bit and not tp_only:
                 cells.append(accuracy.get("count", "N/A"))
             if inline_ber:
                 cells.append(format_metric_cell(
@@ -266,7 +298,7 @@ class DetailedReportGenerator:
                 ))
             if show_emr:
                 cells.append(format_emr_cell(
-                    accuracy.get("emr_count"), accuracy.get("n"),
+                    accuracy.get("emr_count"), accuracy.get("emr_n", accuracy.get("n")),
                     accuracy.get("emr_rate"),
                 ))
             if has_confidence:
@@ -274,9 +306,15 @@ class DetailedReportGenerator:
                 cells.append(
                     f"{confidence:.2f}" if confidence is not None else "---"
                 )
+            if detection:
+                cells += [format_detection_cell(data.get("detection"), prefix)
+                          for prefix, _ in DETECTION_COUNTS]
             rows.append((self._display_name(attack), cells))
 
         tables = [grid_table("Attack", headers, rows, caption, label)]
+        if detection:
+            note = ZERO_BIT_NOTE if is_zero_bit else DETECTION_NOTE
+            tables[0] += f"\n\n{{\\noindent\\footnotesize {note}}}\n"
 
         if show_ber and not inline_ber:
             ber_rows = [

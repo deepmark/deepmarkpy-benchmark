@@ -5,7 +5,6 @@ import pytest
 
 _GENERATORS = (
     "report_generator", "detailed_report_generator",
-    "no_attacks_report_generator", "detection_reliability_report_generator",
     "comparative_report_generator",
 )
 

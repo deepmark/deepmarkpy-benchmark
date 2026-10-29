@@ -152,7 +152,7 @@ You can check the status of the services using `docker-compose ps`. The first bu
 
 ### 2. Run the CLI
 
-Measurement settings live in a JSON config file, one per mode, and the other
+Measurement settings live in a JSON config file, and the other
 flags are operational (the 2.x flags still run without `--config`; see
 [Running with the 2.x flags](#running-with-the-2x-flags)). Start from a
 commented template, choose its attacks, check it, then run it:
@@ -175,24 +175,17 @@ without running anything. It needs neither the audio nor the Docker services:
 an unreachable model service is reported but is not an error, and attack
 services are not checked.
 
-| Mode | What it measures |
-|------|------------------|
-| `benchmark` | Watermark survival under each attack, plus the audio-quality cost |
-| `no_attacks` | Baseline: does the model read back its own watermark, and what does embedding alone cost? |
-| `detection_reliability` | False positives on clean audio and false negatives on watermarked audio |
+A config file declares `"mode": "benchmark"`, the one mode: watermark
+survival under each attack, true and false positives for a model that decides
+presence itself (below), and the audio-quality cost. The baseline with nothing
+between embedding and detection is the `NoAttack` attack, run and reported
+like any other. The `no_attacks` and `detection_reliability` modes of 3.x are
+gone; a file naming one is told what replaced it (`E005`).
 
-Each file declares its `"mode"` and accepts only that mode's keys: a
-`no_attacks` file that mentions attacks is an error. Pass several files
-(`--config my_config.json my_reliability.json`) to run several modes in one
-invocation; each must declare a different mode, and they run in the order
-given.
-
-**Models and attacks.** In `benchmark` mode, two or more `models` add a
-comparative report. `attacks.groups` and `attacks.list` combine; leaving both
-empty runs every discovered attack in `benchmark` mode and only the no-attack
-baseline in `detection_reliability` mode. A group expands to the attacks it
-declares, so a plugin that failed to load stops the run rather than shrinking
-it.
+**Models and attacks.** Two or more `models` add a comparative report.
+`attacks.groups` and `attacks.list` combine; leaving both empty runs every
+discovered attack. A group expands to the attacks it declares, so a plugin
+that failed to load stops the run rather than shrinking it.
 
 | Group | Attacks |
 |-----|---------|
@@ -202,6 +195,23 @@ it.
 | `desynchronization` | `TimeStretchAttack`, `PitchShiftAttack`, `InvertedTimeStretchAttack`, `ZeroCrossInsertsAttack`, `FlipSamplesAttack` |
 | `ai_attacks` | `SpeechEnhancement1Attack`, `SpeechEnhancement2Attack`, `SpeechTokenizationAttack`, `NeuralVocoderAttack`, `DiffusionAttack`, `VAEAttack` |
 | `transmission` | `ReplayAttack`, `NetworkTransmissionAttack` |
+
+`NoAttack`, the baseline, belongs to no group: name it in `attacks.list`
+(an empty selection includes it).
+
+**True and false positives.** A model whose `config.json` sets
+`returns_is_watermarked` (AudioSeal, AWARE and Perth do) is scored on its own
+watermarked/not decision, its `is_watermarked()`. Each attack is also applied
+to the clean file, and the statistics add a true-positive count
+(`tp_count`/`tp_n`: attacked watermarked files it detected) and a
+false-positive count (`fp_count`/`fp_n`: clean files it detected after the
+same attack). Its accuracy and BER cover only the files it detected, and EMR
+counts the files it detected with every bit right, over all files (an
+undetected file is not recovered). A zero-bit model carries no message, so TP
+and FP are its whole measurement: it has no accuracy, BER or EMR. A model
+that does not declare it gets accuracy, BER and EMR over every file, as
+before. Every attack runs twice per file for declaring models; the pipelined
+executor overlaps the two.
 
 `deepmark-benchmark --help` lists the flags: `--config`, `--init`,
 `--validate-only`, `--wav_files_dir` (required unless the config sets it),
@@ -356,14 +366,11 @@ is an error.
 | `--wm_model`, `--wm_models` | `models` |
 | `--attack_types` | `attacks.list` |
 | `--attack_groups` | `attacks.groups` |
-| `--no_attacks` | `"mode": "no_attacks"` |
-| `--detection_reliability` | `"mode": "detection_reliability"` |
 | `--calculate_quality_metrics` | `calculate_quality_metrics` |
 | `--crop_before_attack` | `crop_before_attack` |
 | `--<plugin parameter>` | `attack_parameters.<Attack>.<parameter>` |
 
-`--no_attacks` with `--detection_reliability` runs both modes, which needs a
-single model. Per-group metrics and statistics, `efficiency`,
+Per-group metrics and statistics, `efficiency`,
 `duration_groups`, `comparison` and per-version attack parameters have no
 flag; a `--<plugin parameter>` reaches the default version only and must be
 spelled in full.
@@ -417,69 +424,50 @@ If the service is not reachable, `W006` warns before the run, the reports name t
 > (watermark only)" row in the detailed report isolates the embedding
 > cost so you can tell the two contributions apart.
 
-### 4. Detection Reliability (Optional)
+### 4. True and False Positives
 
-A `detection_reliability` config measures false positive and false negative
-rates. It takes **exactly one model**, which must implement
-`is_watermarked()` (see [Adding a New Watermarking
-Model](#adding-a-new-watermarking-model)).
+A model whose `config.json` sets `"returns_is_watermarked": true` and which
+implements `is_watermarked()` (see [Adding a New Watermarking
+Model](#adding-a-new-watermarking-model)) is scored on its own decision in
+every benchmark run, with no extra setting:
 
-```bash
-deepmark-benchmark --init detection_reliability > my_reliability.json
-deepmark-benchmark --config my_reliability.json --wav_files_dir /path/to/audio
-```
+- **True positive**: the attacked watermarked file is detected.
+- **False positive**: the clean file, put through the same attack, is detected.
+- A false negative is a missing true positive (FN = 100 % − TP), and the
+  `NoAttack` row gives the rates with no attack at all.
 
-Without attacks the mode measures:
-- **False positive**: detection on clean (unwatermarked) audio reports a watermark present.
-- **False negative**: detection on watermarked audio fails to find the watermark.
-
-Add attacks in the file and FP/FN are additionally reported per attack —
-the attack applied to clean audio for FP, to watermarked audio for FN:
-
-```json
-"attacks": { "list": ["GaussianNoiseAttack", "LowpassFilterAttack"] }
-```
-
-Note that every attack runs **twice per file** here, so a full attack set
-costs about double what the same set costs in benchmark mode.
-
-Results are saved to `report/detection_reliability.json` and a dedicated `detection_reliability_report.pdf` is generated.
-
-> **Note:** Only models that implement `is_watermarked()` support this mode.
-> Each model defines its own detection logic — zero-bit models check the
-> binary output directly, while confidence-based models compare against a
-> threshold. A model without it is refused by validation (`E044`) before
-> anything runs.
+Every attack therefore runs twice per file for these models. Each model
+defines its own decision — zero-bit models check the binary output directly,
+confidence-based models compare against a threshold. A model declaring
+`returns_is_watermarked` without implementing `is_watermarked()`, or a
+zero-bit model not declaring it, is refused by validation (`E047`) before
+anything runs.
 
 ### 5. Save Audio (Optional)
 
 Use `--save_audio` (or `"save_audio": true` under `general`) to write
 intermediate audio files to disk for manual inspection. Files are saved
-to `<report_dir>/audio/`, or to `<report_dir>/audio/<mode>/` when one
-invocation runs several modes; with several models, each model's audio
-goes under `<report_dir>/<ModelName>/`.
+to `<report_dir>/audio/`; with several models, each model's audio goes under
+`<report_dir>/<ModelName>/`.
 
 ```bash
-deepmark-benchmark --config my_reliability.json --wav_files_dir /path/to/audio \
+deepmark-benchmark --config my_config.json --wav_files_dir /path/to/audio \
                   --save_audio
 ```
 
-In detection reliability mode the following files are saved per input file:
+The following files are saved per input file:
 - `{filename}_watermarked.wav` — watermarked audio (before any attack)
-- `{filename}_{AttackName}_clean.wav` — attack applied to the clean (unwatermarked) audio
 - `{filename}_{AttackName}.wav` — attack applied to the watermarked audio
-
-In the standard benchmark mode, watermarked and attacked-watermarked files are saved.
+- `{filename}_{AttackName}_clean.wav` — attack applied to the clean audio, for
+  a model declaring `returns_is_watermarked` (its false positives)
 
 ### 6. View Results
 
 The benchmark generates the following outputs in the `report/` directory.
-Each mode writes distinct filenames, so running several in one
-invocation does not make them overwrite each other.
 
 **`benchmark` mode, one model:**
 - `benchmark_results.json` – Detailed per-file, per-attack results
-- `benchmark_stats.json` – Per-attack statistics, carrying exactly the metrics and statistics the config asked for; with `duration_groups` set, it is keyed by duration bin instead (`{"<bin>": {"stats": {...}, "n_files": n}}`), plus an all-files `Overall` entry when `include_overall` is true and the files fall in more than one bin
+- `benchmark_stats.json` – Per-attack statistics, carrying exactly the metrics and statistics the config asked for, plus `tp_count`/`tp_n`/`fp_count`/`fp_n` for a model declaring `returns_is_watermarked`; with `duration_groups` set, it is keyed by duration bin instead (`{"<bin>": {"stats": {...}, "n_files": n}}`), plus an all-files `Overall` entry when `include_overall` is true and the files fall in more than one bin
 - `run_metadata.json` – Version, git revision, seed, plugin inventory, and the config file the run came from
 - `benchmark_report.tex/.pdf` – Accuracy per attack family, the accuracy ranking chart, and attack-strength curves for any attack run at two or more versions
 - `detailed_report.tex/.pdf` – Per-family metric breakdowns against a "no attack (watermark only)" baseline (whenever any signal metric is enabled)
@@ -490,14 +478,7 @@ invocation does not make them overwrite each other.
   - Accuracy comparison table with rank-based coloring, showing `comparison.primary_statistic`
   - One further table per other statistic configured for accuracy
   - Radar chart comparing all models
-
-**`no_attacks` mode:**
-- `no_attacks_<ModelName>.json` – Per-file baseline results
-- `no_attacks_report.tex/.pdf` – Detection fidelity and the audio-quality cost of embedding
-
-**`detection_reliability` mode:**
-- `detection_reliability.json` – FP/FN counts and per-attack statistics
-- `detection_reliability_report.tex/.pdf` – Baseline and per-family reliability
+  - TP and FP rate tables, when any model declares `returns_is_watermarked`
 
 Every table's columns come from the config file. If a metric is enabled
 but produced no value anywhere — an unreachable service, a missing
@@ -667,17 +648,21 @@ class NewModel(BaseModel):
     def is_watermarked(self, detect_output) -> bool:
         """Decide whether a watermark is present based on detect() output.
 
-        Required for detection_reliability mode. Each model defines
-        its own logic here. Examples:
+        Used, with returns_is_watermarked in config.json, for benchmark
+        mode's true and false positives. Each model defines its own logic
+        here. Examples:
           - Zero-bit model: return bool(detect_output)
           - Confidence model: return confidence >= threshold
         """
         return bool(np.any(detect_output))
 ```
 
-> **`is_watermarked()` is optional** — only needed if you want the model to
-> support the `detection_reliability` mode. Models without it work normally in the
-> standard benchmark mode.
+> **`is_watermarked()` is optional** — together with
+> `"returns_is_watermarked": true` in `config.json` it makes benchmark mode
+> score the model's true and false positives, with accuracy over the files it
+> detected. A model without them is measured on bit accuracy over every file.
+> A zero-bit model must declare it, since that decision is its only output
+> (`E047`).
 
 3.	Add config.json
 ```json
@@ -685,7 +670,8 @@ class NewModel(BaseModel):
     "sampling_rate": 16000,
     "watermark_size": 16,
     "returns_confidence": false,
-    "is_zero_bit": false
+    "is_zero_bit": false,
+    "returns_is_watermarked": true
 }
 ```
 

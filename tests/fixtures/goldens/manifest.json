@@ -1,8 +1,8 @@
 {
-  "recorded": "2026-07-31",
-  "environment": "canonical: clean venv, pip install -r requirements.txt, CPython 3.11.5",
-  "machine": "Darwin arm64",
-  "ffmpeg": "ffmpeg version 8.0.1 Copyright (c) 2000-2025 the FFmpeg developers",
+  "recorded": "2026-10-29",
+  "environment": "canonical: clean venv, pip install -r requirements.txt, CPython 3.12.3",
+  "machine": "Linux x86_64",
+  "ffmpeg": "ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/  Copyright (c) 2000-2024 the FFmpeg developers",
   "rubberband": "4.0.0",
   "numeric_env": {
     "numpy": "2.2.6",
@@ -131,7 +131,7 @@
       "params": {},
       "output_dtype": "float64",
       "output_shape": [
-        16000
+        16001
       ]
     },
     "LPCAttack": {
@@ -149,6 +149,13 @@
       ]
     },
     "Mp3CompressionAttack": {
+      "params": {},
+      "output_dtype": "float64",
+      "output_shape": [
+        16000
+      ]
+    },
+    "NoAttack": {
       "params": {},
       "output_dtype": "float64",
       "output_shape": [
@@ -215,7 +222,7 @@
       "params": {},
       "output_dtype": "float64",
       "output_shape": [
-        11429
+        12800
       ]
     },
     "WaveletAttack": {

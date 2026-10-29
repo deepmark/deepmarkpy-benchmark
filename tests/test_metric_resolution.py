@@ -179,7 +179,7 @@ class TestDefaultsReproduceTheTaxonomy:
             assert set(resolver.signal_metrics_for_group(key)) == declared, \
                 f"{key} drifted from the taxonomy"
 
-    @pytest.mark.parametrize("mode", ["benchmark", "detection_reliability"])
+    @pytest.mark.parametrize("mode", ["benchmark"])
     def test_shipped_template_reproduces_the_builtin_matrix(self, mode):
         """An unedited --init file must not change what a run displays."""
         shipped = load_configs([str(TEMPLATES / f"{mode}.json")])[0].resolver

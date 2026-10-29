@@ -1,7 +1,7 @@
 {
     "order_bandstop": 5,
     "freq_range_bandstop": [
-        350,
-        500
+        1000,
+        1200
     ]
 }

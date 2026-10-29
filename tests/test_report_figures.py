@@ -1,6 +1,6 @@
 """Every figure a report references is drawn: the basic report's accuracy
-ranking and strength curves and the comparative report's radar. The detailed,
-no_attacks and detection_reliability reports are tables only."""
+ranking and strength curves and the comparative report's radar. The detailed
+report is tables only."""
 
 import json
 import re
@@ -17,10 +17,6 @@ from deepmarkpy.utils.latex_helpers import (
     slugify,
 )
 from deepmarkpy.utils.detailed_report_generator import DetailedReportGenerator
-from deepmarkpy.utils.detection_reliability_report_generator import (
-    generate_detection_reliability_report,
-)
-from deepmarkpy.utils.no_attacks_report_generator import generate_no_attacks_report
 from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
 
 pytestmark = pytest.mark.usefixtures("no_pdflatex")
@@ -93,25 +89,6 @@ def assert_no_figures(tex, directory):
     assert not list(directory.glob("*.png"))
 
 
-def _no_attack_files(offset=0.0, n=5, supports_detection=False,
-                     is_zero_bit=False):
-    """One model's no-attacks result block."""
-    files = []
-    for index in range(n):
-        entry = {
-            "filepath": f"f{index}.wav",
-            "accuracy": 100.0 if is_zero_bit and index else 92.0 + index,
-            "watermarked_audio_quality": {
-                m: 4.0 - offset for m in SIGNAL_METRICS
-            },
-        }
-        if supports_detection:
-            entry["detected"] = index != 0
-        files.append(entry)
-    return {"is_zero_bit": is_zero_bit, "files": files,
-            "supports_detection": supports_detection}
-
-
 def build_basic(tmp_path, config, results=None):
     benchmark = Benchmark.__new__(Benchmark)
     stats = benchmark.compute_mean_accuracy(
@@ -136,39 +113,6 @@ class TestEveryReportReferencesOnlyFiguresItDrew:
             .generate_full_report(make_results(), model_name="TestModel")
         assert_no_figures((tmp_path / "detailed_report.tex").read_text(),
                           tmp_path)
-
-    def test_no_attacks_report_with_two_models(self, tmp_path):
-        config = write_config(tmp_path, mode="no_attacks")
-        generate_no_attacks_report(
-            {"AudioSealModel": _no_attack_files(0.0),
-             "WavMarkModel": _no_attack_files(0.4)},
-            report_dir=str(tmp_path), resolver=config.resolver,
-        )
-        assert_no_figures((tmp_path / "no_attacks_report.tex").read_text(),
-                          tmp_path)
-
-    def test_detection_reliability_report(self, tmp_path):
-        config = write_config(tmp_path, mode="detection_reliability")
-        result = {
-            "model_name": "AudioSealModel", "n_files": 8,
-            "no_attack": {"false_positive_count": 1, "false_negative_count": 0},
-            "attacks": {
-                name: {
-                    "false_positive_count": index,
-                    "false_positive_attempts": 8,
-                    "false_negative_count": 8 - index,
-                    "false_negative_attempts": 8,
-                    "accuracy_mean": 60.0 + index, "accuracy_n": 8,
-                    "metrics": {},
-                }
-                for index, name in enumerate(ATTACKS)
-            },
-        }
-        generate_detection_reliability_report(
-            result, report_dir=str(tmp_path), resolver=config.resolver,
-        )
-        tex = (tmp_path / "detection_reliability_report.tex").read_text()
-        assert_no_figures(tex, tmp_path)
 
     def test_comparative_report(self, tmp_path):
         config = write_config(tmp_path)
@@ -387,32 +331,6 @@ class TestLabelsRenderAsText:
             plt.close(fig)
         assert "A1  –  Codec2VocoderAttack_700" in drawn
         assert "A2  –  Echo (a&b)" in drawn
-
-
-class TestNoAttacksDetectedColumn:
-    """The count of detected files comes from the model, or not at all."""
-
-    def _tex(self, tmp_path, **kwargs):
-        config = write_config(tmp_path, mode="no_attacks")
-        generate_no_attacks_report(
-            {"PerthModel": _no_attack_files(**kwargs)},
-            report_dir=str(tmp_path), resolver=config.resolver,
-        )
-        return (tmp_path / "no_attacks_report.tex").read_text()
-
-    def test_shown_when_the_model_answers_is_watermarked(self, tmp_path):
-        tex = self._tex(tmp_path, supports_detection=True, is_zero_bit=True)
-        assert "Detected" in tex
-        assert "4/5" in tex, tex
-
-    def test_omitted_when_the_model_does_not(self, tmp_path):
-        tex = self._tex(tmp_path, supports_detection=False, is_zero_bit=True)
-        assert "Detected" not in tex
-
-    def test_a_multi_bit_model_that_answers_gets_the_column_too(self, tmp_path):
-        """The column follows the method, not the zero-bit flag."""
-        tex = self._tex(tmp_path, supports_detection=True, is_zero_bit=False)
-        assert "Detected" in tex
 
 
 class TestDurationPartsAreSelfContained:

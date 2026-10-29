@@ -24,7 +24,7 @@ install) not to change the registered sets. ``pycodec2>=4.0.0`` is a floating
 lower bound in ``requirements.txt``; it resolved to 4.1.1 at record time.
 
 Every attack registers in the canonical environment: all import-time
-dependencies are declared, so the full set of 45 attacks is expected from a
+dependencies are declared, so the full set of 46 attacks is expected from a
 clean install and the exact-set assertion binds unconditionally. (``wavelet``
 needs ``PyWavelets``; ``time_stretch``, ``pitch_shift`` and
 ``inverted_time_stretch`` need ``pyrubberband``.) Note ``pyrubberband``
@@ -83,6 +83,7 @@ CANONICAL_ATTACK_DIRS = {
     "Mp3CompressionAttack": "mp3_compression",
     "NetworkTransmissionAttack": "network_transmission",
     "NeuralVocoderAttack": "neural_vocoder",
+    "NoAttack": "no_attack",
     "OpusCodecAttack": "opus_codec",
     "PCMQuantizationAttack": "pcm_quantization",
     "PinkNoiseAttack": "pink_noise",
@@ -108,7 +109,7 @@ CANONICAL_ATTACKS = frozenset(CANONICAL_ATTACK_DIRS)
 
 # Attacks whose import-time dependency is optional, so a clean install may
 # lack them: {class: (directory, dependency)}. Every dependency is declared
-# and all 45 attacks register in the canonical environment; the mapping
+# and all 46 attacks register in the canonical environment; the mapping
 # stays (empty) so a future optional dependency has an obvious home.
 OPTIONAL_DEP_ATTACKS = {}
 
