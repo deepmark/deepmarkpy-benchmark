@@ -29,7 +29,7 @@ CONFIGURABLE_METRICS = [m for m in CANONICAL_METRIC_ORDER
                         if m not in EFFICIENCY_METRICS]
 
 TEMPLATES = (Path(__file__).resolve().parents[1]
-             / "src" / "deepmarkpy" / "config_templates")
+             / "src" / "deepmarkpy" / "presets")
 
 
 def build(tmp_path, **overrides):

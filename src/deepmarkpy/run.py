@@ -23,8 +23,8 @@ from deepmarkpy import __version__
 from deepmarkpy.benchmark import EXECUTORS, Benchmark, Parallelism, expand_attacks
 from deepmarkpy.config import (
     ConfigError,
+    INIT_PRESETS,
     MODE_KEYS,
-    VALID_MODES,
     init_template,
     load_config_data,
     load_configs,
@@ -205,13 +205,14 @@ def _build_parser():
     parser.add_argument(
         "--init",
         type=str,
-        choices=list(VALID_MODES),
+        choices=list(INIT_PRESETS),
         default=None,
-        metavar="MODE",
+        metavar="PRESET",
         help=(
-            "Print a fresh, fully-commented config file for MODE to stdout "
-            "and exit. Redirect it to a file to start from it. Modes: "
-            + ", ".join(VALID_MODES)
+            "Print a config file to stdout and exit: a mode's fully-commented "
+            "template (benchmark), the default attack set (default), or the "
+            "same set with strength sweeps (default_sweep). Redirect it to a "
+            "file to start from it. Presets: " + ", ".join(INIT_PRESETS)
         ),
     )
     parser.add_argument(

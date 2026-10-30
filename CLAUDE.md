@@ -19,7 +19,7 @@ Since v2.0.0 the same discipline applies: discovery sets are locked by `tests/te
 
 - `src/deepmarkpy/run.py` — CLI entrypoint (`deepmark-benchmark` console script; `src/run.py` is a deprecation shim). Operational flags, plus the 2.x measurement flags routed through `_configs_from_flags`; mode dispatch lives in `_MODE_RUNNERS`
 - `src/deepmarkpy/config.py` — Config schema, validator and `ModeConfig`; its codes are listed under [Validation codes](#validation-codes). `load_configs(paths)` reads files; `load_config_data(mapping, source=...)` runs the same checks over a mapping an embedding application built itself. Both go through `_validate_all`
-- `src/deepmarkpy/config_templates/*.json` — The commented templates `--init` prints; a test asserts the benchmark one reproduces the `ATTACK_GROUPS` metric matrix
+- `src/deepmarkpy/presets/*.json` — What `--init` prints (`INIT_PRESETS`): the commented `benchmark` template, which a test asserts reproduces the `ATTACK_GROUPS` metric matrix, and the ready-made `default` and `default_sweep` runs, which a test validates against the real plugins
 - `src/deepmarkpy/utils/metric_resolver.py` — `MetricResolver`: which metrics and statistics each attack group gets. Every report generator asks it instead of carrying constants
 - `src/deepmarkpy/benchmark.py` — Core benchmark orchestration (run loop, accuracy computation)
 - `src/deepmarkpy/execution/pipelined.py` — `--executor pipelined`: the same results as the run loop, with dockerized attacks, detection, metrics and files overlapped. Host-state work (loading, watermark draws, embedding, in-process attacks) stays on one ordered thread in the sequential order; `tests/test_pipelined_executor.py` asserts equality with the sequential executor

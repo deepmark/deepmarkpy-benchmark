@@ -994,6 +994,33 @@ class TestTemplates:
             init_template("benchmrak")
         assert excinfo.value.issues[0].suggestion == "benchmark"
 
+    @staticmethod
+    def _load_preset(preset):
+        from deepmarkpy.benchmark import Benchmark
+
+        benchmark = Benchmark()
+        return load_config_data(json.loads(init_template(preset)), source=preset,
+                                attacks_registry=benchmark.attacks,
+                                models_registry=benchmark.models, quiet=True)
+
+    @pytest.mark.parametrize("preset", ["default", "default_sweep"])
+    def test_a_ready_made_run_validates_against_the_real_plugins(self, preset):
+        config = self._load_preset(preset)
+        assert config.mode == "benchmark"
+        assert config.warnings == []
+
+    def test_the_sweep_runs_the_default_set_plus_versions(self):
+        loaded = {preset: self._load_preset(preset)
+                  for preset in ("default", "default_sweep")}
+        assert (loaded["default"].selected_attack_specs()
+                == loaded["default_sweep"].selected_attack_specs())
+        assert loaded["default"].synthetic_versions == {}
+        assert set(loaded["default_sweep"].synthetic_versions) == {
+            "BandstopFilterAttack", "GaussianNoiseAttack", "HighpassFilterAttack",
+            "InvertedTimeStretchAttack", "Mp3CompressionAttack",
+            "ResamplingPolyAttack", "TimeStretchAttack",
+        }
+
     @pytest.mark.parametrize("mode", VALID_MODES)
     def test_the_duration_note_names_the_bins_the_reports_print(self, mode):
         """The labels duration grouping produces, spelled in ASCII."""

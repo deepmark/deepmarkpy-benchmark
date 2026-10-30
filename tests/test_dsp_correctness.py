@@ -79,6 +79,32 @@ class TestLowpassVersionsSetTheCutoff:
                            "LowpassFilterAttack (b)": 5000}
 
 
+class TestResamplingGoesToTheTargetRateAndBack:
+    """The attack band-limits to half the target rate and returns the input's rate and length."""
+
+    @pytest.mark.parametrize("sampling_rate,target", [
+        (16000, 8000), (44100, 8000), (44100, 16000), (44100, 24000), (44100, 32000),
+    ])
+    def test_a_lower_target_band_limits_to_its_nyquist(self, attacks, sampling_rate, target):
+        audio = _noise(n=4 * sampling_rate)
+        out = attacks["ResamplingPolyAttack"]["class"]().apply(
+            audio, sampling_rate=sampling_rate, target_sr_resampling_poly=target,
+        )
+        assert len(out) == len(audio)
+        edge = TestLowpassVersionsSetTheCutoff._minus_3db(out, audio, sampling_rate)
+        assert 0.85 * target / 2 < edge <= target / 2
+
+    @pytest.mark.parametrize("target", [16000, 24000, 44100, 48000])
+    def test_a_target_at_or_above_the_rate_keeps_the_band(self, attacks, target):
+        audio = _noise()
+        out = attacks["ResamplingPolyAttack"]["class"]().apply(
+            audio, sampling_rate=SR, target_sr_resampling_poly=target,
+        )
+        assert len(out) == len(audio)
+        edge = TestLowpassVersionsSetTheCutoff._minus_3db(out, audio, SR)
+        assert edge == 0 or edge > 0.9 * SR / 2
+
+
 class TestZeroCrossInsertsKeepsHead:
     """Inserting pauses must not consume the start of the file."""
 

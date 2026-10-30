@@ -23,8 +23,21 @@ on every attack, are not comparable with earlier runs.
   of benchmark mode. It belongs to no group; reports label it `No attack`.
 - `E047`: a model declaring `returns_is_watermarked` without implementing
   `is_watermarked()`, or a zero-bit model not declaring it.
+- `--init default` and `--init default_sweep`: ready-made benchmark runs, the
+  default attack set at plugin defaults, and the same set with strength sweeps
+  of `BandstopFilterAttack`, `GaussianNoiseAttack`, `HighpassFilterAttack`,
+  `InvertedTimeStretchAttack`, `Mp3CompressionAttack`, `ResamplingPolyAttack`
+  and `TimeStretchAttack`. `--init` now takes a preset, and
+  `src/deepmarkpy/config_templates/` is renamed `src/deepmarkpy/presets/`.
 
 ### Changed
+
+- `ResamplingPolyAttack` resamples to `target_sr_resampling_poly` (default
+  8000 Hz) and back to the audio's own rate, in place of decimating by the
+  integer `down_factor_resampling_poly`, so any target rate can be swept. Its
+  output now has the input's length. For a 16 kHz model the default is the
+  same 8 kHz round trip as before, through a slightly different anti-alias
+  filter; for a 44.1 kHz model it was a 22.05 kHz round trip.
 
 - Default attack parameters: `GaussianNoiseAttack` 25 dB (was 35),
   `PinkNoiseAttack` 35 dB (was 25), `BandstopFilterAttack` 1000-1200 Hz (was
@@ -42,6 +55,17 @@ on every attack, are not comparable with earlier runs.
   was the other way round.
 - A zero-bit model has no accuracy, BER or EMR: TP and FP are its whole
   measurement.
+
+### Fixed
+
+- Plugin discovery registered every attack class a plugin's module held,
+  including ones it imports from another plugin. Depending on directory order,
+  `TimeStretchAttack` was registered with `InvertedTimeStretchAttack`'s
+  `config.json`, and `EqualizerAttack` and `HighpassFilterAttack` with
+  `MixingAttack`'s, so their parameters could not be set or swept in
+  `attack_parameters` (`E018`) and `run_metadata.json` recorded the wrong
+  ones. The attacks themselves ran at their own defaults. Discovery now
+  registers only the classes a module defines.
 
 ### Removed
 

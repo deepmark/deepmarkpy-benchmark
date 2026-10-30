@@ -283,8 +283,8 @@ error (`E045`).
 
 ### Configuration Files
 
-`deepmark-benchmark --init <mode> > my_config.json` writes a fully commented
-template; the same files are in `src/deepmarkpy/config_templates/`. JSON has
+`deepmark-benchmark --init benchmark > my_config.json` writes a fully
+commented template; the same file is in `src/deepmarkpy/presets/`. JSON has
 no comments, so the templates document themselves with `_`-prefixed keys,
 which the parser ignores. Besides the settings below, they cover
 `crop_before_attack` (the percentage cropped from the start of the
@@ -293,6 +293,12 @@ latency, and container memory; off by default), `duration_groups` (a report
 part per audio-length bin) and `comparison` (the accuracy statistic the
 comparative report ranks; it must be among accuracy's statistics and cannot
 be `std`).
+
+Two ready-made runs are presets too: `--init default` runs the default attack
+set once each, at plugin defaults, and `--init default_sweep` adds strength
+sweeps of the bandstop, Gaussian-noise, highpass, MP3, resampling,
+time-stretch and inverted-time-stretch attacks. Set `wav_files_dir`,
+`report_dir` and `models` before running.
 
 **`calculate_quality_metrics`** is the master switch for the signal metrics.
 When `true`, the `metrics` block decides what runs. When `false` or absent,

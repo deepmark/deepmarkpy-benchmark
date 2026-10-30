@@ -92,8 +92,13 @@ _CONFIGURABLE_METRICS = tuple(m for m in CANONICAL_METRIC_ORDER
 # reported and ranked at.
 _LEVEL_STATISTICS = tuple(s for s in ALL_STATISTICS if s != "std")
 
-_TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "config_templates")
+_PRESET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "presets")
+
+# What --init prints: each mode's fully-commented template, plus ready-made
+# benchmark runs (the default attack set, and the same set with strength
+# sweeps).
+INIT_PRESETS = VALID_MODES + ("default", "default_sweep")
 
 _UNSET = object()
 
@@ -429,22 +434,23 @@ def _check_mode_uniqueness(configs: Sequence[ModeConfig]) -> List[ConfigIssue]:
     return issues
 
 
-def init_template(mode: str) -> str:
-    """Return the fully-commented template config file for ``mode``."""
-    if mode not in VALID_MODES:
-        suggestion = _suggest(mode, VALID_MODES)
+def init_template(preset: str) -> str:
+    """Return the config file ``--init`` prints for ``preset``."""
+    if preset not in INIT_PRESETS:
+        suggestion = _suggest(preset, INIT_PRESETS)
         hint = f" Did you mean '{suggestion}'?" if suggestion else ""
         raise ConfigError([ConfigIssue(
             code="E005",
             path="--init",
-            value=mode,
+            value=preset,
             message=(
-                f"unknown mode. Valid modes: {', '.join(VALID_MODES)}.{hint}"
+                f"unknown preset. Valid presets: {', '.join(INIT_PRESETS)}."
+                f"{hint}"
             ),
             suggestion=suggestion,
         )])
 
-    with open(os.path.join(_TEMPLATE_DIR, f"{mode}.json"), encoding="utf-8") as fh:
+    with open(os.path.join(_PRESET_DIR, f"{preset}.json"), encoding="utf-8") as fh:
         return fh.read()
 
 
