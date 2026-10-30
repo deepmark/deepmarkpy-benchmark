@@ -203,6 +203,11 @@ DETECTION_NOTE = (
     "positives only; EMR counts the files detected with every bit right, "
     "over all files."
 )
+NO_CLEAN_PASS_NOTE = (
+    "FP is not measured (--) for an attack that embeds with the model itself "
+    "(SameModel, Collusion, Collusion2): a clean file put through it carries "
+    "a real watermark."
+)
 ZERO_BIT_NOTE = (
     "A zero-bit model carries no message, so it has no accuracy, BER or EMR: "
     "TP and FP are its whole measurement."
@@ -234,6 +239,15 @@ def has_detection_counts(stats_values) -> bool:
         for value in stats_values
         for prefix, _ in DETECTION_COUNTS
     )
+
+
+def detection_note(stats_values, zero_bit) -> str:
+    """The note under a TP/FP table, explaining an unmeasured FP when the table shows one."""
+    note = ZERO_BIT_NOTE if zero_bit else DETECTION_NOTE
+    if any(isinstance(value, Mapping) and "tp_n" in value and "fp_n" not in value
+           for value in stats_values):
+        note += " " + NO_CLEAN_PASS_NOTE
+    return note
 
 
 def files_measured(stats):

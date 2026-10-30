@@ -23,13 +23,12 @@ from deepmarkpy.utils.attack_groups import (
 )
 from deepmarkpy.utils.latex_helpers import (
     DETECTION_COUNTS,
-    DETECTION_NOTE,
-    ZERO_BIT_NOTE,
     MetricCaveats,
     compact_header,
     compile_latex,
     container_section,
     crop_note,
+    detection_note,
     display_attack_name,
     duration_label_tex,
     efficiency_tables,
@@ -324,7 +323,10 @@ class DetailedReportGenerator:
                 f"True and false positives --- {subject or caption}", f"{label}_detection",
             ))
         if detection:
-            note = ZERO_BIT_NOTE if is_zero_bit else DETECTION_NOTE
+            note = detection_note(
+                (aggregated["attacks"][attack].get("detection") for attack in available),
+                is_zero_bit,
+            )
             tables[-1] += f"\n\n{{\\noindent\\footnotesize {note}}}\n"
 
         if show_ber and not inline_ber:

@@ -20,12 +20,11 @@ from deepmarkpy.utils.attack_groups import (
 )
 from deepmarkpy.utils.latex_helpers import (
     DETECTION_COUNTS,
-    DETECTION_NOTE,
-    ZERO_BIT_NOTE,
     MetricCaveats,
     compact_header,
     container_section,
     crop_note,
+    detection_note,
     display_attack_name,
     duration_label_tex,
     detection_rate,
@@ -53,6 +52,15 @@ from deepmarkpy.utils.metric_resolver import (
 logger = logging.getLogger(__name__)
 
 StatsValue = Union[float, Mapping[str, float]]
+
+# The no-attack row is the baseline the attacks are read against, not an
+# attack: the summary states it on its own line and leaves it out of the
+# mean, the findings, the ranking and the tiers.
+BASELINE_ATTACK = "NoAttack"
+
+
+def _is_baseline(name):
+    return name.split(" (", 1)[0] == BASELINE_ATTACK
 
 
 class BenchmarkReportGenerator:
@@ -151,9 +159,48 @@ class BenchmarkReportGenerator:
         return 0.0
 
     def _headline_values(self, stats):
-        """``{attack: headline value}`` for the attacks that have one."""
-        values = {name: self._accuracy_of(value, name) for name, value in stats.items()}
+        """``{attack: headline value}`` for the attacks that have one, baseline aside."""
+        values = {name: self._accuracy_of(value, name) for name, value in stats.items()
+                  if not _is_baseline(name)}
         return {name: value for name, value in values.items() if value is not None}
+
+    def _undetected(self, stats):
+        """Display names of the attacks with no headline value: no file was detected.
+
+        A model scored on the files it detected has no accuracy for these, so
+        they are absent from the mean, the ranking and the tiers, and must be
+        named wherever those are.
+        """
+        return [display_attack_name(name) for name, value in stats.items()
+                if not _is_baseline(name) and self._accuracy_of(value, name) is None]
+
+    def _baseline_line(self, stats):
+        """The no-attack row's accuracy, TP and FP, as one summary line, or ''."""
+        name = next((name for name in stats if _is_baseline(name)), None)
+        if name is None:
+            return ""
+        value = stats[name]
+        parts = []
+        if not self._headline_is_tp(stats):
+            accuracy = self._accuracy_of(value, name)
+            statistic = self._accuracy_label_for(stats).lower()
+            parts.append(f"accuracy ({statistic}) " + (
+                "-- (no file detected)" if accuracy is None else f"{accuracy:.2f}\\%"))
+        if has_detection_counts([value]):
+            parts += [f"{header} {format_detection_cell(value, prefix)}"
+                      for prefix, header in DETECTION_COUNTS]
+        if not parts:
+            return ""
+        return ("\\noindent\\textbf{No-attack baseline:} " + ", ".join(parts)
+                + "\n\\\\{\\footnotesize What the attacks are read against; not "
+                "in the mean or the findings.}\n\n")
+
+    def _undetected_sentence(self, stats):
+        """`` Not drawn, as no file was detected: A, B.`` for a caption, or ''."""
+        undetected = self._undetected(stats)
+        if not undetected:
+            return ""
+        return f" Not drawn, as no file was detected: {', '.join(undetected)}."
 
     @staticmethod
     def _stat_of(value: StatsValue, key: str, default=None):
@@ -451,7 +498,7 @@ class BenchmarkReportGenerator:
         )
         notes = ""
         if has_detection_counts(value for _, value in sorted_attacks):
-            note = ZERO_BIT_NOTE if self.is_zero_bit else DETECTION_NOTE
+            note = detection_note((value for _, value in sorted_attacks), self.is_zero_bit)
             notes += f"\n\n{{\\noindent\\footnotesize {note}}}\n"
         if any_failures:
             notes += (
@@ -541,7 +588,7 @@ class BenchmarkReportGenerator:
             Complete LaTeX document as string
         """
         mean_accuracy = self.calculate_mean_accuracy(stats)
-        attack_count = len(stats)
+        attack_count = sum(1 for name in stats if not _is_baseline(name))
 
         preamble = self._preamble(
             f"Benchmark Report: {model_name}",
@@ -566,18 +613,27 @@ class BenchmarkReportGenerator:
                 f"Attacks ranked by watermark detection accuracy ({statistic}), "
                 f"worst first. Bar colour is the robustness tier; the dashed "
                 f"line is the accuracy a failed detection already scores, so a "
-                f"bar reaching it carries no information.",
+                f"bar reaching it carries no information."
+                + self._undetected_sentence(stats),
                 "fig:benchmark_chart",
             )
 
+        # The mean covers the attacks with a value; one with no file detected
+        # has no accuracy, so it is named rather than silently left out.
+        undetected = self._undetected(stats)
+        scored_count = len(self._headline_values(stats))
+        scope = "attacks with a detected file" if undetected else "attacks run"
+        left_out = (f" Not in it, as no file was detected: {', '.join(undetected)}."
+                    if undetected else "")
         headline = (statistic if self._headline_is_tp(stats)
                     else f"Accuracy ({statistic})")
         summary = (
             "\\section{Summary}\n\n"
             f"\\noindent\\textbf{{{headline} across the "
-            f"{attack_count} attacks run:}} {mean_accuracy:.2f}\\%\n"
+            f"{scored_count} {scope}:}} {mean_accuracy:.2f}\\%\n"
             "\\\\{\\footnotesize Unweighted mean of the per-attack values; it "
-            "depends on which attacks were selected.}\n\n"
+            f"depends on which attacks were selected.{left_out}}}\n\n"
+            + self._baseline_line(stats)
             + self._key_findings(stats)
             + self._embedding_cost_line(stats)
             + chart_block
@@ -624,44 +680,50 @@ class BenchmarkReportGenerator:
             display_attack_name(name): value
             for name, value in self._headline_values(stats).items()
         }
-        if len(accuracy_by_attack) < 2:
+        undetected = self._undetected(stats)
+        if len(accuracy_by_attack) + len(undetected) < 2:
             return ""
 
         ordered = sorted(accuracy_by_attack.items(), key=lambda kv: kv[1])
         floor = self._chance_floor
         statistic = self._accuracy_label_for(stats).lower()
 
-        worst = ordered[:3]
-        best = ordered[-1]
+        # An attack after which no file was detected is the most damaging, and
+        # has no accuracy to rank by, so it leads the list.
+        worst = ([f"{name} (no file detected)" for name in undetected]
+                 + [f"{name} ({score:.1f}\\%)"
+                    for name, score in ordered[:max(0, 3 - len(undetected))]])
         at_floor = [name for name, score in ordered if score <= floor + 1.0]
 
         items = [
-            "  \\item \\textbf{Most damaging:} "
-            + ", ".join(f"{name} ({score:.1f}\\%)" for name, score in worst)
+            "  \\item \\textbf{Most damaging:} " + ", ".join(worst)
             + (" --- TP rate." if self._headline_is_tp(stats)
                else f" --- {statistic} accuracy."),
-            f"  \\item \\textbf{{Least damaging:}} {best[0]} "
-            f"({best[1]:.1f}\\%).",
         ]
-        if at_floor:
-            word = "attack leaves" if len(at_floor) == 1 else "attacks leave"
-            items.append(
-                f"  \\item \\textbf{{At or below the chance floor "
-                f"({floor:.0f}\\%):}} {len(at_floor)} {word} the detector no "
-                f"better than guessing --- {', '.join(at_floor)}."
-            )
-        else:
-            items.append(
-                f"  \\item \\textbf{{Chance floor ({floor:.0f}\\%):}} no "
-                f"attack drove detection down to it."
-            )
+        if ordered:
+            best = ordered[-1]
+            items.append(f"  \\item \\textbf{{Least damaging:}} {best[0]} "
+                         f"({best[1]:.1f}\\%).")
+            if at_floor:
+                word = "attack leaves" if len(at_floor) == 1 else "attacks leave"
+                items.append(
+                    f"  \\item \\textbf{{At or below the chance floor "
+                    f"({floor:.0f}\\%):}} {len(at_floor)} {word} the detector no "
+                    f"better than guessing --- {', '.join(at_floor)}."
+                )
+            else:
+                items.append(
+                    f"  \\item \\textbf{{Chance floor ({floor:.0f}\\%):}} no "
+                    f"attack drove detection down to it."
+                )
 
-        spread = ordered[-1][1] - ordered[0][1]
-        items.append(
-            f"  \\item \\textbf{{Spread:}} {spread:.1f} percentage points "
-            f"between the best and worst attack, so the headline mean above "
-            f"stands for a wide range rather than a typical case."
-        )
+        if len(ordered) >= 2:
+            spread = ordered[-1][1] - ordered[0][1]
+            items.append(
+                f"  \\item \\textbf{{Spread:}} {spread:.1f} percentage points "
+                f"between the best and worst attack, so the headline mean above "
+                f"stands for a wide range rather than a typical case."
+            )
 
         return (
             "\\noindent\\textbf{Key findings}\n\n\\begin{itemize}\n"
@@ -680,6 +742,7 @@ class BenchmarkReportGenerator:
              [a for a in accuracy_by_attack.values() if 70 <= a < 85]),
             ("Poor Performance ($<$70\\%)",
              [a for a in accuracy_by_attack.values() if a < 70]),
+            ("No file detected", self._undetected(stats)),
         ]
 
         items = ""
@@ -786,7 +849,8 @@ class BenchmarkReportGenerator:
                     filename,
                     f"Attacks ranked by detection accuracy "
                     f"({self._accuracy_label_for(group_stats)}) for "
-                    f"{safe_label}, worst first.",
+                    f"{safe_label}, worst first."
+                    + self._undetected_sentence(group_stats),
                     f"fig:benchmark_chart_{slugify(group_label_text)}",
                 ) + "\n"
 

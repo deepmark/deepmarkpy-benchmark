@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 # Attacks whose calling convention differs from the plain apply(audio, **kwargs).
 _TUPLE_RETURNING_ATTACKS = {"CrossModelAttack"}
 _NEEDS_CLEAN_ORIGINAL = {"ZeroBitCollusionAttack"}
+# Attacks that embed with the model under test: put through one, the clean
+# file carries a real watermark, so they get no false-positive pass and their
+# FP is not measured.
+_NO_CLEAN_PASS = {"SameModelAttack", "CollusionAttack", "Collusion2Attack"}
 _CODEC2_SUPPORTED = {700, 1200, 1300, 1400, 1600, 2400, 3200}
 
 _BENCHMARK_INTERNAL_KEYS = frozenset({
@@ -663,7 +667,7 @@ class Benchmark:
                     # file, after the watermarked one, which is the order the
                     # pipelined executor keeps too.
                     detected_clean = None
-                    if returns_presence:
+                    if returns_presence and attack_class_name not in _NO_CLEAN_PASS:
                         attacked_clean = self._apply_entry(
                             entry, attack_kwargs, watermarked_audio, audio,
                             sampling_rate, resolver, base_filename, save_audio,

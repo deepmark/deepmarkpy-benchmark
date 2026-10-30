@@ -442,7 +442,14 @@ every benchmark run, with no extra setting:
 - A false negative is a missing true positive (FN = 100 % − TP), and the
   `NoAttack` row gives the rates with no attack at all.
 
-Every attack therefore runs twice per file for these models. Each model
+Every attack therefore runs twice per file for these models, except
+`SameModelAttack`, `CollusionAttack` and `Collusion2Attack`: they embed with
+the model itself, so a clean file put through them carries a real watermark,
+and their FP is not measured (`--` in the reports). An attack after which no
+file is detected has no accuracy; the summary names it rather than leaving it
+out of the mean silently, and lists it first among the most damaging. The
+`NoAttack` row is the baseline: the summary states it on its own line and
+keeps it out of the mean, the findings, the ranking and the tiers. Each model
 defines its own decision — zero-bit models check the binary output directly,
 confidence-based models compare against a threshold. A model declaring
 `returns_is_watermarked` without implementing `is_watermarked()`, or a

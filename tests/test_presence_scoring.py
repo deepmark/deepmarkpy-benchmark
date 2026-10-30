@@ -167,6 +167,25 @@ class TestAModelThatDecidesPresence:
         for file_results in results.values():
             assert "accuracy" in file_results["attacks"]["SilenceAttack"]
 
+    @pytest.mark.parametrize("executor", ["sequential", "pipelined"])
+    def test_attacks_embedding_with_the_model_get_no_clean_pass(
+            self, benchmark, filepaths, executor):
+        """Their clean file would carry a real watermark, so FP is not measured."""
+        own_embedders = ["SameModelAttack", "CollusionAttack", "Collusion2Attack"]
+        results = benchmark.run(
+            filepaths=filepaths, wm_model="DecidingModel",
+            attack_types=own_embedders + ["NoAttack"], executor=executor,
+            metric_resolver=MetricResolver.from_attack_groups(calculate_quality_metrics=False),
+        )
+        for file_results in results.values():
+            for attack in own_embedders:
+                row = file_results["attacks"][attack]
+                assert "detected" in row and "detected_clean" not in row
+            assert "detected_clean" in file_results["attacks"]["NoAttack"]
+        stats = benchmark.compute_mean_accuracy(results)
+        for attack in own_embedders:
+            assert "tp_n" in stats[attack] and "fp_n" not in stats[attack]
+
 
 class TestAZeroBitModel:
     def test_has_no_accuracy_ber_or_emr(self, benchmark, filepaths):
@@ -283,6 +302,60 @@ class TestReports:
             return tex.split(label, 1)[1].split("\\end{longtable}", 1)[0]
         assert "TP & FP" in table("tab:benchmark_detection_").replace("  ", " ")
         assert "TP" not in table("tab:benchmark_accuracy_")
+        assert "FP is not measured" not in tex
+
+    @staticmethod
+    def _report_from(tmp_path, results):
+        from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
+        stats = Benchmark.__new__(Benchmark).compute_mean_accuracy(results)
+        path = tmp_path / "benchmark_stats.json"
+        path.write_text(json.dumps(stats))
+        BenchmarkReportGenerator(str(tmp_path)).generate_full_report(str(path), model_name="M")
+        return (tmp_path / "benchmark_report.tex").read_text()
+
+    def test_an_attack_with_no_file_detected_is_named_not_dropped(self, tmp_path, no_pdflatex):
+        """It has no accuracy, so the mean leaves it out and says so; it leads the most damaging."""
+        tex = self._report_from(tmp_path, {f"f{i}.wav": {"attacks": {
+            "GaussianNoiseAttack": {"accuracy": 90.0, "detected": True, "detected_clean": False},
+            "EchoAttack": {"accuracy": 80.0, "detected": True, "detected_clean": False},
+            "VAEAttack": {"accuracy": 50.0, "detected": False, "detected_clean": False},
+        }} for i in range(2)})
+        summary = tex.split("\\section{Summary}", 1)[1].split("\\section{", 1)[0]
+        assert "across the 2 attacks with a detected file:} 85.00\\%" in summary
+        assert "Not in it, as no file was detected: VAE." in summary
+        assert "Most damaging:} VAE (no file detected), Echo (80.0\\%)" in summary
+        assert "No file detected:} 1 attack" in summary
+        assert "Not drawn, as no file was detected: VAE." in summary
+
+    def test_no_attack_is_the_baseline_not_an_attack(self, tmp_path, no_pdflatex):
+        tex = self._report_from(tmp_path, {f"f{i}.wav": {"attacks": {
+            "GaussianNoiseAttack": {"accuracy": 90.0, "detected": True, "detected_clean": False},
+            "EchoAttack": {"accuracy": 80.0, "detected": True, "detected_clean": False},
+            "NoAttack": {"accuracy": 100.0, "detected": True, "detected_clean": i == 0},
+        }} for i in range(2)})
+        summary = tex.split("\\section{Summary}", 1)[1].split("\\section{", 1)[0]
+        assert "across the 2 attacks run:} 85.00\\%" in summary
+        assert ("No-attack baseline:} accuracy (mean) 100.00\\%, "
+                "TP 2/2 (100.0\\%), FP 1/2 (50.0\\%)") in summary
+        assert "Least damaging:} GaussianNoise (90.0\\%)" in summary
+        assert "No attack" not in summary.split("Key findings", 1)[1]
+        assert "covers 2 different attack types" in tex
+
+    def test_every_attack_detected_keeps_the_plain_summary(self, tmp_path, no_pdflatex):
+        tex = self._report_from(tmp_path, {f"f{i}.wav": {"attacks": {
+            "GaussianNoiseAttack": {"accuracy": 90.0, "detected": True, "detected_clean": False},
+            "EchoAttack": {"accuracy": 80.0, "detected": True, "detected_clean": False},
+        }} for i in range(2)})
+        assert "across the 2 attacks run:} 85.00\\%" in tex
+        assert "no file detected" not in tex.lower()
+
+    def test_an_unmeasured_fp_is_shown_and_explained(self, tmp_path, no_pdflatex):
+        tex = self._report_from(tmp_path, {f"f{i}.wav": {"attacks": {
+            "GaussianNoiseAttack": {"accuracy": 90.0, "detected": True, "detected_clean": False},
+            "SameModelAttack": {"accuracy": 100.0, "detected": True},
+        }} for i in range(2)})
+        assert "2/2 (100.0\\%) & --" in tex.replace("  ", " ")
+        assert "FP is not measured (--)" in tex
 
     def test_a_zero_bit_model_is_headlined_by_its_tp_rate(self, tmp_path, no_pdflatex):
         tex = self._basic_tex(tmp_path, zero_bit=True)

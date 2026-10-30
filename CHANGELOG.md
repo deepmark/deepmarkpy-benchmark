@@ -18,9 +18,18 @@ on every attack, are not comparable with earlier runs.
   AWARE and Perth declare it; SilentCipher, TimbreWM and WavMark are measured
   as before. The basic and detailed reports give TP and FP in a table of
   their own after each accuracy table; the comparative report gives TP and
-  FP rate tables.
+  FP rate tables. `SameModelAttack`, `CollusionAttack` and `Collusion2Attack`
+  embed with the model itself, so they get no clean pass and their FP is not
+  measured (`--`, N/A in the comparative report). An attack after which no
+  file was detected has no accuracy: the basic report's summary counts and
+  averages only the attacks with one, names the others, lists them first
+  among the most damaging, and names them under the ranking chart and in the
+  robustness tiers.
 - The `NoAttack` attack: the audio unchanged, the no-attack baseline as a row
   of benchmark mode. It belongs to no group; reports label it `No attack`.
+  The basic report's summary states it as a baseline line (accuracy, TP,
+  FP) and leaves it out of the mean, the findings, the ranking chart and
+  the robustness tiers.
 - `E047`: a model declaring `returns_is_watermarked` without implementing
   `is_watermarked()`, or a zero-bit model not declaring it.
 - `--init default` and `--init default_sweep`: ready-made benchmark runs, the

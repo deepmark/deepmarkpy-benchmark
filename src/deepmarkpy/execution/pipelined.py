@@ -14,7 +14,8 @@ returns, entry for entry and in the same order.
 - **Detection** by a dockerized model, ``detect_concurrency`` at once.
 - **False positives**, for a model declaring ``returns_is_watermarked``: each
   attack is applied to the clean audio right after the watermarked audio, on
-  the same lane, and both detections go to the detection lane.
+  the same lane, and both detections go to the detection lane. Attacks that
+  embed with the model itself (``_NO_CLEAN_PASS``) are not.
 - **Metrics** in ``workers`` processes with this process's BLAS thread counts,
   which MCD and SI-SDR depend on.
 
@@ -42,6 +43,7 @@ import numpy as np
 
 from deepmarkpy.benchmark import (
     _NEEDS_CLEAN_ORIGINAL,
+    _NO_CLEAN_PASS,
     _NO_CROSS_MODEL,
     _TUPLE_RETURNING_ATTACKS,
     read_detection,
@@ -166,10 +168,11 @@ class _File:
 class _Task:
     """One attack entry applied to one file."""
 
-    def __init__(self, entry, ordered):
+    def __init__(self, entry, ordered, clean_pass):
         self.entry = entry
         self.class_name, self.display_name = entry[0], entry[1]
         self.ordered = ordered
+        self.clean_pass = clean_pass  # whether the attack also runs on the clean audio
         self.applied = None           # Future of the attack stage
         # Set by the attack stage.
         self.attacked_audio = None
@@ -323,7 +326,8 @@ class PipelinedRun:
         job = _File(filepath)
         job.prepared = self._ordered.submit(self._lane, ORDERED_LANE, self._prepare, job)
         for entry, ordered in self.entries:
-            task = _Task(entry, ordered)
+            task = _Task(entry, ordered,
+                         self.returns_presence and entry[0] not in _NO_CLEAN_PASS)
             job.tasks.append(task)
             if ordered:
                 task.applied = self._ordered.submit(
@@ -456,7 +460,7 @@ class PipelinedRun:
             task.cross_model_accuracy = self.bench._cross_model_accuracy(
                 name, extra, instance.detect(task.attacked_audio, job.sampling_rate),
             )
-        if self.returns_presence:
+        if task.clean_pass:
             # After the watermarked half, where the sequential loop runs it.
             self._apply_clean(job, task)
             if not self.model_in_service:
@@ -468,7 +472,7 @@ class PipelinedRun:
 
     def _service_attack(self, job, task):
         self._apply(job, task)
-        if self.returns_presence:
+        if task.clean_pass:
             # Same lane, right after the watermarked request, so the service
             # receives the two in the sequential order.
             self._apply_clean(job, task)
@@ -481,7 +485,7 @@ class PipelinedRun:
                 self._lane, DETECT_LANE, self._run_detect,
                 task.attacked_audio, job.sampling_rate,
             )
-        if self.returns_presence and task.clean_detection is None:
+        if task.clean_pass and task.clean_detection is None:
             task.clean_detection = self._detect.submit(
                 self._lane, DETECT_LANE, self._run_clean_detect,
                 task.attacked_clean, job.sampling_rate,
