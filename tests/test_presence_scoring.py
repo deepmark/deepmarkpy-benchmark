@@ -213,6 +213,14 @@ class TestNoAttack:
         assert np.array_equal(out, audio)
 
 
+class TestNoAttackLabel:
+    def test_reports_name_it_no_attack(self):
+        from deepmarkpy.utils.latex_helpers import display_attack_name
+        assert display_attack_name("NoAttack") == "No attack"
+        assert display_attack_name("NoAttack", split_camel_case=True) == "No attack"
+        assert display_attack_name("GaussianNoiseAttack (a)") == "GaussianNoise (a)"
+
+
 class TestComputeMeanAccuracyFromRows:
     """The aggregation alone, on hand-written rows."""
 
@@ -270,7 +278,11 @@ class TestReports:
         tex = self._basic_tex(tmp_path, zero_bit=False)
         assert "3/4 (75.0\\%)" in tex and "1/4 (25.0\\%)" in tex
         assert "true positives only" in tex
-        assert "& TP & FP" in tex.replace("  ", " ")
+        # In a table of their own, so the accuracy table keeps its width.
+        def table(label):
+            return tex.split(label, 1)[1].split("\\end{longtable}", 1)[0]
+        assert "TP & FP" in table("tab:benchmark_detection_").replace("  ", " ")
+        assert "TP" not in table("tab:benchmark_accuracy_")
 
     def test_a_zero_bit_model_is_headlined_by_its_tp_rate(self, tmp_path, no_pdflatex):
         tex = self._basic_tex(tmp_path, zero_bit=True)

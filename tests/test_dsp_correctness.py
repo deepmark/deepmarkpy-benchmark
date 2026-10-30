@@ -38,6 +38,47 @@ class TestBandstopStability:
         )
 
 
+class TestLowpassVersionsSetTheCutoff:
+    """A version in attack_parameters reaches the filter, so the cutoff can be swept."""
+
+    @staticmethod
+    def _minus_3db(out, reference, sampling_rate):
+        smooth = lambda s: np.convolve(s, np.ones(201) / 201, mode="same")
+        gain = smooth(np.abs(np.fft.rfft(out))) / smooth(np.abs(np.fft.rfft(reference)))
+        freqs = np.fft.rfftfreq(len(out), 1 / sampling_rate)
+        return freqs[np.argmax((freqs > 500) & (gain < 10 ** (-3 / 20)))]
+
+    @pytest.mark.parametrize("cutoff", [3400, 4300, 6000])
+    def test_the_requested_cutoff_is_applied(self, attacks, cutoff):
+        audio = _noise(n=4 * 44100)
+        out = attacks["LowpassFilterAttack"]["class"]().apply(
+            audio, sampling_rate=44100, cutoff_freq_lowpass=cutoff,
+        )
+        assert abs(self._minus_3db(out, audio, 44100) - cutoff) < 50
+
+    def test_a_config_sweep_gives_one_cutoff_per_version(self, attacks):
+        from deepmarkpy.benchmark import expand_attacks
+        from deepmarkpy.config import load_config_data
+
+        registry = Benchmark().attacks
+        config = load_config_data({
+            "mode": "benchmark", "models": ["AudioSealModel"],
+            "attacks": {"list": ["LowpassFilterAttack"]},
+            "attack_parameters": {
+                "LowpassFilterAttack:a": {"cutoff_freq_lowpass": 4000, "order_lowpass": 5},
+                "LowpassFilterAttack:b": {"cutoff_freq_lowpass": 5000, "order_lowpass": 5},
+            },
+        }, attacks_registry=registry, quiet=True)
+        entries = expand_attacks(config.selected_attack_specs(), registry,
+                                 parameters=config.parameters_for,
+                                 extra_versions=config.synthetic_versions)
+        cutoffs = {name: kwargs.get("cutoff_freq_lowpass", 3400)
+                   for _, name, kwargs, _ in entries}
+        assert cutoffs == {"LowpassFilterAttack (default)": 3400,
+                           "LowpassFilterAttack (a)": 4000,
+                           "LowpassFilterAttack (b)": 5000}
+
+
 class TestZeroCrossInsertsKeepsHead:
     """Inserting pauses must not consume the start of the file."""
 

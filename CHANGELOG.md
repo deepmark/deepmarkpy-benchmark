@@ -16,10 +16,11 @@ on every attack, are not comparable with earlier runs.
   detected files only and EMR as the files detected with every bit right,
   over all files. Both executors run it, in the same order. AudioSeal,
   AWARE and Perth declare it; SilentCipher, TimbreWM and WavMark are measured
-  as before. The basic, detailed and comparative reports gain TP and FP
-  columns.
+  as before. The basic and detailed reports give TP and FP in a table of
+  their own after each accuracy table; the comparative report gives TP and
+  FP rate tables.
 - The `NoAttack` attack: the audio unchanged, the no-attack baseline as a row
-  of benchmark mode. It belongs to no group.
+  of benchmark mode. It belongs to no group; reports label it `No attack`.
 - `E047`: a model declaring `returns_is_watermarked` without implementing
   `is_watermarked()`, or a zero-bit model not declaring it.
 
@@ -31,11 +32,14 @@ on every attack, are not comparable with earlier runs.
   noise 0 (was 0.01), `TimeStretchAttack` rate 1.25 (was 1.4),
   `InvertedTimeStretchAttack` rate 1.4 (was 0.8), and `LowpassFilterAttack`
   3400 Hz at every sampling rate (was 3500 at 16 kHz up to 6000 at 44.1 and
-  48 kHz). The native goldens were re-recorded, on Linux x86_64 (rubberband
-  4.0.0, ffmpeg 7.0.2): rubberband's output differs between Linux and macOS
-  arm64 by more than the cross-environment tolerance, so the time-stretch,
-  inverted-time-stretch and pitch-shift goldens now hold on Linux and not
-  on macOS, where until now it was the other way round.
+  48 kHz), now set by a single `cutoff_freq_lowpass` in place of the
+  per-sampling-rate `cutoff_freq_per_sr_lowpass`, so `attack_parameters`
+  versions can sweep it like any other attack. The native goldens were
+  re-recorded, on Linux x86_64 (rubberband 4.0.0, ffmpeg 7.0.2): rubberband's
+  output differs between Linux and macOS arm64 by more than the
+  cross-environment tolerance, so the time-stretch, inverted-time-stretch and
+  pitch-shift goldens now hold on Linux and not on macOS, where until now it
+  was the other way round.
 - A zero-bit model has no accuracy, BER or EMR: TP and FP are its whole
   measurement.
 

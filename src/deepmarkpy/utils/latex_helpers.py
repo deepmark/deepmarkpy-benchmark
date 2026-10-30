@@ -114,8 +114,11 @@ def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str
         base = attack_name[:idx]
         version_suffix = attack_name[idx:]
 
-    # Strip trailing "Attack" from the class name only
-    if base.endswith("Attack"):
+    # Strip trailing "Attack" from the class name only; NoAttack, the
+    # baseline, would be left as a bare "No".
+    if base == "NoAttack":
+        base = "No attack"
+    elif base.endswith("Attack"):
         base = base[:-6]
     base = latex_escape(base)
     version_suffix = latex_escape(version_suffix)

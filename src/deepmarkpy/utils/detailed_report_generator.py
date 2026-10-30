@@ -281,7 +281,9 @@ class DetailedReportGenerator:
             headers.append(metric_label("emr"))
         if has_confidence:
             headers.append("Confidence")
-        if detection:
+        # A multi-bit model's TP and FP get a table of their own (below), so
+        # this one keeps its width; a zero-bit model's are all it reports.
+        if tp_only:
             headers += [header for _, header in DETECTION_COUNTS]
 
         rows = []
@@ -306,15 +308,24 @@ class DetailedReportGenerator:
                 cells.append(
                     f"{confidence:.2f}" if confidence is not None else "---"
                 )
-            if detection:
+            if tp_only:
                 cells += [format_detection_cell(data.get("detection"), prefix)
                           for prefix, _ in DETECTION_COUNTS]
             rows.append((self._display_name(attack), cells))
 
         tables = [grid_table("Attack", headers, rows, caption, label)]
+        if detection and not tp_only:
+            tables.append(grid_table(
+                "Attack", [header for _, header in DETECTION_COUNTS],
+                [(self._display_name(attack),
+                  [format_detection_cell(aggregated["attacks"][attack].get("detection"), prefix)
+                   for prefix, _ in DETECTION_COUNTS])
+                 for attack in available],
+                f"True and false positives --- {subject or caption}", f"{label}_detection",
+            ))
         if detection:
             note = ZERO_BIT_NOTE if is_zero_bit else DETECTION_NOTE
-            tables[0] += f"\n\n{{\\noindent\\footnotesize {note}}}\n"
+            tables[-1] += f"\n\n{{\\noindent\\footnotesize {note}}}\n"
 
         if show_ber and not inline_ber:
             ber_rows = [

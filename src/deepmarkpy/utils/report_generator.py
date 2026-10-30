@@ -251,6 +251,10 @@ class BenchmarkReportGenerator:
                 f"tab:benchmark_accuracy_{name_key}",
             ) + self._strength_figure(stats, name_key)
         ]
+        if not self.is_zero_bit:
+            tables.append(self._detection_table(
+                sorted_attacks, caption_word, f"tab:benchmark_detection_{name_key}",
+            ))
 
         enabled = self.resolver.metrics_for_group(group_key)
         compact = []
@@ -319,6 +323,21 @@ class BenchmarkReportGenerator:
             for key, value in entry.items()
         )
 
+    @staticmethod
+    def _detection_table(sorted_attacks, caption_word, label):
+        """TP and FP per attack, for a model declaring returns_is_watermarked; else ''."""
+        if not has_detection_counts(value for _, value in sorted_attacks):
+            return ""
+        rows = [
+            (display_attack_name(name),
+             [format_detection_cell(value, prefix) for prefix, _ in DETECTION_COUNTS])
+            for name, value in sorted_attacks
+        ]
+        return grid_table(
+            "Attack Type", [header for _, header in DETECTION_COUNTS], rows,
+            f"True and false positives for {caption_word}.", label,
+        )
+
     def _accuracy_table(self, sorted_attacks, group_key, caption_word, label):
         """Accuracy statistics, plus single-valued BER and EMR, plus TP and FP.
 
@@ -343,7 +362,9 @@ class BenchmarkReportGenerator:
         if show_emr:
             headers.append(metric_label("emr"))
 
-        if detection:
+        # A multi-bit model's TP and FP get a table of their own (below), so
+        # this one keeps its width; a zero-bit model's are all it reports.
+        if tp_only:
             headers += [header for _, header in DETECTION_COUNTS]
 
         rows = []
@@ -377,7 +398,7 @@ class BenchmarkReportGenerator:
                     self._stat_of(value, "emr_rate"),
                 ))
 
-            if detection:
+            if tp_only:
                 cells += [format_detection_cell(value, prefix)
                           for prefix, _ in DETECTION_COUNTS]
 
