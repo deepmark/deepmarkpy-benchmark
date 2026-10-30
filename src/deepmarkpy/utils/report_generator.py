@@ -9,7 +9,7 @@ compact table for the remaining metrics, then the timing tables.
 import json
 import os
 import logging
-from typing import Dict, Mapping, Union
+from typing import Dict, Mapping, Optional, Union
 
 from deepmarkpy.utils import report_charts
 from deepmarkpy.utils.attack_groups import (
@@ -19,18 +19,24 @@ from deepmarkpy.utils.attack_groups import (
     group_label,
 )
 from deepmarkpy.utils.latex_helpers import (
+    DETECTION_COUNTS,
     MetricCaveats,
     compact_header,
     container_section,
     crop_note,
+    detection_note,
     display_attack_name,
     duration_label_tex,
+    detection_rate,
     efficiency_tables,
     embedding_cost_line,
     figure_block,
+    files_measured,
+    format_detection_cell,
     format_emr_cell,
     format_metric_cell,
     grid_table,
+    has_detection_counts,
     make_preamble,
     part_heading,
     slugify,
@@ -46,6 +52,15 @@ from deepmarkpy.utils.metric_resolver import (
 logger = logging.getLogger(__name__)
 
 StatsValue = Union[float, Mapping[str, float]]
+
+# The no-attack row is the baseline the attacks are read against, not an
+# attack: the summary states it on its own line and leaves it out of the
+# mean, the findings, the ranking and the tiers.
+BASELINE_ATTACK = "NoAttack"
+
+
+def _is_baseline(name):
+    return name.split(" (", 1)[0] == BASELINE_ATTACK
 
 
 class BenchmarkReportGenerator:
@@ -99,6 +114,8 @@ class BenchmarkReportGenerator:
 
     def _accuracy_label_for(self, stats) -> str:
         """Axis label for a chart over ``stats``: their shared statistic, if any."""
+        if self._headline_is_tp(stats):
+            return "TP rate"
         statistics = {
             self._accuracy_statistic_for(name)
             for name in (stats or {})
@@ -109,15 +126,24 @@ class BenchmarkReportGenerator:
             return stat_header(self._accuracy_statistic)
         return "per-group statistic"
 
-    def _accuracy_of(self, value: StatsValue, attack_name=None) -> float:
+    def _headline_is_tp(self, stats) -> bool:
+        """Whether ``stats`` are a zero-bit model's, headlined by the TP rate."""
+        return self.is_zero_bit and has_detection_counts((stats or {}).values())
+
+    def _accuracy_of(self, value: StatsValue, attack_name=None) -> Optional[float]:
         """Headline accuracy for an attack, in its group's statistic.
 
         A bare float is the accuracy itself. A stats dict without that
         statistic falls back to the mean, then to any accuracy statistic,
-        and only then to 0.
+        and only then to 0. A zero-bit model with detection counts has no
+        accuracy and is headlined by its TP rate, what its accuracy used to
+        measure. A model scored on the files it detected has no accuracy
+        when it detected none: that is None, not 0.
         """
         if not isinstance(value, Mapping):
             return float(value or 0.0)
+        if self.is_zero_bit and value.get("tp_n") is not None:
+            return detection_rate(value, "tp")
 
         key = f"accuracy_{self._accuracy_statistic_for(attack_name)}"
         for candidate in (key, "accuracy_mean"):
@@ -128,7 +154,53 @@ class BenchmarkReportGenerator:
             if (name.startswith("accuracy_") and name != "accuracy_n"
                     and found is not None):
                 return float(found)
+        if value.get("tp_n") is not None:
+            return None
         return 0.0
+
+    def _headline_values(self, stats):
+        """``{attack: headline value}`` for the attacks that have one, baseline aside."""
+        values = {name: self._accuracy_of(value, name) for name, value in stats.items()
+                  if not _is_baseline(name)}
+        return {name: value for name, value in values.items() if value is not None}
+
+    def _undetected(self, stats):
+        """Display names of the attacks with no headline value: no file was detected.
+
+        A model scored on the files it detected has no accuracy for these, so
+        they are absent from the mean, the ranking and the tiers, and must be
+        named wherever those are.
+        """
+        return [display_attack_name(name) for name, value in stats.items()
+                if not _is_baseline(name) and self._accuracy_of(value, name) is None]
+
+    def _baseline_line(self, stats):
+        """The no-attack row's accuracy, TP and FP, as one summary line, or ''."""
+        name = next((name for name in stats if _is_baseline(name)), None)
+        if name is None:
+            return ""
+        value = stats[name]
+        parts = []
+        if not self._headline_is_tp(stats):
+            accuracy = self._accuracy_of(value, name)
+            statistic = self._accuracy_label_for(stats).lower()
+            parts.append(f"accuracy ({statistic}) " + (
+                "-- (no file detected)" if accuracy is None else f"{accuracy:.2f}\\%"))
+        if has_detection_counts([value]):
+            parts += [f"{header} {format_detection_cell(value, prefix)}"
+                      for prefix, header in DETECTION_COUNTS]
+        if not parts:
+            return ""
+        return ("\\noindent\\textbf{No-attack baseline:} " + ", ".join(parts)
+                + "\n\\\\{\\footnotesize What the attacks are read against; not "
+                "in the mean or the findings.}\n\n")
+
+    def _undetected_sentence(self, stats):
+        """`` Not drawn, as no file was detected: A, B.`` for a caption, or ''."""
+        undetected = self._undetected(stats)
+        if not undetected:
+            return ""
+        return f" Not drawn, as no file was detected: {', '.join(undetected)}."
 
     @staticmethod
     def _stat_of(value: StatsValue, key: str, default=None):
@@ -150,8 +222,8 @@ class BenchmarkReportGenerator:
                                   output_path: str) -> bool:
         """Draw the attacks ranked worst-first by their accuracy statistic."""
         values = {
-            display_attack_name(name): self._accuracy_of(value, name)
-            for name, value in stats.items()
+            display_attack_name(name): value
+            for name, value in self._headline_values(stats).items()
         }
         return report_charts.accuracy_ranking(
             values, output_path,
@@ -226,6 +298,10 @@ class BenchmarkReportGenerator:
                 f"tab:benchmark_accuracy_{name_key}",
             ) + self._strength_figure(stats, name_key)
         ]
+        if not self.is_zero_bit:
+            tables.append(self._detection_table(
+                sorted_attacks, caption_word, f"tab:benchmark_detection_{name_key}",
+            ))
 
         enabled = self.resolver.metrics_for_group(group_key)
         compact = []
@@ -294,9 +370,30 @@ class BenchmarkReportGenerator:
             for key, value in entry.items()
         )
 
+    @staticmethod
+    def _detection_table(sorted_attacks, caption_word, label):
+        """TP and FP per attack, for a model declaring returns_is_watermarked; else ''."""
+        if not has_detection_counts(value for _, value in sorted_attacks):
+            return ""
+        rows = [
+            (display_attack_name(name),
+             [format_detection_cell(value, prefix) for prefix, _ in DETECTION_COUNTS])
+            for name, value in sorted_attacks
+        ]
+        return grid_table(
+            "Attack Type", [header for _, header in DETECTION_COUNTS], rows,
+            f"True and false positives for {caption_word}.", label,
+        )
+
     def _accuracy_table(self, sorted_attacks, group_key, caption_word, label):
-        """Accuracy statistics, plus single-valued BER and EMR."""
-        statistics = self.resolver.statistics_for(group_key, "accuracy")
+        """Accuracy statistics, plus single-valued BER and EMR, plus TP and FP.
+
+        A zero-bit model with detection counts has no accuracy, BER or EMR:
+        its table is TP and FP alone.
+        """
+        detection = has_detection_counts(v for _, v in sorted_attacks)
+        tp_only = self.is_zero_bit and detection
+        statistics = [] if tp_only else self.resolver.statistics_for(group_key, "accuracy")
         headers = [stat_header(s) for s in statistics]
 
         ber_statistics = self.resolver.statistics_for(group_key, "ber")
@@ -308,9 +405,14 @@ class BenchmarkReportGenerator:
         if inline_ber:
             headers.append(metric_label("ber"))
 
-        show_emr = self.resolver.is_enabled(group_key, "emr")
+        show_emr = self.resolver.is_enabled(group_key, "emr") and not tp_only
         if show_emr:
             headers.append(metric_label("emr"))
+
+        # A multi-bit model's TP and FP get a table of their own (below), so
+        # this one keeps its width; a zero-bit model's are all it reports.
+        if tp_only:
+            headers += [header for _, header in DETECTION_COUNTS]
 
         rows = []
         for attack_name, value in sorted_attacks:
@@ -335,17 +437,25 @@ class BenchmarkReportGenerator:
                 ))
 
             if show_emr:
+                # Over every file: accuracy_n counts only the detected ones
+                # when the model decides presence.
                 cells.append(format_emr_cell(
                     self._stat_of(value, "emr_count"),
-                    n_files,
+                    files_measured(value),
                     self._stat_of(value, "emr_rate"),
                 ))
 
+            if tp_only:
+                cells += [format_detection_cell(value, prefix)
+                          for prefix, _ in DETECTION_COUNTS]
+
             rows.append((display_attack_name(attack_name), cells))
 
+        caption = ("Watermark detection (true and false positives)" if tp_only
+                   else "Watermark detection accuracy")
         return grid_table(
             "Attack Type", headers, rows,
-            f"Watermark detection accuracy for {caption_word}.", label,
+            f"{caption} for {caption_word}.", label,
         )
 
     def _metric_table(self, sorted_attacks, columns, headers, caption, label):
@@ -357,7 +467,7 @@ class BenchmarkReportGenerator:
         rows = []
         caveats = MetricCaveats()
         for attack_name, value in sorted_attacks:
-            n_files = self._stat_of(value, "accuracy_n")
+            n_files = files_measured(value)
             first = {}
             cells = []
             for metric, statistic in columns:
@@ -387,6 +497,9 @@ class BenchmarkReportGenerator:
             for _, value in sorted_attacks
         )
         notes = ""
+        if has_detection_counts(value for _, value in sorted_attacks):
+            note = detection_note((value for _, value in sorted_attacks), self.is_zero_bit)
+            notes += f"\n\n{{\\noindent\\footnotesize {note}}}\n"
         if any_failures:
             notes += (
                 "\n\n{\\noindent\\footnotesize A superscript count marks values "
@@ -436,8 +549,8 @@ class BenchmarkReportGenerator:
     @staticmethod
     def _n_files_phrase(stats):
         counts = {
-            value.get("accuracy_n") for value in stats.values()
-            if isinstance(value, Mapping) and value.get("accuracy_n") is not None
+            files_measured(value) for value in stats.values()
+            if files_measured(value) is not None
         }
         if len(counts) == 1:
             n = counts.pop()
@@ -451,9 +564,9 @@ class BenchmarkReportGenerator:
         attack distribution, so it moves when the attack selection changes.
         Report it alongside that count (see ``generate_latex_report``).
         """
-        if not stats:
+        accuracies = list(self._headline_values(stats).values())
+        if not accuracies:
             return 0.0
-        accuracies = [self._accuracy_of(v, name) for name, v in stats.items()]
         return sum(accuracies) / len(accuracies)
 
     def generate_latex_report(self, stats: Dict[str, StatsValue],
@@ -475,7 +588,7 @@ class BenchmarkReportGenerator:
             Complete LaTeX document as string
         """
         mean_accuracy = self.calculate_mean_accuracy(stats)
-        attack_count = len(stats)
+        attack_count = sum(1 for name in stats if not _is_baseline(name))
 
         preamble = self._preamble(
             f"Benchmark Report: {model_name}",
@@ -500,16 +613,27 @@ class BenchmarkReportGenerator:
                 f"Attacks ranked by watermark detection accuracy ({statistic}), "
                 f"worst first. Bar colour is the robustness tier; the dashed "
                 f"line is the accuracy a failed detection already scores, so a "
-                f"bar reaching it carries no information.",
+                f"bar reaching it carries no information."
+                + self._undetected_sentence(stats),
                 "fig:benchmark_chart",
             )
 
+        # The mean covers the attacks with a value; one with no file detected
+        # has no accuracy, so it is named rather than silently left out.
+        undetected = self._undetected(stats)
+        scored_count = len(self._headline_values(stats))
+        scope = "attacks with a detected file" if undetected else "attacks run"
+        left_out = (f" Not in it, as no file was detected: {', '.join(undetected)}."
+                    if undetected else "")
+        headline = (statistic if self._headline_is_tp(stats)
+                    else f"Accuracy ({statistic})")
         summary = (
             "\\section{Summary}\n\n"
-            f"\\noindent\\textbf{{Accuracy ({statistic}) across the "
-            f"{attack_count} attacks run:}} {mean_accuracy:.2f}\\%\n"
+            f"\\noindent\\textbf{{{headline} across the "
+            f"{scored_count} {scope}:}} {mean_accuracy:.2f}\\%\n"
             "\\\\{\\footnotesize Unweighted mean of the per-attack values; it "
-            "depends on which attacks were selected.}\n\n"
+            f"depends on which attacks were selected.{left_out}}}\n\n"
+            + self._baseline_line(stats)
             + self._key_findings(stats)
             + self._embedding_cost_line(stats)
             + chart_block
@@ -553,46 +677,53 @@ class BenchmarkReportGenerator:
     def _key_findings(self, stats):
         """Name the most and least damaging attacks, those at chance, and the spread."""
         accuracy_by_attack = {
-            display_attack_name(name): self._accuracy_of(value, name)
-            for name, value in stats.items()
+            display_attack_name(name): value
+            for name, value in self._headline_values(stats).items()
         }
-        if len(accuracy_by_attack) < 2:
+        undetected = self._undetected(stats)
+        if len(accuracy_by_attack) + len(undetected) < 2:
             return ""
 
         ordered = sorted(accuracy_by_attack.items(), key=lambda kv: kv[1])
         floor = self._chance_floor
         statistic = self._accuracy_label_for(stats).lower()
 
-        worst = ordered[:3]
-        best = ordered[-1]
+        # An attack after which no file was detected is the most damaging, and
+        # has no accuracy to rank by, so it leads the list.
+        worst = ([f"{name} (no file detected)" for name in undetected]
+                 + [f"{name} ({score:.1f}\\%)"
+                    for name, score in ordered[:max(0, 3 - len(undetected))]])
         at_floor = [name for name, score in ordered if score <= floor + 1.0]
 
         items = [
-            "  \\item \\textbf{Most damaging:} "
-            + ", ".join(f"{name} ({score:.1f}\\%)" for name, score in worst)
-            + f" --- {statistic} accuracy.",
-            f"  \\item \\textbf{{Least damaging:}} {best[0]} "
-            f"({best[1]:.1f}\\%).",
+            "  \\item \\textbf{Most damaging:} " + ", ".join(worst)
+            + (" --- TP rate." if self._headline_is_tp(stats)
+               else f" --- {statistic} accuracy."),
         ]
-        if at_floor:
-            word = "attack leaves" if len(at_floor) == 1 else "attacks leave"
-            items.append(
-                f"  \\item \\textbf{{At or below the chance floor "
-                f"({floor:.0f}\\%):}} {len(at_floor)} {word} the detector no "
-                f"better than guessing --- {', '.join(at_floor)}."
-            )
-        else:
-            items.append(
-                f"  \\item \\textbf{{Chance floor ({floor:.0f}\\%):}} no "
-                f"attack drove detection down to it."
-            )
+        if ordered:
+            best = ordered[-1]
+            items.append(f"  \\item \\textbf{{Least damaging:}} {best[0]} "
+                         f"({best[1]:.1f}\\%).")
+            if at_floor:
+                word = "attack leaves" if len(at_floor) == 1 else "attacks leave"
+                items.append(
+                    f"  \\item \\textbf{{At or below the chance floor "
+                    f"({floor:.0f}\\%):}} {len(at_floor)} {word} the detector no "
+                    f"better than guessing --- {', '.join(at_floor)}."
+                )
+            else:
+                items.append(
+                    f"  \\item \\textbf{{Chance floor ({floor:.0f}\\%):}} no "
+                    f"attack drove detection down to it."
+                )
 
-        spread = ordered[-1][1] - ordered[0][1]
-        items.append(
-            f"  \\item \\textbf{{Spread:}} {spread:.1f} percentage points "
-            f"between the best and worst attack, so the headline mean above "
-            f"stands for a wide range rather than a typical case."
-        )
+        if len(ordered) >= 2:
+            spread = ordered[-1][1] - ordered[0][1]
+            items.append(
+                f"  \\item \\textbf{{Spread:}} {spread:.1f} percentage points "
+                f"between the best and worst attack, so the headline mean above "
+                f"stands for a wide range rather than a typical case."
+            )
 
         return (
             "\\noindent\\textbf{Key findings}\n\n\\begin{itemize}\n"
@@ -601,10 +732,7 @@ class BenchmarkReportGenerator:
 
     def _performance_breakdown(self, stats):
         """The four robustness tiers, as an itemised list."""
-        accuracy_by_attack = {
-            name: self._accuracy_of(value, name)
-            for name, value in stats.items()
-        }
+        accuracy_by_attack = self._headline_values(stats)
         tiers = [
             ("Excellent Performance ($\\geq$95\\%)",
              [a for a in accuracy_by_attack.values() if a >= 95]),
@@ -614,6 +742,7 @@ class BenchmarkReportGenerator:
              [a for a in accuracy_by_attack.values() if 70 <= a < 85]),
             ("Poor Performance ($<$70\\%)",
              [a for a in accuracy_by_attack.values() if a < 70]),
+            ("No file detected", self._undetected(stats)),
         ]
 
         items = ""
@@ -720,7 +849,8 @@ class BenchmarkReportGenerator:
                     filename,
                     f"Attacks ranked by detection accuracy "
                     f"({self._accuracy_label_for(group_stats)}) for "
-                    f"{safe_label}, worst first.",
+                    f"{safe_label}, worst first."
+                    + self._undetected_sentence(group_stats),
                     f"fig:benchmark_chart_{slugify(group_label_text)}",
                 ) + "\n"
 

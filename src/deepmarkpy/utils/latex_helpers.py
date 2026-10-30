@@ -8,7 +8,7 @@ import logging
 import os
 import shutil
 import subprocess
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +114,11 @@ def display_attack_name(attack_name: str, split_camel_case: bool = False) -> str
         base = attack_name[:idx]
         version_suffix = attack_name[idx:]
 
-    # Strip trailing "Attack" from the class name only
-    if base.endswith("Attack"):
+    # Strip trailing "Attack" from the class name only; NoAttack, the
+    # baseline, would be left as a bare "No".
+    if base == "NoAttack":
+        base = "No attack"
+    elif base.endswith("Attack"):
         base = base[:-6]
     base = latex_escape(base)
     version_suffix = latex_escape(version_suffix)
@@ -186,6 +189,79 @@ def format_emr_cell(count, total, rate) -> str:
     if count is not None and total:
         return f"{int(count)}/{int(total)} ({float(rate) * 100:.1f}\\%)"
     return f"{float(rate) * 100:.1f}\\%"
+
+
+# The detection counts of a model declaring returns_is_watermarked, as
+# (stats key prefix, column header): files detected as watermarked among the
+# attacked watermarked files, and among the same attack's clean files.
+DETECTION_COUNTS = (("tp", "TP"), ("fp", "FP"))
+
+DETECTION_NOTE = (
+    "TP and FP count the files the model's own decision reported as "
+    "watermarked, among the attacked watermarked files and among the clean "
+    "files put through the same attack. Accuracy and BER cover the true "
+    "positives only; EMR counts the files detected with every bit right, "
+    "over all files."
+)
+NO_CLEAN_PASS_NOTE = (
+    "FP is not measured (--) for an attack that embeds with the model itself "
+    "(SameModel, Collusion, Collusion2): a clean file put through it carries "
+    "a real watermark."
+)
+ZERO_BIT_NOTE = (
+    "A zero-bit model carries no message, so it has no accuracy, BER or EMR: "
+    "TP and FP are its whole measurement."
+)
+
+
+def detection_rate(stats, prefix):
+    """A ``tp``/``fp`` count as a percentage of its files, or None if not measured."""
+    if not isinstance(stats, Mapping):
+        return None
+    count, total = stats.get(f"{prefix}_count"), stats.get(f"{prefix}_n")
+    if count is None or not total:
+        return None
+    return 100.0 * float(count) / float(total)
+
+
+def format_detection_cell(stats, prefix) -> str:
+    """A ``tp``/``fp`` count as ``n/N (r%)``, or ``--`` when not measured."""
+    rate = detection_rate(stats, prefix)
+    if rate is None:
+        return "--"
+    return format_emr_cell(stats[f"{prefix}_count"], stats[f"{prefix}_n"], rate / 100.0)
+
+
+def has_detection_counts(stats_values) -> bool:
+    """Whether any per-attack stats dict carries TP or FP counts."""
+    return any(
+        isinstance(value, Mapping) and f"{prefix}_n" in value
+        for value in stats_values
+        for prefix, _ in DETECTION_COUNTS
+    )
+
+
+def detection_note(stats_values, zero_bit) -> str:
+    """The note under a TP/FP table, explaining an unmeasured FP when the table shows one."""
+    note = ZERO_BIT_NOTE if zero_bit else DETECTION_NOTE
+    if any(isinstance(value, Mapping) and "tp_n" in value and "fp_n" not in value
+           for value in stats_values):
+        note += " " + NO_CLEAN_PASS_NOTE
+    return note
+
+
+def files_measured(stats):
+    """How many files an attack's stats were computed over, or None.
+
+    Accuracy may cover only the detected files, so the TP count's
+    denominator, which is every file, comes first.
+    """
+    if not isinstance(stats, Mapping):
+        return None
+    for key in ("tp_n", "accuracy_n"):
+        if stats.get(key) is not None:
+            return stats[key]
+    return None
 
 
 class MetricCaveats:

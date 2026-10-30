@@ -1,5 +1,92 @@
 # Changelog
 
+## Unreleased
+
+**A model that decides whether a watermark is present is scored on that
+decision in benchmark mode, now the only mode, and eight attack defaults
+change.** Results for the changed attacks, and for AudioSeal, AWARE and Perth
+on every attack, are not comparable with earlier runs.
+
+### Added
+
+- `returns_is_watermarked` in a model's `config.json`. A declaring model is
+  scored on its own `is_watermarked()`: benchmark mode also applies every
+  attack to the clean file and reports true and false positives per attack
+  (`tp_count`/`tp_n`, `fp_count`/`fp_n`), with accuracy and BER over the
+  detected files only and EMR as the files detected with every bit right,
+  over all files. Both executors run it, in the same order. AudioSeal,
+  AWARE and Perth declare it; SilentCipher, TimbreWM and WavMark are measured
+  as before. The basic and detailed reports give TP and FP in a table of
+  their own after each accuracy table; the comparative report gives TP and
+  FP rate tables. `SameModelAttack`, `CollusionAttack` and `Collusion2Attack`
+  embed with the model itself, so they get no clean pass and their FP is not
+  measured (`--`, N/A in the comparative report). An attack after which no
+  file was detected has no accuracy: the basic report's summary counts and
+  averages only the attacks with one, names the others, lists them first
+  among the most damaging, and names them under the ranking chart and in the
+  robustness tiers.
+- The `NoAttack` attack: the audio unchanged, the no-attack baseline as a row
+  of benchmark mode. It belongs to no group; reports label it `No attack`.
+  The basic report's summary states it as a baseline line (accuracy, TP,
+  FP) and leaves it out of the mean, the findings, the ranking chart and
+  the robustness tiers.
+- `E047`: a model declaring `returns_is_watermarked` without implementing
+  `is_watermarked()`, or a zero-bit model not declaring it.
+- `--init default` and `--init default_sweep`: ready-made benchmark runs, the
+  default attack set at plugin defaults, and the same set with strength sweeps
+  of `BandstopFilterAttack`, `GaussianNoiseAttack`, `HighpassFilterAttack`,
+  `InvertedTimeStretchAttack`, `Mp3CompressionAttack`, `ResamplingPolyAttack`
+  and `TimeStretchAttack`. `--init` now takes a preset, and
+  `src/deepmarkpy/config_templates/` is renamed `src/deepmarkpy/presets/`.
+
+### Changed
+
+- `ResamplingPolyAttack` resamples to `target_sr_resampling_poly` (default
+  8000 Hz) and back to the audio's own rate, in place of decimating by the
+  integer `down_factor_resampling_poly`, so any target rate can be swept. Its
+  output now has the input's length. For a 16 kHz model the default is the
+  same 8 kHz round trip as before, through a slightly different anti-alias
+  filter; for a 44.1 kHz model it was a 22.05 kHz round trip.
+
+- Default attack parameters: `GaussianNoiseAttack` 25 dB (was 35),
+  `PinkNoiseAttack` 35 dB (was 25), `BandstopFilterAttack` 1000-1200 Hz (was
+  350-500), `Mp3CompressionAttack` quality 9 (was 3), `SpeechEnhancement1Attack`
+  noise 0 (was 0.01), `TimeStretchAttack` rate 1.25 (was 1.4),
+  `InvertedTimeStretchAttack` rate 1.4 (was 0.8), and `LowpassFilterAttack`
+  3400 Hz at every sampling rate (was 3500 at 16 kHz up to 6000 at 44.1 and
+  48 kHz), now set by a single `cutoff_freq_lowpass` in place of the
+  per-sampling-rate `cutoff_freq_per_sr_lowpass`, so `attack_parameters`
+  versions can sweep it like any other attack. The native goldens were
+  re-recorded, on Linux x86_64 (rubberband 4.0.0, ffmpeg 7.0.2): rubberband's
+  output differs between Linux and macOS arm64 by more than the
+  cross-environment tolerance, so the time-stretch, inverted-time-stretch and
+  pitch-shift goldens now hold on Linux and not on macOS, where until now it
+  was the other way round.
+- A zero-bit model has no accuracy, BER or EMR: TP and FP are its whole
+  measurement.
+
+### Fixed
+
+- Plugin discovery registered every attack class a plugin's module held,
+  including ones it imports from another plugin. Depending on directory order,
+  `TimeStretchAttack` was registered with `InvertedTimeStretchAttack`'s
+  `config.json`, and `EqualizerAttack` and `HighpassFilterAttack` with
+  `MixingAttack`'s, so their parameters could not be set or swept in
+  `attack_parameters` (`E018`) and `run_metadata.json` recorded the wrong
+  ones. The attacks themselves ran at their own defaults. Discovery now
+  registers only the classes a module defines.
+
+### Removed
+
+- The `no_attacks` mode, with `--no_attacks`, `--init no_attacks`, its report
+  and `E028`. The `NoAttack` attack replaces it.
+- The `detection_reliability` mode, with `--detection_reliability`, `--init
+  detection_reliability`, its report and `E012`, `E025` and `E044`. Benchmark
+  mode reports the same true and false positives for a declaring model (a
+  false negative is a missing true positive), and `NoAttack` gives them
+  without an attack. A config file still naming either removed mode is told
+  what replaced it (`E005`).
+
 ## v3.0.0 — 2026-10-07
 
 **Measurement settings move from flags into one JSON config file per mode.**

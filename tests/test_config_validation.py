@@ -63,7 +63,8 @@ class _UndecidedModel(BaseModel):
 
 # Entries that carry the model class, as discovery registers them.
 CLASS_MODELS = {
-    "PerthModel": {"class": _DecidingModel, "config": {}},
+    "PerthModel": {"class": _DecidingModel,
+                   "config": {"returns_is_watermarked": True}},
     "WavMarkModel": {"class": _UndecidedModel, "config": {}},
 }
 
@@ -149,24 +150,11 @@ class TestModeCodes:
         found, _ = codes([first, second])
         assert "E006" in found
 
-    def test_two_files_with_different_modes_are_fine(self, tmp_path):
-        first = write(tmp_path, {}, name="a.json")
-        second = write(tmp_path, {"mode": "no_attacks"}, name="b.json")
-        configs = load_configs([first, second], ATTACKS, MODELS)
-        assert [c.mode for c in configs] == ["benchmark", "no_attacks"]
-
-
 class TestKeyCodes:
     def test_E007_unknown_key_suggests_closest(self, tmp_path):
         found, error = codes(write(tmp_path, {"modles": ["X"]}))
         assert "E007" in found
         assert issue_for(error, "E007").suggestion == "models"
-
-    def test_E008_key_belongs_to_a_different_mode(self, tmp_path):
-        found, error = codes(write(
-            tmp_path, {"mode": "no_attacks", "attacks": {"groups": []}}))
-        assert "E008" in found
-        assert "benchmark" in issue_for(error, "E008").message
 
     def test_E009_wrong_type(self, tmp_path):
         found, _ = codes(write(tmp_path, {"general": "report"}))
@@ -196,58 +184,49 @@ class TestModelCodes:
         assert "E011" in found
         assert issue_for(error, "E011").suggestion == "AudioSealModel"
 
-    def test_E012_detection_reliability_takes_one_model(self, tmp_path):
-        found, error = codes(write(tmp_path, {
-            "mode": "detection_reliability",
-            "models": ["AudioSealModel", "PerthModel"],
-        }))
-        assert "E012" in found
-        # Not one file per model: two in one invocation would be E006.
-        assert "one invocation per model" in issue_for(error, "E012").message
-
     def test_E016_duplicate_model(self, tmp_path):
         found, _ = codes(write(
             tmp_path, {"models": ["AudioSealModel", "AudioSealModel"]}))
         assert "E016" in found
 
-    def test_E044_detection_reliability_model_must_implement_is_watermarked(
-            self, tmp_path):
-        found, error = codes(write(tmp_path, {
-            "mode": "detection_reliability", "models": ["WavMarkModel"],
-        }), models_registry=CLASS_MODELS)
-        assert "E044" in found
-        issue = issue_for(error, "E044")
-        assert issue.path == "models[0]"
-        assert issue.value == "WavMarkModel"
-        # Names the discovered models that do qualify.
-        assert "PerthModel" in issue.message
-
-    def test_E044_is_reported_alongside_E012(self, tmp_path):
-        """The refused model still counts towards the one-model limit."""
-        found, _ = codes(write(tmp_path, {
-            "mode": "detection_reliability",
-            "models": ["WavMarkModel", "PerthModel"],
-        }), models_registry=CLASS_MODELS)
-        assert {"E012", "E044"} <= found
-
-    @pytest.mark.parametrize("mode", ["benchmark", "no_attacks"])
-    def test_other_modes_do_not_need_is_watermarked(self, tmp_path, mode):
+    def test_a_model_without_is_watermarked_is_measured_on_accuracy(self, tmp_path):
+        """Not declaring returns_is_watermarked is fine: no TP/FP, accuracy over all files."""
         config = load_configs([write(tmp_path, {
-            "mode": mode, "models": ["WavMarkModel"],
+            "models": ["WavMarkModel"],
         })], ATTACKS, CLASS_MODELS)[0]
         assert config.models == ["WavMarkModel"]
 
-    def test_a_model_that_implements_is_watermarked_is_accepted(self, tmp_path):
-        config = load_configs([write(tmp_path, {
-            "mode": "detection_reliability", "models": ["PerthModel"],
-        })], ATTACKS, CLASS_MODELS)[0]
-        assert config.models == ["PerthModel"]
+    def test_E047_declared_but_not_implemented(self, tmp_path):
+        registry = {"WavMarkModel": {"class": _UndecidedModel,
+                                     "config": {"returns_is_watermarked": True}}}
+        found, error = codes(write(tmp_path, {
+            "models": ["WavMarkModel"],
+        }), models_registry=registry)
+        assert "E047" in found
+        assert "does not implement is_watermarked()" in issue_for(error, "E047").message
 
-    def test_no_E044_without_a_model_class(self, tmp_path):
-        """No registry, or a name-only one, has no class to ask, so no E044."""
-        path = write(tmp_path, {
-            "mode": "detection_reliability", "models": ["WavMarkModel"],
-        })
+    def test_E047_zero_bit_model_must_declare_it(self, tmp_path):
+        """A zero-bit model's only output is the presence decision."""
+        registry = {"PerthModel": {"class": _DecidingModel,
+                                   "config": {"is_zero_bit": True}}}
+        found, error = codes(write(tmp_path, {"models": ["PerthModel"]}),
+                             models_registry=registry)
+        assert "E047" in found
+        assert "zero-bit" in issue_for(error, "E047").message
+
+    def test_the_removed_no_attacks_mode_says_what_replaced_it(self, tmp_path):
+        found, error = codes(write(tmp_path, {"mode": "no_attacks"}))
+        assert "E005" in found
+        assert "NoAttack" in issue_for(error, "E005").message
+
+    def test_the_removed_reliability_mode_says_what_replaced_it(self, tmp_path):
+        found, error = codes(write(tmp_path, {"mode": "detection_reliability"}))
+        assert "E005" in found
+        assert "returns_is_watermarked" in issue_for(error, "E005").message
+
+    def test_no_E047_without_a_model_class(self, tmp_path):
+        """No registry, or a name-only one, has no class to ask, so no E047."""
+        path = write(tmp_path, {"models": ["WavMarkModel"]})
         for registry in (None, {"WavMarkModel": {}}):
             config = load_configs([path], models_registry=registry,
                                   quiet=True)[0]
@@ -590,14 +569,6 @@ class TestMetricCodes:
         assert "E024" in found
         assert issue_for(error, "E024").suggestion == "pesq"
 
-    def test_E025_ber_is_not_valid_for_detection_reliability(self, tmp_path):
-        found, error = codes(write(tmp_path, {
-            "mode": "detection_reliability",
-            "metrics": {"defaults": {"ber": {"enabled": True}}},
-        }))
-        assert "E025" in found
-        assert "binary" in issue_for(error, "E025").message
-
     def test_E026_accuracy_cannot_be_disabled(self, tmp_path):
         found, _ = codes(write(tmp_path, {"metrics": {
             "defaults": {"accuracy": {"enabled": False}}}}))
@@ -613,13 +584,6 @@ class TestMetricCodes:
             "per_group": {"desync": {"pesq": {"enabled": False}}}}}))
         assert "E027" in found
         assert issue_for(error, "E027").suggestion == "desynchronization"
-
-    def test_E028_per_group_is_meaningless_without_attacks(self, tmp_path):
-        found, _ = codes(write(tmp_path, {
-            "mode": "no_attacks",
-            "metrics": {"per_group": {"audio_distortion": {}}},
-        }))
-        assert "E028" in found
 
     def test_other_is_a_valid_group_key(self, tmp_path):
         config = load_configs([write(tmp_path, {"metrics": {
@@ -880,8 +844,7 @@ class TestAllProblemsAreReportedTogether:
 
     def test_errors_from_several_files_are_reported_together(self, tmp_path):
         first = write(tmp_path, {"models": ["Nope"]}, name="a.json")
-        second = write(tmp_path, {"mode": "no_attacks",
-                                  "statistics": ["nope"]}, name="b.json")
+        second = write(tmp_path, {"statistics": ["nope"]}, name="b.json")
         found, error = codes([first, second])
         sources = {issue.source for issue in error.issues}
         assert len(sources) == 2
@@ -1031,28 +994,32 @@ class TestTemplates:
             init_template("benchmrak")
         assert excinfo.value.issues[0].suggestion == "benchmark"
 
-    def test_no_attacks_template_does_not_document_per_group(self):
-        """The mode has no attack groups, so its metrics block names none."""
-        raw = json.loads(init_template("no_attacks"))
-        assert "per_group" not in json.dumps(raw.get("metrics", {}))
+    @staticmethod
+    def _load_preset(preset):
+        from deepmarkpy.benchmark import Benchmark
 
-    def test_no_attacks_template_lists_no_attack_timing(self):
-        """The mode applies no attack, so attack_latency never gets a value."""
-        assert "attack_latency" not in init_template("no_attacks")
+        benchmark = Benchmark()
+        return load_config_data(json.loads(init_template(preset)), source=preset,
+                                attacks_registry=benchmark.attacks,
+                                models_registry=benchmark.models, quiet=True)
 
-    def test_the_reliability_template_names_ber_only_to_rule_it_out(self):
-        """ber is E025 in this mode, so no other note may offer it."""
-        def notes(node):
-            if isinstance(node, dict):
-                for key, value in node.items():
-                    if key.startswith("_") and isinstance(value, str):
-                        yield key, value
-                    else:
-                        yield from notes(value)
+    @pytest.mark.parametrize("preset", ["default", "default_sweep"])
+    def test_a_ready_made_run_validates_against_the_real_plugins(self, preset):
+        config = self._load_preset(preset)
+        assert config.mode == "benchmark"
+        assert config.warnings == []
 
-        raw = json.loads(init_template("detection_reliability"))
-        naming = [key for key, note in notes(raw) if re.search(r"\bber\b", note)]
-        assert naming == ["_metrics"]
+    def test_the_sweep_runs_the_default_set_plus_versions(self):
+        loaded = {preset: self._load_preset(preset)
+                  for preset in ("default", "default_sweep")}
+        assert (loaded["default"].selected_attack_specs()
+                == loaded["default_sweep"].selected_attack_specs())
+        assert loaded["default"].synthetic_versions == {}
+        assert set(loaded["default_sweep"].synthetic_versions) == {
+            "BandstopFilterAttack", "GaussianNoiseAttack", "HighpassFilterAttack",
+            "InvertedTimeStretchAttack", "Mp3CompressionAttack",
+            "ResamplingPolyAttack", "TimeStretchAttack",
+        }
 
     @pytest.mark.parametrize("mode", VALID_MODES)
     def test_the_duration_note_names_the_bins_the_reports_print(self, mode):
@@ -1114,20 +1081,6 @@ class TestSelectionCoverage:
             "attack_parameters": {"EchoAttack": {"delay_echo": 0.2}},
         })], ATTACKS, MODELS)[0]
         assert not [w for w in config.warnings if w.code == "W011"]
-
-    def test_W011_detection_reliability_empty_selection_runs_no_attacks(
-            self, tmp_path):
-        """Here an empty selection runs no attacks, so no parameters apply."""
-        config = load_configs([write(tmp_path, {
-            "mode": "detection_reliability",
-            "attacks": {"groups": [], "list": []},
-            "attack_parameters": {"EchoAttack": {"delay_echo": 0.2}},
-        })], ATTACKS, MODELS)[0]
-
-        note = next(w for w in config.warnings if w.code == "W011")
-        assert "EchoAttack" in note.path
-        assert note.severity == "info"
-
 
 class TestParkedEntries:
     """A ``_``-prefixed entry is inert, and selecting it is an error."""

@@ -13,10 +13,10 @@
     "plugins_dir": null
   },
 
-  "_models": "Model class names; two or more adds a comparative report. Any of: AudioSealModel, AwareModel, PerthModel, SilentCipherModel, TimbreWMModel, WavMarkModel. Each one's Docker service must be running.",
+  "_models": "Model class names; two or more adds a comparative report. Any of: AudioSealModel, AwareModel, PerthModel, SilentCipherModel, TimbreWMModel, WavMarkModel. Each one's Docker service must be running. AudioSealModel, AwareModel and PerthModel set returns_is_watermarked in their config.json: every attack also runs on the clean file, and they report true and false positives per attack, with accuracy over the files they detected; PerthModel, zero-bit, reports TP and FP only.",
   "models": ["AudioSealModel"],
 
-  "_attacks": "groups and list are combined; leaving BOTH empty runs every attack. groups - any of: process_disruption, audio_editing, audio_distortion, desynchronization, ai_attacks, transmission. list - attack class names, optionally AttackName:version (e.g. GaussianNoiseAttack:aggressive).",
+  "_attacks": "groups and list are combined; leaving BOTH empty runs every attack. NoAttack, the no-attack baseline, belongs to no group: name it in list. groups - any of: process_disruption, audio_editing, audio_distortion, desynchronization, ai_attacks, transmission. list - attack class names, optionally AttackName:version (e.g. GaussianNoiseAttack:aggressive).",
   "attacks": {
     "groups": [],
     "list": []

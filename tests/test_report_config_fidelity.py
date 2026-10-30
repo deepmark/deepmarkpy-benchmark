@@ -11,7 +11,6 @@ from deepmarkpy.benchmark import Benchmark
 from deepmarkpy.config import load_configs
 from deepmarkpy.utils.detailed_report_generator import DetailedReportGenerator
 from deepmarkpy.utils.latex_helpers import metric_label, stat_header
-from deepmarkpy.utils.no_attacks_report_generator import generate_no_attacks_report
 from deepmarkpy.utils.report_generator import BenchmarkReportGenerator
 
 pytestmark = pytest.mark.usefixtures("no_pdflatex")
@@ -317,67 +316,6 @@ def test_ber_requires_payload_bits(tmp_path, is_zero_bit, statistics):
         assert "GaussianNoise" in tex
     for entry in aggregate["attacks"].values():
         assert ("ber" in entry["accuracy"]) is not is_zero_bit
-
-
-class TestNoAttacksReportFollowsTheConfig:
-    @staticmethod
-    def _results(n_files=3):
-        quality = {m: 3.0 + i * 0.1 for i, m in enumerate(ALL_SIGNAL_METRICS)}
-        return {"AudioSealModel": {
-            "is_zero_bit": False,
-            "returns_confidence": False,
-            "files": [
-                {"file": f"f{i}.wav", "filepath": f"f{i}.wav",
-                 "accuracy": 90.0 + i, "watermarked_audio_quality": dict(quality)}
-                for i in range(n_files)
-            ],
-        }}
-
-    def test_each_metric_gets_the_statistics_it_configures(self, tmp_path):
-        """Each metric gets the statistics its own configuration asks for."""
-        path = tmp_path / "c.json"
-        path.write_text(json.dumps({
-            "mode": "no_attacks",
-            "models": ["AudioSealModel"],
-            "calculate_quality_metrics": True,
-            "metrics": {"defaults": {
-                **{m: {"enabled": False} for m in ALL_SIGNAL_METRICS},
-                "pesq": {"enabled": True,
-                         "statistics": ["mean", "std", "worst_case"]},
-            }},
-        }))
-        config = load_configs([str(path)])[0]
-
-        generate_no_attacks_report(
-            self._results(), report_dir=str(tmp_path), resolver=config.resolver,
-        )
-        tex = (tmp_path / "no_attacks_report.tex").read_text()
-
-        table = table_for(tex, "tab:no_attacks_pesq")
-        header = next(l for l in table.splitlines() if l.strip().startswith("Model"))
-        cells = [c.strip() for c in header.strip().rstrip("\\").split("&")]
-        assert cells == ["Model", "Mean", "Std", "Worst Case"]
-
-    def test_only_enabled_metrics_are_tabled(self, tmp_path):
-        path = tmp_path / "c.json"
-        path.write_text(json.dumps({
-            "mode": "no_attacks",
-            "models": ["AudioSealModel"],
-            "calculate_quality_metrics": True,
-            "metrics": {"defaults": {
-                **{m: {"enabled": False} for m in ALL_SIGNAL_METRICS},
-                "stoi": {"enabled": True},
-            }},
-        }))
-        config = load_configs([str(path)])[0]
-        generate_no_attacks_report(
-            self._results(), report_dir=str(tmp_path), resolver=config.resolver,
-        )
-        tex = (tmp_path / "no_attacks_report.tex").read_text()
-
-        assert metric_label("stoi") in tex
-        assert metric_label("pesq") not in tex
-        assert metric_label("mcd") not in tex
 
 
 class TestWorstCaseFollowsTheMetricDirection:

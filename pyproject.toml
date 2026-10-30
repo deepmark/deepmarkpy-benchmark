@@ -55,7 +55,7 @@ include = ["deepmarkpy*"]
 deepmarkpy = [
     # --init reads these from the installed package, so they must ship in
     # the wheel.
-    "config_templates/*.json",
+    "presets/*.json",
     "plugins/**/config.json",
     "plugins/**/requirements.txt",
     "plugins/**/*_requirements.txt",

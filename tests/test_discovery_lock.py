@@ -6,10 +6,12 @@ These tests lock the exact sets of attack and model class names that
 silent-vanish failure mode into a hard test failure: plugin import errors are
 logged and swallowed, so a plugin can disappear from the registry with no
 error — most critically when a packaging change lets discovery return an empty
-registry with exit code 0. Provenance is locked because discovery registers every subclass found
-in a module's namespace, so a class imported across plugin modules (e.g.
-``mixing`` imports ``EqualizerAttack``) can keep a same-named registry entry
-alive even when its own directory has dropped out of the walked tree.
+registry with exit code 0. Provenance is locked because discovery used to
+register every subclass found in a module's namespace, so a class imported
+across plugin modules (e.g. ``mixing`` imports ``EqualizerAttack``) could keep
+a same-named registry entry alive even when its own directory had dropped out
+of the walked tree, and could carry the importer's config.json. Discovery now
+registers only the classes a module defines.
 
 Canonical environment (the reference for all discovery assertions), recorded 2026-07-29 at commit
 fec866b on the designated machine (macOS arm64, Darwin 25.3.0):
@@ -24,7 +26,7 @@ install) not to change the registered sets. ``pycodec2>=4.0.0`` is a floating
 lower bound in ``requirements.txt``; it resolved to 4.1.1 at record time.
 
 Every attack registers in the canonical environment: all import-time
-dependencies are declared, so the full set of 45 attacks is expected from a
+dependencies are declared, so the full set of 46 attacks is expected from a
 clean install and the exact-set assertion binds unconditionally. (``wavelet``
 needs ``PyWavelets``; ``time_stretch``, ``pitch_shift`` and
 ``inverted_time_stretch`` need ``pyrubberband``.) Note ``pyrubberband``
@@ -83,6 +85,7 @@ CANONICAL_ATTACK_DIRS = {
     "Mp3CompressionAttack": "mp3_compression",
     "NetworkTransmissionAttack": "network_transmission",
     "NeuralVocoderAttack": "neural_vocoder",
+    "NoAttack": "no_attack",
     "OpusCodecAttack": "opus_codec",
     "PCMQuantizationAttack": "pcm_quantization",
     "PinkNoiseAttack": "pink_noise",
@@ -108,7 +111,7 @@ CANONICAL_ATTACKS = frozenset(CANONICAL_ATTACK_DIRS)
 
 # Attacks whose import-time dependency is optional, so a clean install may
 # lack them: {class: (directory, dependency)}. Every dependency is declared
-# and all 45 attacks register in the canonical environment; the mapping
+# and all 46 attacks register in the canonical environment; the mapping
 # stays (empty) so a future optional dependency has an obvious home.
 OPTIONAL_DEP_ATTACKS = {}
 
@@ -300,6 +303,24 @@ class TestConfigAttachmentLock:
                 f"{cls_name} config is missing its own key '{distinctive_key}' — "
                 "the wrong directory's config.json may have been attached"
             )
+
+    @pytest.mark.parametrize("importer,imported", [
+        ("inverted_time_stretch", "TimeStretchAttack"),
+        ("mixing", "EqualizerAttack"),
+        ("mixing", "HighpassFilterAttack"),
+    ])
+    def test_an_imported_attack_is_not_registered_with_the_importer_config(
+            self, pm, importer, imported):
+        # Directory walk order decides which registration lands last, so the
+        # importer's module is registered directly rather than through a walk.
+        from deepmarkpy.core.base_attack import BaseAttack
+
+        module = importlib.import_module(f"deepmarkpy.plugins.attacks.{importer}.attack")
+        registered = {}
+        pm._register_members(module, BaseAttack, registered, {"importer_key": 1})
+        assert imported not in registered
+        assert pm.get_attacks()[imported]["class"].__module__.endswith(
+            f".{CANONICAL_ATTACK_DIRS[imported]}.attack")
 
     def test_same_model_attack_registers_empty_config(self, pm):
         attacks = pm.get_attacks()

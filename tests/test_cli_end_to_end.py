@@ -42,8 +42,8 @@ class DummyWatermarkModel(BaseModel):
 
     WATERMARK_SIZE = 16
 
-    # Detection reliability calls detect() on clean audio before anything
-    # has been embedded, so this must be readable from the start.
+    # Must be readable before anything is embedded, should detect() ever be
+    # called first.
     _last = None
 
     def generate_watermark(self):
@@ -108,6 +108,7 @@ MODEL_CONFIG = {
     "watermark_size": 16,
     "is_zero_bit": False,
     "returns_confidence": False,
+    "returns_is_watermarked": True,
 }
 
 
@@ -169,9 +170,6 @@ def write_config(tmp_path, name, **overrides):
     }
     data.update(overrides)
     data = {key: value for key, value in data.items() if value is not None}
-    if data["mode"] == "detection_reliability":
-        # BER does not apply to this mode.
-        data.get("metrics", {}).get("defaults", {}).pop("ber", None)
     path = tmp_path / name
     path.write_text(json.dumps(data))
     return str(path)
@@ -194,12 +192,12 @@ def run_cli(*argv):
     return run_module.main(list(argv))
 
 
-def write_model_plugin(plugins_dir, source, directory="dummy"):
+def write_model_plugin(plugins_dir, source, directory="dummy", config=None):
     """Install ``source`` as a model plugin, replacing any already there."""
     target = pathlib.Path(plugins_dir) / directory
     target.mkdir(exist_ok=True)
     (target / "model.py").write_text(source)
-    (target / "config.json").write_text(json.dumps(MODEL_CONFIG))
+    (target / "config.json").write_text(json.dumps(config or MODEL_CONFIG))
 
 
 # Two config-defined versions whose names no filename can hold verbatim:
@@ -231,6 +229,9 @@ class TestBenchmarkMode:
         directory = pathlib.Path(plugins_dir) / "dummy"
         source = MODEL_SOURCE.replace(
             "return detected", "return bool(np.array_equal(detected, self._last))",
+        ).replace(
+            "return detect_output is not None and len(detect_output) > 0",
+            "return bool(detect_output)",
         )
         (directory / "model.py").write_text(source)
         (directory / "config.json").write_text(json.dumps({
@@ -253,11 +254,14 @@ class TestBenchmarkMode:
         assert groups
         for group in groups:
             entry = group[ATTACK_NAME]
-            assert entry["accuracy_n"] > 0
-            assert not any(key.startswith("ber_") for key in entry)
+            # No message, so no accuracy, BER or EMR: TP and FP are all of it.
+            assert entry["tp_n"] > 0 and entry["fp_n"] > 0
+            assert not any(key.startswith(("accuracy", "ber_", "emr_")) for key in entry)
         for name in ("benchmark_report.tex", "detailed_report.tex"):
             tex = (report_dir / name).read_text()
-            assert "BER" not in tex and "Bit error rate" not in tex
+            # No BER column or table; the zero-bit note names BER only to
+            # say there is none.
+            assert "BER (\\%)" not in tex and "Bit error rate" not in tex
 
     def test_produces_results_stats_metadata_and_reports(
         self, tmp_path, plugins_dir, audio_dir, monkeypatch,
@@ -379,9 +383,10 @@ class TestBenchmarkMode:
             (report_dir / "benchmark_results.json").read_text()).values()))["attacks"]
         assert set(attacks) == UNSAFE_VERSION_NAMES
         saved = saved_audio(report_dir)
-        # Per clip: the watermarked audio, and the attacked audio of each
-        # version.
-        assert len(saved) == 3 * (1 + len(UNSAFE_VERSION_NAMES))
+        # Per clip: the watermarked audio, and each version's attacked
+        # watermarked and attacked clean audio (the model declares
+        # returns_is_watermarked).
+        assert len(saved) == 3 * (1 + 2 * len(UNSAFE_VERSION_NAMES))
         assert not [p.name for p in saved if UNSAFE_FILENAME_CHARS.search(p.name)]
 
     def test_crop_before_attack_is_applied(self, tmp_path, plugins_dir, audio_dir):
@@ -462,115 +467,6 @@ class TestBenchmarkMode:
 
         (_, _, stats), = returned
         assert stats[ATTACK_NAME]["accuracy_n"] == 3
-
-
-class TestNoAttacksMode:
-    def test_writes_its_own_report_and_no_attack_results(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        config = write_config(
-            tmp_path, "no_attacks.json", mode="no_attacks", attacks=None,
-        )
-        report_dir = tmp_path / "report"
-        assert run_cli(
-            "--config", config, "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
-        ) == run_module.EXIT_OK
-
-        assert (report_dir / "no_attacks_report.tex").exists()
-        assert (report_dir / "no_attacks_DummyWatermarkModel.json").exists()
-
-        tex = (report_dir / "no_attacks_report.tex").read_text()
-        assert "PESQ" in tex
-        assert "MCD" not in tex, "a disabled metric reached the report"
-
-
-class TestDetectionReliabilityMode:
-    def test_writes_reliability_results_and_report(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        """Writes results and report; with no efficiency section, times nothing."""
-        config = write_config(
-            tmp_path, "dr.json", mode="detection_reliability",
-        )
-        report_dir = tmp_path / "report"
-        assert run_cli(
-            "--config", config, "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
-        ) == run_module.EXIT_OK
-
-        assert (report_dir / "detection_reliability_report.tex").exists()
-        data = json.loads((report_dir / "detection_reliability.json").read_text())
-        assert data["n_files"] == 3
-        assert ATTACK_NAME in data["attacks"]
-
-        entry = data["attacks"][ATTACK_NAME]
-        assert {"accuracy_mean", "accuracy_worst_case"} <= set(entry)
-        assert entry["false_positive_attempts"] == 3
-
-        assert not entry.get("timings"), entry.get("timings")
-        assert not data["no_attack"].get("timings")
-        record = next(iter(data["per_file"].values()))
-        assert not [k for k in record if "latency" in k], record
-        for attack_record in record["attacks"].values():
-            assert not [k for k in attack_record if "latency" in k], attack_record
-        tex = (report_dir / "detection_reliability_report.tex").read_text()
-        assert "tab:dr_efficiency" not in tex
-        assert "Attack time" not in tex
-
-    def test_saved_audio_survives_any_version_name(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        """This mode's own run loop saves audio under the same naming rule."""
-        config = write_config(
-            tmp_path, "unsafe.json", mode="detection_reliability",
-            **UNSAFE_VERSIONS,
-        )
-        report_dir = tmp_path / "report"
-        assert run_cli(
-            "--config", config, "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
-            "--save_audio",
-        ) == run_module.EXIT_OK
-
-        data = json.loads((report_dir / "detection_reliability.json").read_text())
-        assert set(data["attacks"]) == UNSAFE_VERSION_NAMES
-        saved = saved_audio(report_dir)
-        # Per clip: the watermarked audio, and each version applied to the
-        # clean and to the watermarked audio.
-        assert len(saved) == 3 * (1 + 2 * len(UNSAFE_VERSION_NAMES))
-        assert not [p.name for p in saved if UNSAFE_FILENAME_CHARS.search(p.name)]
-
-
-class TestSeveralModesInOneInvocation:
-    @pytest.mark.parametrize("repeated", [False, True])
-    def test_every_mode_runs_and_none_erases_another(
-        self, tmp_path, plugins_dir, audio_dir, repeated,
-    ):
-        """Each mode reports and saves its audio in audio/<mode>/."""
-        benchmark = write_config(tmp_path, "benchmark.json")
-        dr = write_config(tmp_path, "dr.json", mode="detection_reliability")
-        no_attacks = write_config(tmp_path, "no_attacks.json",
-                                  mode="no_attacks", attacks=None)
-
-        configs = (
-            ["--config", benchmark, "--config", dr, "--config", no_attacks]
-            if repeated else ["--config", benchmark, dr, no_attacks]
-        )
-        report_dir = tmp_path / "report"
-        assert run_cli(
-            *configs,
-            "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir),
-            "--plugins_dir", plugins_dir,
-            "--save_audio",
-        ) == run_module.EXIT_OK
-
-        assert (report_dir / "benchmark_report.tex").exists()
-        assert (report_dir / "detection_reliability_report.tex").exists()
-        assert (report_dir / "no_attacks_report.tex").exists()
-        for mode in ("benchmark", "detection_reliability", "no_attacks"):
-            assert (report_dir / "audio" / mode / "clip0_watermarked.wav").exists()
 
 
 class TestFailureModes:
@@ -666,7 +562,7 @@ class TestFailureModes:
         assert previous.read_text() == "previous run"
         assert not embedded.exists(), "audio was embedded before the check"
 
-    @pytest.mark.parametrize("mode", ["benchmark", "detection_reliability"])
+    @pytest.mark.parametrize("mode", ["benchmark"])
     def test_a_group_with_an_undiscovered_member_is_a_config_error(
         self, tmp_path, plugins_dir, audio_dir, monkeypatch, capsys, mode,
     ):
@@ -702,37 +598,31 @@ class TestFailureModes:
         assert "[E014]" in capsys.readouterr().err
         assert previous.read_text() == '{"completed": true}'
 
-    def test_a_reliability_model_without_is_watermarked_is_a_config_error(
+    def test_a_declaration_the_model_cannot_honour_is_a_config_error(
         self, tmp_path, plugins_dir, audio_dir, capsys,
     ):
-        """E044 for a model without is_watermarked(), from a file or the flags."""
+        """E047 for returns_is_watermarked without is_watermarked(), from a file or the flags."""
         write_model_plugin(
             plugins_dir, MODEL_SOURCE.split("    def is_watermarked")[0],
         )
-        config = tmp_path / "dr.json"
-        config.write_text(json.dumps({
-            "mode": "detection_reliability", "models": ["DummyWatermarkModel"],
-        }))
+        config = write_config(tmp_path, "declared.json")
         report_dir = tmp_path / "report"
         report_dir.mkdir()
-        previous = report_dir / "detection_reliability.json"
+        previous = report_dir / "benchmark_results.json"
         previous.write_text('{"completed": true}')
         common = ("--wav_files_dir", audio_dir, "--report_dir", str(report_dir),
                   "--plugins_dir", plugins_dir)
 
         assert run_cli(
-            "--config", str(config), "--validate-only", *common,
+            "--config", config, "--validate-only", *common,
         ) == run_module.EXIT_CONFIG_ERROR
-        assert "[E044]" in capsys.readouterr().err
+        assert "[E047]" in capsys.readouterr().err
+        assert run_cli("--config", config, *common) == run_module.EXIT_CONFIG_ERROR
+        assert "[E047]" in capsys.readouterr().err
         assert run_cli(
-            "--config", str(config), *common,
+            "--wm_model", "DummyWatermarkModel", "--attack_types", ATTACK_SPEC, *common,
         ) == run_module.EXIT_CONFIG_ERROR
-        assert "[E044]" in capsys.readouterr().err
-        assert run_cli(
-            "--detection_reliability", "--wm_model", "DummyWatermarkModel",
-            *common,
-        ) == run_module.EXIT_CONFIG_ERROR
-        assert "[E044]" in capsys.readouterr().err
+        assert "[E047]" in capsys.readouterr().err
         assert previous.read_text() == '{"completed": true}'
 
     @pytest.mark.parametrize("failure", ["config", "runtime"])
@@ -755,42 +645,6 @@ class TestFailureModes:
             with pytest.raises(SystemExit) as exit_info:
                 runpy.run_path(str(self.LAUNCHER), run_name="__main__")
         assert exit_info.value.code == expected
-
-    def test_a_reliability_run_that_fails_exits_one(
-        self, tmp_path, plugins_dir, audio_dir, monkeypatch,
-    ):
-        """A mode that produced nothing fails the run."""
-        def fail(*args, **kwargs):
-            raise ValueError("the run could not start")
-
-        monkeypatch.setattr(
-            "deepmarkpy.utils.detection_reliability.run_detection_reliability",
-            fail,
-        )
-        config = tmp_path / "dr.json"
-        config.write_text(json.dumps({
-            "mode": "detection_reliability", "models": ["DummyWatermarkModel"],
-        }))
-        report_dir = tmp_path / "report"
-        assert run_cli(
-            "--config", str(config), "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
-        ) == run_module.EXIT_RUNTIME_ERROR
-        assert not (report_dir / "detection_reliability.json").exists()
-
-    def test_a_baseline_whose_only_model_fails_exits_one(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        write_model_plugin(plugins_dir, self._model_whose_service_drops())
-        config = tmp_path / "no_attacks.json"
-        config.write_text(json.dumps({
-            "mode": "no_attacks", "models": ["DummyWatermarkModel"],
-        }))
-        assert run_cli(
-            "--config", str(config), "--wav_files_dir", audio_dir,
-            "--report_dir", str(tmp_path / "report"),
-            "--plugins_dir", plugins_dir,
-        ) == run_module.EXIT_RUNTIME_ERROR
 
     def test_a_comparison_where_every_model_fails_exits_one(
         self, tmp_path, plugins_dir, audio_dir,
@@ -1038,21 +892,6 @@ class TestParameterProvenance:
 class TestParameterReportingPerMode:
     """The parameters reported are those of the attacks the mode runs."""
 
-    def test_no_attacks_mode_reports_no_attack_parameters(self, tmp_path, plugins_dir):
-        """This mode applies none, so listing every attack would be nonsense."""
-        assert resolved_for(
-            tmp_path, plugins_dir, mode="no_attacks", attacks=None,
-        ) == {}
-
-    def test_detection_reliability_empty_selection_is_no_attacks(
-        self, tmp_path, plugins_dir,
-    ):
-        """Empty means baseline-only here, not 'every attack'."""
-        assert resolved_for(
-            tmp_path, plugins_dir, mode="detection_reliability",
-            attacks={"groups": [], "list": []},
-        ) == {}
-
     def test_benchmark_empty_selection_is_every_attack(self, tmp_path, plugins_dir):
         assert len(resolved_for(
             tmp_path, plugins_dir, attacks={"groups": [], "list": []},
@@ -1152,58 +991,6 @@ class TestEfficiencySection:
         tex = (report_dir / "benchmark_report.tex").read_text()
         assert "Attack time (s)" in tex
         assert "Embed time" not in tex and "Detect time" not in tex
-
-
-class TestReliabilityModeTimings:
-    """The reliability mode times its own run loop, as the other modes do."""
-
-    def _run(self, tmp_path, plugins_dir, audio_dir, **overrides):
-        config = write_config(
-            tmp_path, "reliability_eff.json", mode="detection_reliability",
-            efficiency={"enabled": True, "metrics": {
-                "embed_latency": {"statistics": ["mean"]},
-                "detect_latency": {"statistics": ["mean"]},
-                "attack_latency": {"statistics": ["mean", "worst_case"]},
-            }},
-            **overrides,
-        )
-        report_dir = tmp_path / "reliability"
-        run_cli("--config", config, "--wav_files_dir", audio_dir,
-                "--report_dir", str(report_dir), "--plugins_dir", plugins_dir)
-        return report_dir
-
-    def test_timings_are_measured_and_tabled(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        report_dir = self._run(tmp_path, plugins_dir, audio_dir)
-
-        result = json.loads(
-            (report_dir / "detection_reliability.json").read_text()
-        )
-        attack = next(iter(result["attacks"].values()))
-        assert attack["timings"]["attack_latency"]["mean"] > 0
-        assert attack["timings"]["detect_latency"]["mean"] > 0
-        assert result["no_attack"]["timings"]["embed_latency"]["mean"] > 0
-
-        tex = (report_dir / "detection_reliability_report.tex").read_text()
-        assert "tab:dr_efficiency" in tex
-        assert "Attack time (s)" in tex
-        # Embedding does not vary by attack, so it is stated once.
-        assert "Embedding cost per file" in tex
-        assert "Embed time (s)" not in tex
-
-    def test_every_duration_part_states_the_embedding_cost(
-        self, tmp_path, plugins_dir, audio_dir,
-    ):
-        """Each part, rebuilt from per-file records, keeps the baseline timings."""
-        report_dir = self._run(
-            tmp_path, plugins_dir, audio_dir,
-            duration_groups={"boundaries": [1.2], "include_overall": True},
-        )
-        tex = (report_dir / "detection_reliability_report.tex").read_text()
-        parts = tex.count("\\part{")
-        assert parts >= 2, tex
-        assert tex.count("Embedding cost per file") == parts
 
 
 class TestContainerMemorySection:
@@ -1346,13 +1133,6 @@ class TestContainerSectionCoversTheWholeRun:
         assert ("Attack", "DiffusionAttack",
                 self._DockerAttack.endpoint) in entries, entries
 
-    @pytest.mark.parametrize("mode", ["no_attacks", "detection_reliability"])
-    def test_a_mode_that_runs_no_attacks_counts_none(self, tmp_path, mode):
-        """No selection here means no attacks, so no attack service is listed."""
-        # detection_reliability measures one model per config.
-        entries = self._rows_for(tmp_path, mode=mode, models=["AudioSealModel"])
-        assert not any(kind == "Attack" for kind, _, _ in entries), entries
-
     def test_each_model_report_asks_for_its_own_model_alone(
         self, tmp_path, plugins_dir, audio_dir, monkeypatch,
     ):
@@ -1488,39 +1268,19 @@ class TestTheFlagInterface:
         )
         assert "GaussianNoiseAttack" in next(iter(results.values()))["attacks"]
 
-    def test_no_attacks_flag_selects_that_mode(
-        self, tmp_path, plugins_dir, audio_dir,
+    @pytest.mark.parametrize("flag", ["--no_attacks", "--detection_reliability"])
+    def test_a_removed_mode_flag_is_an_unknown_argument(
+        self, tmp_path, plugins_dir, audio_dir, flag,
     ):
-        report_dir = tmp_path / "baseline"
-        assert run_cli(
-            "--wm_model", "DummyWatermarkModel", "--no_attacks",
-            "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir),
-            "--plugins_dir", plugins_dir,
-        ) == run_module.EXIT_OK
-        assert (report_dir / "no_attacks_report.tex").exists()
-
-    def test_combined_mode_flags_with_several_models_are_refused(
-        self, tmp_path, plugins_dir, audio_dir, capsys,
-    ):
-        """E012: reliability measures one model, with or without --no_attacks."""
-        write_model_plugin(
-            plugins_dir,
-            MODEL_SOURCE.replace("class DummyWatermarkModel",
-                                 "class SecondWatermarkModel"),
-            "second",
-        )
-        report_dir = tmp_path / "combined"
-        assert run_cli(
-            "--wm_models", "DummyWatermarkModel", "SecondWatermarkModel",
-            "--no_attacks", "--detection_reliability",
-            "--wav_files_dir", audio_dir,
-            "--report_dir", str(report_dir),
-            "--plugins_dir", plugins_dir,
-        ) == run_module.EXIT_CONFIG_ERROR
-
-        assert "[E012]" in capsys.readouterr().err
-        assert not report_dir.exists()
+        """NoAttack is the baseline, and benchmark mode counts TP/FP: no other modes."""
+        with pytest.raises(SystemExit) as raised:
+            run_cli(
+                "--wm_model", "DummyWatermarkModel", flag,
+                "--wav_files_dir", audio_dir,
+                "--report_dir", str(tmp_path / "baseline"),
+                "--plugins_dir", plugins_dir,
+            )
+        assert raised.value.code == 2
 
     def test_the_config_file_wins_and_says_so(
         self, tmp_path, plugins_dir, audio_dir, caplog,
@@ -1532,12 +1292,12 @@ class TestTheFlagInterface:
         with caplog.at_level("WARNING"):
             assert run_cli(
                 "--config", config, "--wm_model", "DummyWatermarkModel",
-                "--no_attacks", "--wav_files_dir", audio_dir,
+                "--calculate_quality_metrics", "--wav_files_dir", audio_dir,
                 "--report_dir", str(report_dir),
                 "--plugins_dir", plugins_dir,
             ) == run_module.EXIT_OK
 
-        assert "--no_attacks" in caplog.text and "Ignoring" in caplog.text
+        assert "--calculate_quality_metrics" in caplog.text and "Ignoring" in caplog.text
         # The config says benchmark mode, so that is what ran.
         assert (report_dir / "benchmark_report.tex").exists()
 

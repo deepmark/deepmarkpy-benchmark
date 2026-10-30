@@ -53,6 +53,42 @@ class ServiceStandInModel(BaseModel):
                          for i in range(16)])
 '''
 
+# Models declaring returns_is_watermarked: every attack also runs on the clean
+# audio, for the false positives, after its watermarked twin on the same lane.
+DECIDING_MODEL = SERVICE_MODEL.replace(
+    "class ServiceStandInModel", "class DecidingStandInModel",
+).replace(
+    """        return np.array([int(np.mean(audio[i * block:(i + 1) * block]) > 0)
+                         for i in range(16)])""",
+    """        means = np.array([np.mean(audio[i * block:(i + 1) * block]) for i in range(16)])
+        return (means > 0).astype(int), float(np.mean(np.abs(means)))
+
+    def is_watermarked(self, detect_output):
+        return detect_output[1] > 2e-3""",
+)
+
+ZERO_BIT_MODEL = '''
+import hashlib
+import time
+
+import numpy as np
+
+from deepmarkpy.core.base_model import BaseModel
+
+
+class ZeroBitStandInModel(BaseModel):
+    def embed(self, audio, watermark_data, sampling_rate, **kwargs):
+        return np.array(audio, dtype=np.float64) + 2e-3
+
+    def detect(self, audio, sampling_rate, **kwargs):
+        audio = np.asarray(audio, dtype=np.float64)
+        time.sleep(hashlib.sha256(audio.tobytes()).digest()[0] / 255 * 0.01)
+        return int(np.mean(audio) > 1e-3)
+
+    def is_watermarked(self, detect_output):
+        return bool(detect_output)
+'''
+
 SERVICE_ATTACK = '''
 import hashlib
 import time
@@ -143,6 +179,10 @@ def _no_nisqa(monkeypatch):
 def plugins_dir(tmp_path_factory):
     root = tmp_path_factory.mktemp("plugins")
     _plugin(root, "service_model", "model.py", SERVICE_MODEL, MODEL_CONFIG, True)
+    _plugin(root, "deciding_model", "model.py", DECIDING_MODEL,
+            {**MODEL_CONFIG, "returns_confidence": True, "returns_is_watermarked": True}, True)
+    _plugin(root, "zero_bit_model", "model.py", ZERO_BIT_MODEL,
+            {**MODEL_CONFIG, "is_zero_bit": True, "returns_is_watermarked": True}, True)
     _plugin(root, "service_attack", "attack.py", SERVICE_ATTACK, {}, True)
     _plugin(root, "service_rng", "attack.py", SERVICE_RNG_ATTACK, {}, True)
     _plugin(root, "in_place", "attack.py", IN_PLACE_ATTACK, {}, False)
@@ -213,6 +253,37 @@ class TestSameResultsAsSequential:
             assert run._is_ordered("ServiceStandInAttack")
             sequential = _run(benchmark, filepaths, attacks, "sequential")
             piped = _run(benchmark, filepaths, attacks, "pipelined")
+        finally:
+            (model_dir / "Dockerfile.off").rename(model_dir / "Dockerfile")
+        assert json.dumps(piped) == json.dumps(sequential)
+
+
+class TestSameResultsWithPresenceDecisions:
+    """The clean-audio half of each attack keeps the sequential order too."""
+
+    ATTACKS = NATIVE_ATTACKS + ["ServiceStandInAttack", "NoAttack"]
+
+    @pytest.mark.parametrize("model", ["DecidingStandInModel", "ZeroBitStandInModel"])
+    def test_with_service_lanes(self, benchmark, filepaths, model):
+        sequential = _run(benchmark, filepaths, self.ATTACKS, "sequential", model=model)
+        piped = _run(benchmark, filepaths, self.ATTACKS, "pipelined", model=model,
+                     parallelism=Parallelism(workers=2, files_in_flight=2,
+                                             detect_concurrency=3))
+        assert json.dumps(piped) == json.dumps(sequential)
+        rows = [row for result in sequential.values() for row in result["attacks"].values()]
+        assert rows and all("detected" in row and "detected_clean" in row for row in rows)
+
+    @pytest.mark.parametrize("model, directory", [
+        ("DecidingStandInModel", "deciding_model"),
+        ("ZeroBitStandInModel", "zero_bit_model"),
+    ])
+    def test_with_an_in_process_model(self, benchmark, filepaths, plugins_dir,
+                                      model, directory):
+        model_dir = pathlib.Path(plugins_dir) / directory
+        (model_dir / "Dockerfile").rename(model_dir / "Dockerfile.off")
+        try:
+            sequential = _run(benchmark, filepaths, self.ATTACKS, "sequential", model=model)
+            piped = _run(benchmark, filepaths, self.ATTACKS, "pipelined", model=model)
         finally:
             (model_dir / "Dockerfile.off").rename(model_dir / "Dockerfile")
         assert json.dumps(piped) == json.dumps(sequential)
