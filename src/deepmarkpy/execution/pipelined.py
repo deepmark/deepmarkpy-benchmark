@@ -499,7 +499,9 @@ class PipelinedRun:
     def _run_detect(self, attacked_audio, sampling_rate):
         timings = {}
         with efficiency.measure(timings, "detect_latency",
-                                self.resolver.is_enabled(None, "detect_latency")):
+                                self.resolver.is_enabled(None, "detect_latency"),
+                                efficiency.rtf_seconds(self.resolver, "detect_latency",
+                                                       attacked_audio, sampling_rate)):
             detected_message, confidence, detected = read_detection(
                 self.model, attacked_audio, sampling_rate,
                 self.returns_confidence, self.returns_presence,

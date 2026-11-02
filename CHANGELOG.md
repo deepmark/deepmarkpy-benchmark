@@ -9,6 +9,11 @@ on every attack, are not comparable with earlier runs.
 
 ### Added
 
+- Real-time factor metrics `embed_rtf`, `detect_rtf` and `attack_rtf` in the
+  `efficiency` section: each stage's time over the duration of the audio it
+  processed, so below 1 is faster than real time. They are timed with the
+  latencies, configured like them, and reported in the same tables; the
+  embedding's joins the run's "Embedding cost per file" line.
 - `returns_is_watermarked` in a model's `config.json`. A declaring model is
   scored on its own `is_watermarked()`: benchmark mode also applies every
   attack to the clean file and reports true and false positives per attack

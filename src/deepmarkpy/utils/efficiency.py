@@ -17,6 +17,8 @@ import time
 from contextlib import contextmanager
 from urllib.parse import urlparse
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 # Prefixes every line this family prints, whatever the log format.
@@ -29,7 +31,7 @@ def log(message, *args, level=logging.INFO):
 
 
 @contextmanager
-def measure(record, key, enabled=True):
+def measure(record, key, enabled=True, audio_seconds=None):
     """Time the block and store the elapsed seconds under ``key``.
 
     Args:
@@ -38,18 +40,40 @@ def measure(record, key, enabled=True):
         key: the metric name, e.g. ``"embed_latency"``.
         enabled: whether the config asked for this metric. When it did
             not, the block runs untimed and nothing is written.
+        audio_seconds: the duration of the audio the block processes, when
+            the config asked for this stage's real-time factor (see
+            ``rtf_seconds``): the elapsed time over it is stored under
+            ``rtf_key(key)``. None records no real-time factor.
 
     Wall-clock time, so it includes the HTTP round trip of a dockerized
     plugin.
     """
-    if not enabled:
+    if not enabled and not audio_seconds:
         yield
         return
     start = time.perf_counter()
     try:
         yield
     finally:
-        record[key] = time.perf_counter() - start
+        elapsed = time.perf_counter() - start
+        if enabled:
+            record[key] = elapsed
+        if audio_seconds:
+            record[rtf_key(key)] = elapsed / audio_seconds
+
+
+def rtf_key(latency_key):
+    """The real-time factor's metric name for a latency's: ``embed_latency`` -> ``embed_rtf``."""
+    return latency_key.replace("_latency", "_rtf")
+
+
+def rtf_seconds(resolver, latency_key, audio, sampling_rate):
+    """``audio``'s duration in seconds if the config asks for this stage's real-time factor, else None."""
+    if not resolver.is_enabled(None, rtf_key(latency_key)):
+        return None
+    rate = float(np.asarray(sampling_rate).reshape(-1)[0])
+    samples = np.shape(audio)[-1] if np.ndim(audio) else 0
+    return samples / rate if rate and samples else None
 
 
 # How long to wait on the docker CLI before giving up on a footprint.

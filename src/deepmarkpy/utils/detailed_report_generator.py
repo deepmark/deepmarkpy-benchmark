@@ -383,16 +383,18 @@ class DetailedReportGenerator:
         return grid_table("Condition", headers, rows, caption, label)
 
     def _embedding_cost_line(self, aggregated):
-        """The per-file embedding time, stated once for the run, or ''."""
-        metric = "embed_latency"
-        if not self.resolver.is_enabled(None, metric):
-            return ""
+        """The per-file embedding time and real-time factor, stated once for the run, or ''."""
+        def statistics(metric):
+            if not self.resolver.is_enabled(None, metric):
+                return []
+            return self.resolver.statistics_for(None, metric)
 
         # Every attack entry records the same per-file cost.
-        statistics = self.resolver.statistics_for(None, metric)
         for data in aggregated["attacks"].values():
+            timings = data.get("timings") or {}
             line = embedding_cost_line(
-                (data.get("timings") or {}).get(metric) or {}, statistics,
+                timings.get("embed_latency") or {}, statistics("embed_latency"),
+                timings.get("embed_rtf") or {}, statistics("embed_rtf"),
             )
             if line:
                 return line

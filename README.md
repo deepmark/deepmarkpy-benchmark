@@ -289,7 +289,7 @@ no comments, so the templates document themselves with `_`-prefixed keys,
 which the parser ignores. Besides the settings below, they cover
 `crop_before_attack` (the percentage cropped from the start of the
 watermarked audio before each attack), `efficiency` (embed, detect and attack
-latency, and container memory; off by default), `duration_groups` (a report
+latency and real-time factor, and container memory; off by default), `duration_groups` (a report
 part per audio-length bin) and `comparison` (the accuracy statistic the
 comparative report ranks; it must be among accuracy's statistics and cannot
 be `std`).
