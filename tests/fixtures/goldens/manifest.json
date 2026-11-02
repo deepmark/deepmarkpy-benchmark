@@ -211,7 +211,7 @@
       "params": {},
       "output_dtype": "float64",
       "output_shape": [
-        16384
+        16000
       ]
     },
     "TimeStretchAttack": {

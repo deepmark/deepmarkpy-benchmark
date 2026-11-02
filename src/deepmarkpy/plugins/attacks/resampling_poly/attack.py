@@ -27,4 +27,4 @@ class ResamplingPolyAttack(BaseAttack):
         
         audio_down = decimate(audio, q=down_factor, ftype='fir', zero_phase=True)
         audio_up = resample_poly(audio_down, up=down_factor, down=1)
-        return audio_up
+        return audio_up[:len(audio)]

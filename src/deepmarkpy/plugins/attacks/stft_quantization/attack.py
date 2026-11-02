@@ -51,5 +51,5 @@ class STFTQuantizationAttack(BaseAttack):
 
         _, signal_quantized = istft(Zxx_quantized, fs=sr, nperseg=n_fft, noverlap=n_fft - hop_length, window='hann')
 
-        return signal_quantized
+        return signal_quantized[:len(audio)]
     
