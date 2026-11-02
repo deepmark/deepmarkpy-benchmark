@@ -165,7 +165,7 @@
   "_crop_before_attack": "Percentage cropped from the START of the watermarked audio before each attack, to test a watermark that cannot rely on being aligned. A number greater than 0 and less than 100, or null to disable.",
   "crop_before_attack": null,
 
-  "_efficiency": "What the run cost in time and memory, kept apart from the metrics block above. Those describe the watermarking method and reproduce from a seed; these describe this machine on this day and do not. enabled: false means none of it is measured. Metrics - embed_latency, detect_latency, attack_latency (seconds), container_footprint (MiB).",
+  "_efficiency": "What the run cost in time and memory, kept apart from the metrics block above. Those describe the watermarking method and reproduce from a seed; these describe this machine on this day and do not. enabled: false means none of it is measured. Metrics - embed_latency, detect_latency, attack_latency (seconds), embed_rtf, detect_rtf, attack_rtf (real-time factor: the time over the duration of the audio processed, below 1 is faster than real time), container_footprint (MiB).",
   "_efficiency_caveat": "A native attack is timed as pure computation; one running in Docker includes base64 encoding of the audio and the HTTP round trip, so the two are not comparable. The first call to a cold container also pays for loading the model.",
   "efficiency": {
     "enabled": false,
@@ -173,6 +173,9 @@
       "embed_latency": { "enabled": true, "statistics": ["mean", "worst_case"] },
       "detect_latency": { "enabled": true, "statistics": ["mean", "worst_case"] },
       "attack_latency": { "enabled": true, "statistics": ["mean", "p95", "worst_case"] },
+      "embed_rtf": { "enabled": true, "statistics": ["mean", "worst_case"] },
+      "detect_rtf": { "enabled": true, "statistics": ["mean", "worst_case"] },
+      "attack_rtf": { "enabled": true, "statistics": ["mean", "worst_case"] },
       "_container_footprint": "Resident memory, in MiB, of each running container the run used (the model's, every dockerized attack's, and NISQA's when a NISQA metric is on), read via the docker CLI while warm. It is the WHOLE service - weights, Python runtime, web server - not the size of a model, and the services load their weights at start so a container can never be measured empty. A service is absent when docker is unavailable or no running container publishes its port.",
       "container_footprint": { "enabled": false }
     }

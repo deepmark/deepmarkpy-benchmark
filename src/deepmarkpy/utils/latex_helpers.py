@@ -333,22 +333,29 @@ def crop_note(crop_before_attack) -> str:
     )
 
 
-def embedding_cost_line(timings, statistics) -> str:
+def embedding_cost_line(timings, statistics, rtf=None, rtf_statistics=()) -> str:
     """The run's "Embedding cost per file" sentence, or '' without a value.
 
-    ``timings`` maps each of ``statistics`` to seconds.
+    ``timings`` maps each of ``statistics`` to seconds, and ``rtf`` each of
+    ``rtf_statistics`` to the real-time factor.
     """
     parts = [
         f"{float(timings[s]):.4f}\\,s ({stat_header(s).lower()})"
         for s in statistics if timings.get(s) is not None
     ]
-    if not parts:
+    rtf_parts = [
+        f"RTF {float(rtf[s]):.4f} ({stat_header(s).lower()})"
+        for s in rtf_statistics if (rtf or {}).get(s) is not None
+    ]
+    if not parts and not rtf_parts:
         return ""
+    rtf_note = (" RTF is the time over the file's duration; below 1 is faster "
+                "than real time." if rtf_parts else "")
     return (
-        f"\\noindent\\textbf{{Embedding cost per file:}} {', '.join(parts)}\n"
+        f"\\noindent\\textbf{{Embedding cost per file:}} {', '.join(parts + rtf_parts)}\n"
         "\\\\{\\footnotesize Measured once per file, before any attack, so it "
         "does not vary by attack. Like every timing it depends on this machine "
-        "and does not reproduce across runs.}\n\n"
+        f"and does not reproduce across runs.{rtf_note}}}\n\n"
     )
 
 

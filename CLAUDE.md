@@ -25,7 +25,7 @@ Since v2.0.0 the same discipline applies: discovery sets are locked by `tests/te
 - `src/deepmarkpy/execution/pipelined.py` — `--executor pipelined`: the same results as the run loop, with dockerized attacks, detection, metrics and files overlapped. Host-state work (loading, watermark draws, embedding, in-process attacks) stays on one ordered thread in the sequential order; `tests/test_pipelined_executor.py` asserts equality with the sequential executor
 - `src/deepmarkpy/plugin_manager.py` — Auto-discovers plugins by walking directories
 - `src/deepmarkpy/utils/metrics.py` — PESQ, STOI, PSNR, SI-SDR
-- `src/deepmarkpy/utils/efficiency.py` — latency timing and container memory; every line it logs carries `[efficiency]`
+- `src/deepmarkpy/utils/efficiency.py` — latency and real-time factor timing, and container memory; every line it logs carries `[efficiency]`
 - `src/deepmarkpy/utils/report_generator.py` — LaTeX + chart generation
 - `src/deepmarkpy/utils/report_charts.py` — the basic report's accuracy ranking and attack-strength curves. The comparative report draws its radar itself; the detailed report is tables only
 - `docker-compose.yml` — All containerized services

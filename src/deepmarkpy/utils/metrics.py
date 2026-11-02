@@ -570,6 +570,9 @@ METRIC_LABELS = {
     "embed_latency": "Embed time (s)",
     "detect_latency": "Detect time (s)",
     "attack_latency": "Attack time (s)",
+    "embed_rtf": "Embed RTF",
+    "detect_rtf": "Detect RTF",
+    "attack_rtf": "Attack RTF",
     "container_footprint": "Container memory (MiB)",
 }
 

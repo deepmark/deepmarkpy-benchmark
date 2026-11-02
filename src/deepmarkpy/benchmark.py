@@ -649,7 +649,9 @@ class Benchmark:
                         different_model_name, different_model_instance = cross_model
 
                     with efficiency.measure(attack_timings, "detect_latency",
-                                            resolver.is_enabled(None, "detect_latency")):
+                                            resolver.is_enabled(None, "detect_latency"),
+                                            efficiency.rtf_seconds(resolver, "detect_latency",
+                                                                   attacked_audio, sampling_rate)):
                         detected_message, confidence, detected = read_detection(
                             model_instance, attacked_audio, sampling_rate,
                             returns_confidence, returns_presence,
@@ -737,7 +739,9 @@ class Benchmark:
         # Embed watermark
         file_timings = {}
         with efficiency.measure(file_timings, "embed_latency",
-                                resolver.is_enabled(None, "embed_latency")):
+                                resolver.is_enabled(None, "embed_latency"),
+                                efficiency.rtf_seconds(resolver, "embed_latency",
+                                                       audio, sampling_rate)):
             watermarked_audio = model_instance.embed(
                 audio=audio, watermark_data=file_watermark,
                 sampling_rate=sampling_rate
@@ -819,7 +823,10 @@ class Benchmark:
         attack_timings = {}
         with efficiency.measure(attack_timings, "attack_latency",
                                 resolver.is_enabled(None, "attack_latency")
-                                and not clean):
+                                and not clean,
+                                None if clean else efficiency.rtf_seconds(
+                                    resolver, "attack_latency",
+                                    watermarked_audio, sampling_rate)):
             attacked_audio, extra = apply_attack(
                 attack_instance,
                 attack_class_name,

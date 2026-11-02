@@ -977,6 +977,26 @@ class TestEfficiencySection:
             assert "Embedding cost per file" in document
             assert "Embed time (s)" not in document
 
+    def test_real_time_factors_are_the_time_over_the_audio_duration(
+        self, tmp_path, plugins_dir, audio_dir,
+    ):
+        report_dir = self._run(tmp_path, plugins_dir, audio_dir, "eff_rtf.json",
+                               efficiency=self.EFFICIENCY)
+        results = json.loads((report_dir / "benchmark_results.json").read_text())
+        for filepath, file_results in results.items():
+            seconds = sf.info(filepath).duration
+            for entry in file_results["attacks"].values():
+                for stage in ("embed", "attack"):
+                    assert entry[f"{stage}_rtf"] == pytest.approx(
+                        entry[f"{stage}_latency"] / seconds, rel=1e-3)
+                assert entry["detect_rtf"] > 0
+
+        tex = (report_dir / "benchmark_report.tex").read_text()
+        assert "Attack RTF" in tex and "Detect RTF" in tex
+        # Embedding's factor is per file, so it joins the run's embedding line.
+        assert "Embed RTF" not in tex
+        assert "RTF " in tex.split("Embedding cost per file", 1)[1].split("\n", 1)[0]
+
     def test_a_disabled_metric_is_left_out_of_the_table(
         self, tmp_path, plugins_dir, audio_dir,
     ):

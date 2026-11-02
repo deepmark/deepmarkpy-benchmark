@@ -659,20 +659,19 @@ class BenchmarkReportGenerator:
         )
 
     def _embedding_cost_line(self, stats):
-        """The per-file embedding time, stated once for the run, or ''."""
-        metric = "embed_latency"
-        if not self.resolver.is_enabled(None, metric):
-            return ""
-
+        """The per-file embedding time and real-time factor, stated once for the run, or ''."""
         # A run-level cost, copied onto every attack entry alike.
         row = next(iter(stats.values()), None)
         if not isinstance(row, Mapping):
             return ""
 
-        statistics = self.resolver.statistics_for(None, metric)
-        return embedding_cost_line(
-            {s: row.get(f"{metric}_{s}") for s in statistics}, statistics,
-        )
+        def values(metric):
+            if not self.resolver.is_enabled(None, metric):
+                return {}, []
+            statistics = self.resolver.statistics_for(None, metric)
+            return {s: row.get(f"{metric}_{s}") for s in statistics}, statistics
+
+        return embedding_cost_line(*values("embed_latency"), *values("embed_rtf"))
 
     def _key_findings(self, stats):
         """Name the most and least damaging attacks, those at chance, and the spread."""
