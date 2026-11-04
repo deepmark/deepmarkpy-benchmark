@@ -144,3 +144,11 @@ class TestAttackSnrIsRecorded:
     def test_returns_none_for_identical_signals(self):
         audio = _noise(1000)
         assert Benchmark._attack_snr_db(audio, audio.copy()) is None
+
+    @pytest.mark.parametrize("name", ["STFTQuantizationAttack", "ResamplingPolyAttack"])
+    @pytest.mark.parametrize("length", [SR - 1, SR, SR + 1])
+    def test_length_preserving_attacks_get_an_snr(self, attacks, name, length):
+        audio = _noise(length)
+        out = attacks[name]["class"]().apply(audio.copy(), sampling_rate=SR)
+        assert len(out) == length
+        assert Benchmark._attack_snr_db(audio, out) is not None
