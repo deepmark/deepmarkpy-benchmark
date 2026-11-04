@@ -49,7 +49,6 @@ updates:
       - "/src/deepmarkpy/plugins/attacks/opus_codec"
       - "/src/deepmarkpy/plugins/attacks/speech_enhancement_1"
       - "/src/deepmarkpy/plugins/attacks/speech_enhancement_2"
-      - "/src/deepmarkpy/plugins/attacks/speech_tokenization"
       - "/src/deepmarkpy/plugins/attacks/vae"
       - "/src/deepmarkpy/plugins/models/audio_seal"
       - "/src/deepmarkpy/plugins/models/aware"
@@ -73,3 +72,31 @@ updates:
       # Major upgrades need deliberate migration; security fixes are unaffected.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+  - package-ecosystem: "pip"
+    # Own block so its ignores do not affect other plugins. xcodec2 0.1.3 only
+    # works with torch/torchaudio 2.4.1 and transformers 4.44.x: torch 2.8 with
+    # transformers 4.57 crashes, and transformers 5 cannot load the model.
+    directories:
+      - "/src/deepmarkpy/plugins/attacks/speech_tokenization"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      security:
+        applies-to: "security-updates"
+        patterns: ["*"]
+      minor-and-patch:
+        applies-to: "version-updates"
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Major upgrades need deliberate migration; security fixes are unaffected.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Move only together with an xcodec2 upgrade, verified against v2.0.0 output.
+      - dependency-name: "torch"
+      - dependency-name: "torchaudio"
+      - dependency-name: "torchao"
+      - dependency-name: "transformers"
+      - dependency-name: "tokenizers"
+      - dependency-name: "huggingface-hub"
