@@ -94,6 +94,7 @@ GOLDEN_ATTACKS = {
     "LPCAttack": {},
     "LowpassFilterAttack": {},
     "Mp3CompressionAttack": {},
+    "NoAttack": {},
     "PCMQuantizationAttack": {},
     "PinkNoiseAttack": {},
     "PitchShiftAttack": {},

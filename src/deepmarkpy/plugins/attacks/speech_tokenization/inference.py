@@ -11,6 +11,43 @@ from deepmarkpy.utils.utils import resample_audio
 
 from deepmarkpy.core.inference import BaseAttackEngine
 
+# The snapshot the Dockerfile bakes into the image.
+MODEL_REVISION = "e412427ed30f0cf9d5e3c95562113deb10a32d03"
+
+# transformers reports these weight-norm keys as newly initialized, but
+# PyTorch's load hook renames weight_g/weight_v to them, so they do load. The
+# load checks that rather than relying on it.
+_WEIGHT_NORM_KEYS = (
+    (".parametrizations.weight.original0", ".weight_g"),
+    (".parametrizations.weight.original1", ".weight_v"),
+)
+
+
+def load_codec(name: str, revision: str = MODEL_REVISION) -> XCodec2Model:
+    """Load XCodec2, and raise unless every reportedly missing weight holds the checkpoint's value."""
+    model, info = XCodec2Model.from_pretrained(name, revision=revision, output_loading_info=True)
+    missing = info["missing_keys"]
+    if not missing:
+        return model
+
+    from huggingface_hub import hf_hub_download
+    from safetensors import safe_open
+
+    state = model.state_dict()
+    unexplained = []
+    with safe_open(hf_hub_download(name, "model.safetensors", revision=revision), framework="pt") as checkpoint:
+        stored = set(checkpoint.keys())
+        for key in missing:
+            source = next((key[: -len(new)] + old for new, old in _WEIGHT_NORM_KEYS if key.endswith(new)), None)
+            if source not in stored or not torch.equal(checkpoint.get_tensor(source), state[key]):
+                unexplained.append(key)
+    if unexplained:
+        raise RuntimeError(
+            f"XCodec2 {name}@{revision}: {len(unexplained)} weights do not hold the "
+            f"checkpoint's values, e.g. {unexplained[:3]}"
+        )
+    return model
+
 
 class SpeechTokenizationEngine(BaseAttackEngine):
     """XCodec2 tokenize/detokenize round-trip attack.
@@ -24,7 +61,7 @@ class SpeechTokenizationEngine(BaseAttackEngine):
         self.config = config
         self.device = device
 
-        self.model = XCodec2Model.from_pretrained(config["model_name_speech_tokenization"])
+        self.model = load_codec(config["model_name_speech_tokenization"])
         self.model.eval().to(self.device)
 
     def apply(self, audio, sampling_rate: int, **params):

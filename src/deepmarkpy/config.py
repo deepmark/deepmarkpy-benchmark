@@ -1,10 +1,9 @@
 """Benchmark configuration: schema, validation, and loading.
 
 One file per mode. Each file is self-contained, declares its own
-``"mode"``, and is only allowed to carry keys that mode actually uses --
-so a ``no_attacks`` config cannot mention attacks, and the reader is
-never asked to work out which sections to ignore. Pass several with
-``--config a.json b.json`` to run several modes in one invocation.
+``"mode"``, and is only allowed to carry keys that mode actually uses, so
+the reader is never asked to work out which sections to ignore. Benchmark
+is the one mode; a file naming a removed one is told what replaced it.
 
 The config file owns every measurement decision (mode, models, attacks,
 attack parameters, metrics, statistics, duration groups, crop). The CLI
@@ -45,7 +44,19 @@ from deepmarkpy.utils.metric_resolver import (
 
 logger = logging.getLogger(__name__)
 
-VALID_MODES = ("benchmark", "no_attacks", "detection_reliability")
+VALID_MODES = ("benchmark",)
+
+# Modes this version no longer has, with what replaces each, so a config
+# written for one is told where its measurement went rather than only
+# that the mode is unknown.
+_REMOVED_MODES = {
+    "no_attacks": "the no-attack baseline is now the NoAttack attack: "
+                  "use mode 'benchmark' with \"attacks\": {\"list\": [\"NoAttack\"]}",
+    "detection_reliability": "mode 'benchmark' reports true and false positives "
+                             "for a model whose config.json sets "
+                             "returns_is_watermarked (a false negative is a "
+                             "missing true positive), NoAttack the no-attack ones",
+}
 
 # Keys every mode's file accepts.
 _COMMON_KEYS = frozenset({
@@ -64,8 +75,6 @@ MODE_KEYS = {
     "benchmark": _COMMON_KEYS | {
         "attacks", "attack_parameters", "comparison", "crop_before_attack",
     },
-    "no_attacks": _COMMON_KEYS,
-    "detection_reliability": _COMMON_KEYS | {"attacks", "attack_parameters"},
 }
 
 _GENERAL_KEYS = frozenset({
@@ -83,8 +92,13 @@ _CONFIGURABLE_METRICS = tuple(m for m in CANONICAL_METRIC_ORDER
 # reported and ranked at.
 _LEVEL_STATISTICS = tuple(s for s in ALL_STATISTICS if s != "std")
 
-_TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "config_templates")
+_PRESET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "presets")
+
+# What --init prints: each mode's fully-commented template, plus ready-made
+# benchmark runs (the default attack set, and the same set with strength
+# sweeps).
+INIT_PRESETS = VALID_MODES + ("default", "default_sweep")
 
 _UNSET = object()
 
@@ -420,22 +434,23 @@ def _check_mode_uniqueness(configs: Sequence[ModeConfig]) -> List[ConfigIssue]:
     return issues
 
 
-def init_template(mode: str) -> str:
-    """Return the fully-commented template config file for ``mode``."""
-    if mode not in VALID_MODES:
-        suggestion = _suggest(mode, VALID_MODES)
+def init_template(preset: str) -> str:
+    """Return the config file ``--init`` prints for ``preset``."""
+    if preset not in INIT_PRESETS:
+        suggestion = _suggest(preset, INIT_PRESETS)
         hint = f" Did you mean '{suggestion}'?" if suggestion else ""
         raise ConfigError([ConfigIssue(
             code="E005",
             path="--init",
-            value=mode,
+            value=preset,
             message=(
-                f"unknown mode. Valid modes: {', '.join(VALID_MODES)}.{hint}"
+                f"unknown preset. Valid presets: {', '.join(INIT_PRESETS)}."
+                f"{hint}"
             ),
             suggestion=suggestion,
         )])
 
-    with open(os.path.join(_TEMPLATE_DIR, f"{mode}.json"), encoding="utf-8") as fh:
+    with open(os.path.join(_PRESET_DIR, f"{preset}.json"), encoding="utf-8") as fh:
         return fh.read()
 
 
@@ -649,10 +664,13 @@ class _Validator:
 
         mode = self.raw["mode"]
         if mode not in VALID_MODES:
+            replaced = _REMOVED_MODES.get(mode) if isinstance(mode, str) else None
             self.error(
                 "E005", "mode",
-                f"unknown mode. Valid modes: {', '.join(VALID_MODES)}.",
-                value=mode, suggestion=_suggest(mode, VALID_MODES),
+                f"unknown mode. Valid modes: {', '.join(VALID_MODES)}."
+                + (f" Mode '{mode}' was removed: {replaced}." if replaced else ""),
+                value=mode,
+                suggestion=None if replaced else _suggest(mode, VALID_MODES),
             )
             return None
         return mode
@@ -754,37 +772,19 @@ class _Validator:
                 continue
             entry = (self.models_registry or {}).get(name)
             model_cls = entry.get("class") if isinstance(entry, dict) else None
-            if self.mode == "detection_reliability" and isinstance(model_cls, type):
+            if isinstance(model_cls, type):
                 # Only a registry of real classes is judged, so the pre-flight
                 # pass and name-only registries are unaffected. Imported here:
                 # such a registry means base_model is loaded already.
-                from deepmarkpy.core.base_model import implements_is_watermarked
-                if not implements_is_watermarked(model_cls):
-                    capable = sorted(
-                        other for other, other_entry in self.models_registry.items()
-                        if isinstance(other_entry, dict)
-                        and isinstance(other_entry.get("class"), type)
-                        and implements_is_watermarked(other_entry["class"])
-                    )
+                from deepmarkpy.core.base_model import is_watermarked_problem
+                problem = is_watermarked_problem(model_cls, entry.get("config"))
+                if problem:
                     self.error(
-                        "E044", f"models[{index}]",
-                        f"mode 'detection_reliability' needs a model that "
-                        f"implements is_watermarked(), and this one does not. "
-                        f"Models that do: {', '.join(capable) or 'none discovered'}.",
+                        "E047", f"models[{index}]",
+                        f"this model cannot be measured: {problem}.",
                         value=name,
                     )
             clean.append(name)
-
-        if self.mode == "detection_reliability" and len(clean) > 1:
-            self.error(
-                "E012", "models",
-                f"mode 'detection_reliability' measures one model at a time "
-                f"(false-positive and false-negative rates are per model), but "
-                f"{len(clean)} are listed. Run one invocation per model, each "
-                f"with its own report directory; one invocation takes one "
-                f"file per mode (E006).",
-                value=clean,
-            )
         return clean
 
     # -- attacks -------------------------------------------------------
@@ -1166,15 +1166,6 @@ class _Validator:
         if "per_group" not in metrics:
             return {}
 
-        if self.mode == "no_attacks":
-            self.error(
-                "E028", "metrics.per_group",
-                f"mode '{self.mode}' applies no attacks, so there are no "
-                f"attack groups to configure. Put the metrics for this mode "
-                f"under 'metrics.defaults'.",
-            )
-            return {}
-
         block = self._typed(metrics, "per_group", "metrics.per_group", dict, {})
         clean = {}
         for group_key in _real_keys(block):
@@ -1237,16 +1228,6 @@ class _Validator:
                         metric, list(allowed) + list(EFFICIENCY_METRICS)),
                 )
                 continue
-            if metric == "ber" and self.mode == "detection_reliability":
-                self.error(
-                    "E025", metric_path,
-                    f"metric '{metric}' does not apply to mode '{self.mode}'. "
-                    f"Detection reliability scores each file as a binary "
-                    f"detected/not-detected outcome, so there are no payload "
-                    f"bits for a bit error rate.",
-                )
-                continue
-
             entry = self._typed(mapping, metric, metric_path, dict, None)
             if entry is None:
                 continue
@@ -1545,10 +1526,8 @@ class _Validator:
         """
         if not overrides and not synthetic:
             return
-        if not groups and not attack_list and self.mode == "benchmark":
-            # Everything runs, so every entry is reachable. Only benchmark
-            # mode expands an empty selection; detection_reliability then
-            # measures the no-attack baseline alone.
+        if not groups and not attack_list:
+            # Everything runs, so every entry is reachable.
             return
 
         selected = {spec.partition(":")[0] for spec in attack_list}

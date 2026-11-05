@@ -2,12 +2,14 @@ import inspect
 import logging
 import os
 import re
+from dataclasses import dataclass, field
+from typing import Mapping, Tuple
 
 import numpy as np
 import soundfile as sf
 import librosa
 
-from deepmarkpy.core.base_model import implements_is_watermarked
+from deepmarkpy.core.base_model import is_watermarked_problem, returns_is_watermarked
 from deepmarkpy.utils import efficiency
 from deepmarkpy.plugin_manager import PluginManager
 from deepmarkpy.utils.utils import load_audio
@@ -25,12 +27,46 @@ logger = logging.getLogger(__name__)
 # Attacks whose calling convention differs from the plain apply(audio, **kwargs).
 _TUPLE_RETURNING_ATTACKS = {"CrossModelAttack"}
 _NEEDS_CLEAN_ORIGINAL = {"ZeroBitCollusionAttack"}
+# Attacks that embed with the model under test: put through one, the clean
+# file carries a real watermark, so they get no false-positive pass and their
+# FP is not measured.
+_NO_CLEAN_PASS = {"SameModelAttack", "CollusionAttack", "Collusion2Attack"}
 _CODEC2_SUPPORTED = {700, 1200, 1300, 1400, 1600, 2400, 3200}
 
 _BENCHMARK_INTERNAL_KEYS = frozenset({
     "sampling_rate", "model", "models", "watermark_data",
     "orig_audio", "original_audio_collusion",
 })
+
+# Marks a result row that has no second model's score: any value, None
+# included, is a score CrossModelAttack recorded.
+_NO_CROSS_MODEL = object()
+
+EXECUTORS = ("sequential", "pipelined")
+
+
+@dataclass(frozen=True)
+class Parallelism:
+    """How much the pipelined executor runs at once.
+
+    Attributes:
+        workers: processes computing quality metrics.
+        files_in_flight: files under way at once, at most.
+        service_lanes: groups of dockerized attacks (class names) that get a
+            lane each. The rest share one lane and run one at a time, as
+            sequentially: a CPU service uses every core, so two at once slow
+            each other down. Name services that do not compete for the CPU:
+            those on a GPU, or NetworkTransmissionAttack, which mostly waits.
+        service_concurrency: requests in flight to an attack with a lane to
+            itself; 1 if not listed. Only at 1 do they keep sequential order.
+        detect_concurrency: detect requests in flight to a dockerized model.
+    """
+
+    workers: int = 8
+    files_in_flight: int = 4
+    service_lanes: Tuple[Tuple[str, ...], ...] = (("NetworkTransmissionAttack",),)
+    service_concurrency: Mapping[str, int] = field(default_factory=dict)
+    detect_concurrency: int = 2
 
 
 def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, attack_kwargs):
@@ -44,7 +80,7 @@ def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, 
     Returns ``(attacked_audio, extra)`` where ``extra`` is the second element
     for tuple-returning attacks and ``None`` otherwise.
 
-    Both the benchmark run loop and the detection-reliability pass call this,
+    Both executors call this, for the watermarked and the clean audio alike,
     so an attack's calling convention is defined once.
     """
     kwargs = dict(attack_kwargs)
@@ -69,6 +105,23 @@ def apply_attack(attack_instance, attack_class_name, target_audio, clean_audio, 
     if isinstance(attacked_audio, np.ndarray):
         attacked_audio = np.squeeze(attacked_audio)
     return attacked_audio, extra
+
+
+def read_detection(model_instance, audio, sampling_rate, returns_confidence,
+                   returns_presence):
+    """One ``detect()`` call, split the way a result row records it.
+
+    Returns ``(message, confidence, detected)``. ``confidence`` is None unless
+    the model's config declares ``returns_confidence``; ``detected`` is the
+    model's own ``is_watermarked()`` decision on the same output when
+    ``returns_presence`` (its config's ``returns_is_watermarked``), else None.
+
+    Both executors call this, so a detection is read the same way in each.
+    """
+    output = model_instance.detect(audio, sampling_rate)
+    message, confidence = output if returns_confidence else (output, None)
+    detected = bool(model_instance.is_watermarked(output)) if returns_presence else None
+    return message, confidence, detected
 
 
 def resolve_cross_model_name(entry_kwargs, attacks_registry, models):
@@ -383,169 +436,6 @@ class Benchmark:
         for name, entry in self.attacks.items():
             self._log_plugin_entry("Attack", name, entry)
 
-    def run_no_attacks(
-        self,
-        filepaths,
-        wm_model,
-        watermark_data=None,
-        sampling_rate=None,
-        verbose=False,
-        calculate_quality_metrics=False,
-        save_audio=False,
-        output_dir=None,
-        metric_resolver=None,
-        **kwargs,
-    ):
-        """Embed and detect without applying any attacks.
-
-        Returns per-file accuracy (and confidence where available).
-        Used by the ``no_attacks`` mode to measure baseline fidelity.
-
-        Computes whichever metrics ``metric_resolver`` enables on the
-        watermarked-vs-original pair, so the no-attacks report can show how
-        much the watermark itself perturbs the audio. No attacks run here,
-        so there are no attack groups: the resolver's defaults apply.
-
-        When ``save_audio`` is True, the watermarked audio for each file is
-        written to ``output_dir``. Since this mode applies no attacks, only
-        the watermarked signal is saved (no attacked variants).
-        """
-        if save_audio and output_dir:
-            os.makedirs(output_dir, exist_ok=True)
-        if isinstance(filepaths, str):
-            filepaths = [filepaths]
-
-        resolver = metric_resolver or MetricResolver.from_attack_groups(
-            calculate_quality_metrics=calculate_quality_metrics,
-        )
-        baseline_metrics = resolver.signal_metrics_for_group(None)
-
-        if wm_model not in self.models:
-            raise ValueError(
-                f"Model '{wm_model}' not found. Available: {list(self.models.keys())}"
-            )
-
-        model_cls = self.models[wm_model]["class"]
-        model_instance = model_cls()
-        model_config = self.models[wm_model]["config"] or {}
-        returns_confidence = model_config.get("returns_confidence", False)
-        is_zero_bit = model_config.get("is_zero_bit", False)
-        supports_detection = implements_is_watermarked(model_instance)
-
-        if sampling_rate is None:
-            sampling_rate = model_config["sampling_rate"]
-            logger.info(f"Using default sampling rate {sampling_rate} for model {wm_model}")
-
-        results = []
-        detection_errors = []
-        for filepath in filepaths:
-            if verbose:
-                logger.info(f"Processing file: {filepath}")
-
-            audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
-
-            file_watermark = (
-                watermark_data
-                if watermark_data is not None
-                else model_instance.generate_watermark()
-            )
-
-            timings = {}
-            with efficiency.measure(timings, "embed_latency",
-                                    resolver.is_enabled(None, "embed_latency")):
-                watermarked_audio = model_instance.embed(
-                    audio=audio, watermark_data=file_watermark,
-                    sampling_rate=sampling_rate,
-                )
-
-            # Save the watermarked audio. No attacks run in this mode, so the
-            # watermarked signal is the only variant worth writing.
-            if save_audio and output_dir:
-                base_filename = os.path.splitext(os.path.basename(filepath))[0]
-                watermarked_path = os.path.join(
-                    output_dir, f"{base_filename}_watermarked.wav"
-                )
-                sf.write(watermarked_path, watermarked_audio, sampling_rate)
-
-            confidence = None
-            # ``is_watermarked()`` is defined over the raw return of
-            # ``detect()`` -- AudioSeal's reads the confidence out of the
-            # (watermark, confidence) pair -- so the unsplit value is kept
-            # rather than reassembled from the parts below.
-            with efficiency.measure(timings, "detect_latency",
-                                    resolver.is_enabled(None, "detect_latency")):
-                detect_output = model_instance.detect(
-                    watermarked_audio, sampling_rate,
-                )
-            if returns_confidence:
-                detected_message, confidence = detect_output
-            else:
-                detected_message = detect_output
-
-            if is_zero_bit:
-                raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
-                accuracy = float(raw) * 100
-            else:
-                accuracy = self.compare_watermarks(file_watermark, detected_message)
-
-            entry = {
-                "file": os.path.basename(filepath),
-                "filepath": filepath,
-                "accuracy": accuracy,
-            }
-            entry.update(timings)
-
-            # Whether the watermark was found is the model's decision, not a
-            # threshold applied to its output. Recorded only when the model
-            # answers it; the report drops the column otherwise rather than
-            # guessing on the model's behalf.
-            if supports_detection:
-                try:
-                    entry["detected"] = bool(
-                        model_instance.is_watermarked(detect_output)
-                    )
-                except Exception as exc:  # noqa: BLE001 - one file, not the run
-                    detection_errors.append(str(exc))
-                    logger.warning(
-                        "is_watermarked() failed for %s: %s", filepath, exc,
-                    )
-            if confidence is not None:
-                entry["confidence"] = confidence
-
-            if baseline_metrics:
-                # Compare original vs watermarked (no attack between).
-                # Captures how much the watermark itself perturbs the
-                # signal -- the same baseline that ``run()`` records as
-                # ``watermarked_audio_quality``.
-                entry["watermarked_audio_quality"] = compute_metrics(
-                    audio, watermarked_audio, sampling_rate,
-                    metrics=baseline_metrics,
-                )
-
-            results.append(entry)
-
-        # A count of 0/N reads as "the watermark was never found", which is
-        # a measurement. If the model's own decision raised on every file it
-        # is not one, so the column is withdrawn rather than filled with a
-        # number that means the opposite of what happened.
-        if supports_detection and len(detection_errors) == len(results) \
-                and detection_errors:
-            logger.error(
-                "%s.is_watermarked() failed on every file (%s); the detection "
-                "count is omitted from the report.",
-                wm_model, detection_errors[0],
-            )
-            supports_detection = False
-            for entry in results:
-                entry.pop("detected", None)
-
-        return {
-            "is_zero_bit": is_zero_bit,
-            "returns_confidence": returns_confidence,
-            "supports_detection": supports_detection,
-            "files": results,
-        }
-
     def run(
         self,
         filepaths,
@@ -562,6 +452,8 @@ class Benchmark:
         metric_resolver=None,
         attack_parameters=None,
         extra_attack_versions=None,
+        executor="sequential",
+        parallelism=None,
         **kwargs,
     ):
         """
@@ -585,13 +477,28 @@ class Benchmark:
                 version cannot reach another. See ``expand_attacks``.
             extra_attack_versions (dict, optional): versions the config
                 defines that the plugin does not; see ``expand_attacks``.
+            executor (str, optional): ``"sequential"`` (default), one file
+                and one attack at a time, or ``"pipelined"``, which overlaps
+                independent work and returns the same results; see
+                ``deepmarkpy.execution.pipelined``.
+            parallelism (Parallelism, optional): the pipelined executor's
+                limits. Defaults to ``Parallelism()``.
             **kwargs: Additional parameters for specific attacks.
 
         Returns:
             dict: A dictionary containing benchmark results for each file and attack.
+            When the model's config declares ``returns_is_watermarked``, each
+            attack row also carries ``detected`` (its ``is_watermarked()`` on
+            the attacked watermarked audio) and ``detected_clean`` (on the same
+            attack applied to the clean audio); a zero-bit model's rows carry
+            those instead of an accuracy.
         """
         if isinstance(filepaths, str):
             filepaths = [filepaths]
+        if executor not in EXECUTORS:
+            raise ValueError(
+                f"Unknown executor '{executor}'; expected one of {list(EXECUTORS)}."
+            )
 
         resolver = metric_resolver or MetricResolver.from_attack_groups(
             calculate_quality_metrics=calculate_quality_metrics,
@@ -620,8 +527,8 @@ class Benchmark:
             parameters=attack_parameters,
             extra_versions=extra_attack_versions,
         )
-        # Before any audio, as detection reliability does, so an unknown
-        # second model stops the run before the first file is embedded.
+        # Before any audio, so an unknown second model stops the run before
+        # the first file is embedded.
         for class_name, _display, overrides, _version in expanded_attacks:
             if class_name == "CrossModelAttack":
                 resolve_cross_model_name(
@@ -640,6 +547,14 @@ class Benchmark:
         model_config = self.models[wm_model]["config"] or {}
         returns_confidence = model_config.get("returns_confidence", False)
         is_zero_bit = model_config.get("is_zero_bit", False)
+        # A model declaring returns_is_watermarked is scored on its own
+        # watermarked/not decision: a true positive on each attacked
+        # watermarked file, a false positive on the same attack applied to the
+        # clean file, and accuracy over the files it detected.
+        returns_presence = returns_is_watermarked(model_config)
+        problem = is_watermarked_problem(model_instance, model_config)
+        if problem:
+            raise ValueError(f"Model '{wm_model}' cannot be measured: {problem}.")
 
         if sampling_rate is None:
             sampling_rate = self.models[wm_model]["config"]["sampling_rate"]
@@ -663,6 +578,26 @@ class Benchmark:
             "models": self.models,
         }
 
+        if executor == "pipelined":
+            from deepmarkpy.execution.pipelined import PipelinedRun
+
+            return PipelinedRun(
+                self,
+                filepaths=filepaths,
+                model_instance=model_instance,
+                model_config=model_config,
+                expanded_attacks=expanded_attacks,
+                attack_kwargs=attack_kwargs,
+                watermark_data=watermark_data,
+                sampling_rate=sampling_rate,
+                resolver=resolver,
+                crop_before_attack=crop_before_attack,
+                save_audio=save_audio,
+                output_dir=output_dir,
+                verbose=verbose,
+                parallelism=parallelism or Parallelism(),
+            ).run(on_file_complete)
+
         for filepath in filepaths:
             if verbose:
                 logger.info(f"\nProcessing file: {filepath}")
@@ -673,53 +608,13 @@ class Benchmark:
             # Get base filename without extension
             base_filename = os.path.splitext(os.path.basename(filepath))[0]
 
-            # Generate a fresh watermark for each file if none was supplied by the user
-            file_watermark = watermark_data if watermark_data is not None else model_instance.generate_watermark()
+            (audio, watermarked_audio, sampling_rate, file_watermark,
+             file_timings) = self._prepare_file(
+                filepath, model_instance, watermark_data, sampling_rate,
+                crop_before_attack, resolver, save_audio, output_dir,
+            )
             attack_kwargs["watermark_data"] = file_watermark
-
-            # Load audio
-            audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
-            logger.info(f"Sampling rate is: {sampling_rate}")
-
-            # Embed watermark
-            file_timings = {}
-            with efficiency.measure(file_timings, "embed_latency",
-                                    resolver.is_enabled(None, "embed_latency")):
-                watermarked_audio = model_instance.embed(
-                    audio=audio, watermark_data=file_watermark,
-                    sampling_rate=sampling_rate
-                )
-
-            # Optionally crop the beginning of the watermarked audio right
-            # after embedding, so every downstream attack sees the cropped
-            # signal. Apply the same crop to the original audio so quality
-            # metrics and attacks that splice samples by index between the
-            # two (CollusionAttack, ZeroBitCollusionAttack) stay length-
-            # matched and time-aligned.
-            if crop_before_attack is not None:
-                if "CropBeginningAttack" in self.attacks:
-                    pre_crop = self.attacks["CropBeginningAttack"]["class"]()
-                    watermarked_audio = pre_crop.apply(
-                        watermarked_audio,
-                        sampling_rate=sampling_rate,
-                        crop_percentage_beginning=crop_before_attack,
-                    )
-                    audio = pre_crop.apply(
-                        audio,
-                        sampling_rate=sampling_rate,
-                        crop_percentage_beginning=crop_before_attack,
-                    )
-                else:
-                    samples_to_crop = int(len(watermarked_audio) * (crop_before_attack / 100.0))
-                    watermarked_audio = watermarked_audio[samples_to_crop:]
-                    audio = audio[samples_to_crop:]
             attack_kwargs["orig_audio"] = audio
-
-            # Save watermarked audio
-            if save_audio:
-                watermarked_filename = f"{base_filename}_watermarked.wav"
-                watermarked_path = os.path.join(output_dir, watermarked_filename)
-                sf.write(watermarked_path, watermarked_audio, sampling_rate)
 
             sr_scalar = int(sampling_rate) if isinstance(sampling_rate, (np.ndarray, list)) else sampling_rate
 
@@ -736,126 +631,73 @@ class Benchmark:
 
             # Apply each attack and compute metrics
             for attack_class_name, attack_display_name, attack_overrides, attack_version in expanded_attacks:
-                if attack_class_name not in self.attacks:
-                    logger.warning(f"Attack '{attack_class_name}' not found. Skipping.")
-                    continue
+                try:
+                    if attack_class_name not in self.attacks:
+                        logger.warning(f"Attack '{attack_class_name}' not found. Skipping.")
+                        continue
 
-                if verbose:
-                    logger.info(f"  Applying attack: {attack_display_name}")
-
-                attack_instance = instantiate_attack(
-                    self.attacks[attack_class_name]["class"],
-                    attack_class_name, attack_version,
-                )
-                attack_name = attack_display_name
-
-                # Merge bitrate overrides into kwargs for this attack
-                current_attack_kwargs = {**attack_kwargs, **attack_overrides}
-
-                if attack_class_name == "CrossModelAttack":
-                    # Read the entry's own kwargs, not the run-level ones:
-                    # per-attack parameters travel with each expanded entry.
-                    different_model_name = resolve_cross_model_name(
-                        current_attack_kwargs, self.attacks, self.models,
+                    attack_name = attack_display_name
+                    entry = (attack_class_name, attack_display_name,
+                             attack_overrides, attack_version)
+                    (attacked_audio, different_watermark, attack_timings,
+                     cross_model) = self._apply_entry(
+                        entry, attack_kwargs, watermarked_audio, audio,
+                        sampling_rate, resolver, base_filename, save_audio,
+                        output_dir, verbose,
                     )
-                    logger.info(f"Different model is chosen and it's {different_model_name}")
-                    different_model_cls = self.models[different_model_name]["class"]
-                    different_model_instance = different_model_cls()
-                    current_attack_kwargs[
-                        "different_model_name_cross_model"] = different_model_name
+                    if cross_model is not None:
+                        different_model_name, different_model_instance = cross_model
 
-                attack_timings = {}
-                with efficiency.measure(attack_timings, "attack_latency",
-                                        resolver.is_enabled(None, "attack_latency")):
-                    attacked_audio, different_watermark = apply_attack(
-                        attack_instance,
-                        attack_class_name,
-                        target_audio=watermarked_audio,
-                        clean_audio=audio,
-                        attack_kwargs=current_attack_kwargs,
+                    with efficiency.measure(attack_timings, "detect_latency",
+                                            resolver.is_enabled(None, "detect_latency"),
+                                            efficiency.rtf_seconds(resolver, "detect_latency",
+                                                                   attacked_audio, sampling_rate)):
+                        detected_message, confidence, detected = read_detection(
+                            model_instance, attacked_audio, sampling_rate,
+                            returns_confidence, returns_presence,
+                        )
+
+                    different_accuracy = _NO_CROSS_MODEL
+                    if attack_class_name == "CrossModelAttack":
+                        different_detected_message = different_model_instance.detect(attacked_audio, sampling_rate)
+                        different_accuracy = self._cross_model_accuracy(
+                            different_model_name, different_watermark,
+                            different_detected_message,
+                        )
+
+                    # The false-positive half: the same attack on the clean
+                    # file, after the watermarked one, which is the order the
+                    # pipelined executor keeps too.
+                    detected_clean = None
+                    if returns_presence and attack_class_name not in _NO_CLEAN_PASS:
+                        attacked_clean = self._apply_entry(
+                            entry, attack_kwargs, watermarked_audio, audio,
+                            sampling_rate, resolver, base_filename, save_audio,
+                            output_dir, verbose, clean=True,
+                        )[0]
+                        detected_clean = read_detection(
+                            model_instance, attacked_clean, sampling_rate,
+                            returns_confidence, True,
+                        )[2]
+
+                    attacked_audio_quality_wm = self._compute_attack_quality(
+                        resolver, attack_name, audio, attacked_audio, sr_scalar,
                     )
 
-                # Ensure consistent shape for all attacks
-                if isinstance(attacked_audio, np.ndarray):
-                    attacked_audio = np.squeeze(attacked_audio)
-
-                # Save attacked audio. Use a separate variable so the 2D
-                # reshape required by sf.write doesn't leak into detect(),
-                # which expects a 1D signal.
-                if save_audio:
-                    attacked_to_save = (
-                        np.expand_dims(attacked_audio, axis=1)
-                        if attacked_audio.ndim == 1
-                        else attacked_audio
+                    results[filepath]["attacks"][attack_name] = self._attack_entry(
+                        is_zero_bit, file_watermark, watermarked_audio,
+                        attacked_audio, detected_message, confidence,
+                        attacked_audio_quality_wm, attack_timings,
+                        file_timings, different_accuracy,
+                        detected=detected, detected_clean=detected_clean,
                     )
-                    attacked_filename = f"{base_filename}_{audio_filename_label(attack_name)}.wav"
-                    attacked_path = os.path.join(output_dir, attacked_filename)
-                    sf.write(attacked_path, attacked_to_save, sampling_rate)
-                    if verbose:
-                        logger.info(f"Saved attacked audio: {attacked_filename}")
-                
-                confidence = None
-                with efficiency.measure(attack_timings, "detect_latency",
-                                        resolver.is_enabled(None, "detect_latency")):
-                    if returns_confidence:
-                        detected_message, confidence = model_instance.detect(attacked_audio, sampling_rate)
-                    else:
-                        detected_message = model_instance.detect(attacked_audio, sampling_rate)
-
-                if attack_class_name == "CrossModelAttack":
-                    different_detected_message = different_model_instance.detect(attacked_audio, sampling_rate)
-                    diff_model_config = self.models.get(different_model_name, {}).get("config") or {}
-                    diff_is_zero_bit = diff_model_config.get("is_zero_bit", False)
-                    diff_returns_confidence = diff_model_config.get("returns_confidence", False)
-                    if diff_is_zero_bit:
-                        if isinstance(different_detected_message, np.ndarray):
-                            different_accuracy = different_detected_message.tolist()
-                        else:
-                            different_accuracy = different_detected_message
-                    elif diff_returns_confidence:
-                        different_watermark_detected, _ = different_detected_message
-                        different_accuracy = self.compare_watermarks(different_watermark, different_watermark_detected)
-                    else:
-                        different_accuracy = self.compare_watermarks(different_watermark, different_detected_message)
-                
-
-                attacked_audio_quality_wm = self._compute_attack_quality(
-                    resolver, attack_name, audio, attacked_audio, sr_scalar,
-                )
-
-                if is_zero_bit:
-                    raw = detected_message.tolist() if isinstance(detected_message, np.ndarray) else detected_message
-                    accuracy = float(raw) * 100
-                    detection_valid = True
-                else:
-                    # False when the detector returned nothing usable, in which
-                    # case `accuracy` is the RANDOM_GUESS_ACCURACY sentinel
-                    # rather than a measured bit-agreement.
-                    detection_valid = not self._is_invalid_detection(
-                        detected_message, file_watermark
+                except Exception:
+                    # Name the attack and file; keep the exception's type, which
+                    # callers use to tell infrastructure failures from bugs.
+                    logger.error(
+                        "Attack %s failed on %s", attack_display_name, filepath,
                     )
-                    accuracy = self.compare_watermarks(file_watermark, detected_message)
-
-                results[filepath]["attacks"][attack_name] = {
-                    "accuracy": accuracy,
-                    "detection_valid": detection_valid,
-                    "attack_snr_db": self._attack_snr_db(
-                        watermarked_audio, attacked_audio
-                    ),
-                    "attacked_audio_quality_wm": attacked_audio_quality_wm,
-                    # Embedding happens once per file, not once per attack,
-                    # so its time is repeated here rather than measured
-                    # again -- the attack tables need a figure per row.
-                    **attack_timings,
-                    **file_timings,
-                }
-
-                # Add confidence for models that return it
-                if confidence is not None:
-                    results[filepath]["attacks"][attack_name]["confidence"] = confidence
-
-                if attack_class_name == "CrossModelAttack":
-                    results[filepath]["attacks"][attack_name]["accuracy_cross_model"] = different_accuracy
+                    raise
 
             # Each file's results go out as soon as the file finishes, so
             # an interruption at file N of M keeps the files already done.
@@ -878,6 +720,201 @@ class Benchmark:
             return None
         return compute_metrics(original, attacked, sr, metrics=relevant)
 
+    def _prepare_file(self, filepath, model_instance, watermark_data,
+                      sampling_rate, crop_before_attack, resolver, save_audio,
+                      output_dir):
+        """Load, watermark and crop one file: what every attack on it starts from.
+
+        Returns ``(audio, watermarked_audio, sampling_rate, file_watermark,
+        file_timings)``, ``audio`` being the clean signal cropped like the
+        watermarked one.
+        """
+        # Generate a fresh watermark for each file if none was supplied by the user
+        file_watermark = watermark_data if watermark_data is not None else model_instance.generate_watermark()
+
+        # Load audio
+        audio, sampling_rate = load_audio(filepath, target_sr=sampling_rate)
+        logger.info(f"Sampling rate is: {sampling_rate}")
+
+        # Embed watermark
+        file_timings = {}
+        with efficiency.measure(file_timings, "embed_latency",
+                                resolver.is_enabled(None, "embed_latency"),
+                                efficiency.rtf_seconds(resolver, "embed_latency",
+                                                       audio, sampling_rate)):
+            watermarked_audio = model_instance.embed(
+                audio=audio, watermark_data=file_watermark,
+                sampling_rate=sampling_rate
+            )
+
+        # Optionally crop the beginning of the watermarked audio right
+        # after embedding, so every downstream attack sees the cropped
+        # signal. Apply the same crop to the original audio so quality
+        # metrics and attacks that splice samples by index between the
+        # two (CollusionAttack, ZeroBitCollusionAttack) stay length-
+        # matched and time-aligned.
+        if crop_before_attack is not None:
+            if "CropBeginningAttack" in self.attacks:
+                pre_crop = self.attacks["CropBeginningAttack"]["class"]()
+                watermarked_audio = pre_crop.apply(
+                    watermarked_audio,
+                    sampling_rate=sampling_rate,
+                    crop_percentage_beginning=crop_before_attack,
+                )
+                audio = pre_crop.apply(
+                    audio,
+                    sampling_rate=sampling_rate,
+                    crop_percentage_beginning=crop_before_attack,
+                )
+            else:
+                samples_to_crop = int(len(watermarked_audio) * (crop_before_attack / 100.0))
+                watermarked_audio = watermarked_audio[samples_to_crop:]
+                audio = audio[samples_to_crop:]
+
+        # Save watermarked audio
+        if save_audio:
+            base_filename = os.path.splitext(os.path.basename(filepath))[0]
+            watermarked_filename = f"{base_filename}_watermarked.wav"
+            watermarked_path = os.path.join(output_dir, watermarked_filename)
+            sf.write(watermarked_path, watermarked_audio, sampling_rate)
+
+        return audio, watermarked_audio, sampling_rate, file_watermark, file_timings
+
+    def _apply_entry(self, entry, attack_kwargs, watermarked_audio, audio,
+                     sampling_rate, resolver, base_filename, save_audio,
+                     output_dir, verbose, clean=False):
+        """Apply one expanded attack entry to one file's watermarked audio.
+
+        Returns ``(attacked_audio, extra, attack_timings, cross_model)``:
+        ``extra`` is the second element a tuple-returning attack gives back,
+        and ``cross_model`` is ``(name, instance)`` of CrossModelAttack's
+        second model, else None.
+
+        With ``clean``, the attack is applied to the clean ``audio`` instead,
+        for the false-positive check: it is not timed, so attack latency
+        stays the watermarked audio's, and saved audio is suffixed ``_clean``.
+        """
+        attack_class_name, attack_display_name, attack_overrides, attack_version = entry
+        if verbose:
+            logger.info(f"  Applying attack: {attack_display_name}"
+                        + (" (clean audio)" if clean else ""))
+
+        attack_instance = instantiate_attack(
+            self.attacks[attack_class_name]["class"],
+            attack_class_name, attack_version,
+        )
+
+        # Merge bitrate overrides into kwargs for this attack
+        current_attack_kwargs = {**attack_kwargs, **attack_overrides}
+
+        cross_model = None
+        if attack_class_name == "CrossModelAttack":
+            # Read the entry's own kwargs, not the run-level ones:
+            # per-attack parameters travel with each expanded entry.
+            different_model_name = resolve_cross_model_name(
+                current_attack_kwargs, self.attacks, self.models,
+            )
+            logger.info(f"Different model is chosen and it's {different_model_name}")
+            different_model_cls = self.models[different_model_name]["class"]
+            cross_model = (different_model_name, different_model_cls())
+            current_attack_kwargs[
+                "different_model_name_cross_model"] = different_model_name
+
+        attack_timings = {}
+        with efficiency.measure(attack_timings, "attack_latency",
+                                resolver.is_enabled(None, "attack_latency")
+                                and not clean,
+                                None if clean else efficiency.rtf_seconds(
+                                    resolver, "attack_latency",
+                                    watermarked_audio, sampling_rate)):
+            attacked_audio, extra = apply_attack(
+                attack_instance,
+                attack_class_name,
+                target_audio=audio if clean else watermarked_audio,
+                clean_audio=audio,
+                attack_kwargs=current_attack_kwargs,
+            )
+
+        # Ensure consistent shape for all attacks
+        if isinstance(attacked_audio, np.ndarray):
+            attacked_audio = np.squeeze(attacked_audio)
+
+        # Save attacked audio. Use a separate variable so the 2D
+        # reshape required by sf.write doesn't leak into detect(),
+        # which expects a 1D signal.
+        if save_audio:
+            attacked_to_save = (
+                np.expand_dims(attacked_audio, axis=1)
+                if attacked_audio.ndim == 1
+                else attacked_audio
+            )
+            attacked_filename = (f"{base_filename}_{audio_filename_label(attack_display_name)}"
+                                 f"{'_clean' if clean else ''}.wav")
+            attacked_path = os.path.join(output_dir, attacked_filename)
+            sf.write(attacked_path, attacked_to_save, sampling_rate)
+            if verbose:
+                logger.info(f"Saved attacked audio: {attacked_filename}")
+
+        return attacked_audio, extra, attack_timings, cross_model
+
+    def _cross_model_accuracy(self, model_name, watermark, detected):
+        """CrossModelAttack's second score: ``model_name``'s detection of the watermark it embedded."""
+        config = self.models.get(model_name, {}).get("config") or {}
+        if config.get("is_zero_bit", False):
+            if isinstance(detected, np.ndarray):
+                return detected.tolist()
+            return detected
+        if config.get("returns_confidence", False):
+            detected, _ = detected
+        return self.compare_watermarks(watermark, detected)
+
+    def _attack_entry(self, is_zero_bit, file_watermark, watermarked_audio,
+                      attacked_audio, detected_message, confidence, quality,
+                      attack_timings, file_timings,
+                      cross_model_accuracy=_NO_CROSS_MODEL, *,
+                      detected=None, detected_clean=None):
+        """One file's result row for one attack.
+
+        ``cross_model_accuracy`` is ``_NO_CROSS_MODEL`` for every attack but
+        CrossModelAttack. ``detected`` and ``detected_clean`` are the model's
+        ``is_watermarked()`` on the attacked watermarked and attacked clean
+        audio, None for a model that does not declare it. A zero-bit model
+        carries no message, so its row has no accuracy: only those two.
+        """
+        entry = {}
+        if not is_zero_bit:
+            # False when the detector returned nothing usable, in which
+            # case `accuracy` is the RANDOM_GUESS_ACCURACY sentinel
+            # rather than a measured bit-agreement.
+            entry["accuracy"] = self.compare_watermarks(file_watermark, detected_message)
+            entry["detection_valid"] = not self._is_invalid_detection(
+                detected_message, file_watermark
+            )
+
+        entry.update({
+            "attack_snr_db": self._attack_snr_db(
+                watermarked_audio, attacked_audio
+            ),
+            "attacked_audio_quality_wm": quality,
+            # Embedding happens once per file, not once per attack,
+            # so its time is repeated here rather than measured
+            # again -- the attack tables need a figure per row.
+            **attack_timings,
+            **file_timings,
+        })
+
+        # Add confidence for models that return it
+        if confidence is not None:
+            entry["confidence"] = confidence
+
+        if cross_model_accuracy is not _NO_CROSS_MODEL:
+            entry["accuracy_cross_model"] = cross_model_accuracy
+        if detected is not None:
+            entry["detected"] = detected
+        if detected_clean is not None:
+            entry["detected_clean"] = detected_clean
+        return entry
+
     def compute_mean_accuracy(self, results, resolver=None, is_zero_bit=False):
         """
         Compute per-attack statistics, with each attack's group deciding
@@ -888,13 +925,18 @@ class Benchmark:
             resolver: ``MetricResolver`` from the config file. Defaults to
                 the built-in matrix with quality metrics off, which yields
                 accuracy plus the always-on trio.
-            is_zero_bit: Accuracy represents watermark detection rather than
-                payload bit agreement, so BER must not be computed.
+            is_zero_bit: The model carries no message, so there is no
+                accuracy, BER or EMR: only its detection counts.
 
         Returns:
             Dictionary mapping each attack name to computed statistics.
             Keys are ``<metric>_<statistic>`` plus ``<metric>_n``, so a
-            report reads exactly the columns its config asked for.
+            report reads exactly the columns its config asked for. Rows
+            carrying ``detected`` (a model declaring
+            ``returns_is_watermarked``) add ``tp_count``/``tp_n`` and, from
+            ``detected_clean``, ``fp_count``/``fp_n``; their accuracy and BER
+            cover the detected files only, and EMR counts the files detected
+            with every bit right, over all files.
         """
         resolver = resolver or MetricResolver.from_attack_groups(
             calculate_quality_metrics=False,
@@ -917,6 +959,8 @@ class Benchmark:
                         "accuracy_cross_model": [],
                         "confidence": [],
                         "detection_valid": [],
+                        "detected": [],
+                        "detected_clean": [],
                         # metrics_for_attack lists what compute_metrics
                         # produces; the enabled timings are added here.
                         "metrics": {
@@ -928,7 +972,14 @@ class Benchmark:
                         },
                     }
 
-                attack_accuracies[attack_name]["accuracy"].append(file_metrics["accuracy"])
+                for key in ("detected", "detected_clean"):
+                    if key in file_metrics:
+                        attack_accuracies[attack_name][key].append(bool(file_metrics[key]))
+
+                # A model that decides presence itself is scored on the files
+                # it detected: an undetected file's message is not a reading.
+                if "accuracy" in file_metrics and file_metrics.get("detected", True):
+                    attack_accuracies[attack_name]["accuracy"].append(file_metrics["accuracy"])
 
                 if "detection_valid" in file_metrics:
                     attack_accuracies[attack_name]["detection_valid"].append(
@@ -965,28 +1016,39 @@ class Benchmark:
             computed[attack_name] = {}
             group_key = attack_groups[attack_name]
 
-            accuracies = [a for a in acc["accuracy"] if a is not None]
-            arr = np.array(accuracies)
+            if not is_zero_bit:
+                accuracies = [a for a in acc["accuracy"] if a is not None]
+                arr = np.array(accuracies)
 
-            computed[attack_name]["accuracy_n"] = len(accuracies)
-            self._apply_statistics(
-                computed[attack_name], "accuracy", arr,
-                resolver.statistics_for(group_key, "accuracy"),
-            )
-
-            if resolver.is_enabled(group_key, "emr"):
-                exact_recovery_count = int(np.sum(arr == 100.0))
-                computed[attack_name]["emr_count"] = exact_recovery_count
-                computed[attack_name]["emr_rate"] = (
-                    float(exact_recovery_count / len(arr)) if len(arr) else 0.0
-                )
-
-            if not is_zero_bit and resolver.is_enabled(group_key, "ber"):
-                ber_arr = 1.0 - (arr / 100.0)
+                computed[attack_name]["accuracy_n"] = len(accuracies)
                 self._apply_statistics(
-                    computed[attack_name], "ber", ber_arr,
-                    resolver.statistics_for(group_key, "ber"),
+                    computed[attack_name], "accuracy", arr,
+                    resolver.statistics_for(group_key, "accuracy"),
                 )
+
+                # Exact recovery is counted over every file. ``arr`` holds the
+                # detected files only when the model decides presence, so an
+                # undetected file counts as not recovered.
+                emr_total = len(acc["detected"]) or len(arr)
+                if resolver.is_enabled(group_key, "emr") and emr_total:
+                    exact_recovery_count = int(np.sum(arr == 100.0))
+                    computed[attack_name]["emr_count"] = exact_recovery_count
+                    computed[attack_name]["emr_rate"] = float(
+                        exact_recovery_count / emr_total
+                    )
+
+                if resolver.is_enabled(group_key, "ber"):
+                    ber_arr = 1.0 - (arr / 100.0)
+                    self._apply_statistics(
+                        computed[attack_name], "ber", ber_arr,
+                        resolver.statistics_for(group_key, "ber"),
+                    )
+
+            for key, prefix in (("detected", "tp"), ("detected_clean", "fp")):
+                decisions = acc[key]
+                if decisions:
+                    computed[attack_name][f"{prefix}_count"] = int(sum(decisions))
+                    computed[attack_name][f"{prefix}_n"] = len(decisions)
 
             validity = acc["detection_valid"]
             if validity:

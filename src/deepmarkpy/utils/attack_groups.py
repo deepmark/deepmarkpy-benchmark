@@ -4,8 +4,8 @@
 name to the attacks it contains, and declares which quality /
 intelligibility metrics that family makes sense for. Those metric lists
 are the built-in default matrix (``MetricResolver.from_attack_groups``).
-The shipped benchmark and detection_reliability templates restate them by
-hand, and a test fails if the two drift.
+The shipped benchmark template restates them by hand, and a test fails if
+the two drift.
 
 ``ATTACK_SUBGROUPS`` refines one group -- ``audio_editing`` -- into four
 report-only subsections whose metric lists deliberately differ from the

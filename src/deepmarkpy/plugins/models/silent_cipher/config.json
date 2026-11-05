@@ -6,5 +6,6 @@
     "watermark_size": 40,
     "phase_shift_decoding": false,
     "returns_confidence": false,
-    "is_zero_bit": false
+    "is_zero_bit": false,
+    "returns_is_watermarked": false
 }

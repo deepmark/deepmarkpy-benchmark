@@ -22,7 +22,10 @@ from deepmarkpy.utils.metrics import mcd, psnr, si_sdr, trim_audio_to_match
 # Attacks deliberately left out of every group, with the reason. Empty by
 # policy: an ungrouped attack silently receives the full metric slate,
 # including metrics its own family rejects as misleading.
-UNGROUPED_BY_DESIGN = {}
+UNGROUPED_BY_DESIGN = {
+    "NoAttack": "the identity baseline: its quality metrics are the watermark's "
+                "own cost, which every metric describes",
+}
 
 
 class TestEveryAttackIsGrouped:
@@ -224,8 +227,7 @@ PER_FILE = {
     "stoi": (0.5, 0.6, 0.7),
 }
 
-# Their mean and worst case, as the basic and detection-reliability reports
-# receive them.
+# Their mean and worst case, as the basic report receives them.
 SUMMARY = {
     "pesq": {"mean": 2.1, "worst_case": 2.0},
     "mcd": {"mean": 10.0, "worst_case": 11.0},
@@ -285,25 +287,11 @@ def _detailed_tex(tmp_path, attack, statistics):
     )
 
 
-def _detection_reliability_tex(tmp_path, attack, statistics):
-    from deepmarkpy.utils.detection_reliability_report_generator import (
-        _metric_tables,
-    )
-
-    attacks = {attack: {"metrics": {
-        metric: dict(values) for metric, values in SUMMARY.items()
-    }}}
-    return _metric_tables(
-        attacks, [attack], get_group_for_attack(attack),
-        _caveat_resolver(statistics), "Test.", "tab:test",
-    )
-
-
 class TestEveryReportGeneratorAnnotatesCaveats:
     """Every per-attack quality table marks an unreadable value and says why."""
 
-    BUILDERS = [_basic_tex, _detailed_tex, _detection_reliability_tex]
-    REPORTS = ["basic", "detailed", "detection_reliability"]
+    BUILDERS = [_basic_tex, _detailed_tex]
+    REPORTS = ["basic", "detailed"]
     SHAPES = [["mean", "worst_case"], ["mean"]]
     SHAPE_IDS = ["table_per_metric", "compact"]
 

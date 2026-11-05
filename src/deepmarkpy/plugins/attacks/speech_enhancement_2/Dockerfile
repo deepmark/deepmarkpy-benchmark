@@ -19,6 +19,16 @@ RUN pip install clearvoice --no-cache-dir -c constraints.txt \
     --extra-index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
+# GPU variant: docker-compose.gpu.yml passes TORCH_INDEX=cu130, which swaps
+# only the torch build for the CUDA one of the same version. The default,
+# cpu, leaves the image as it was.
+ARG TORCH_INDEX=cpu
+RUN if [ "$TORCH_INDEX" != "cpu" ]; then \
+        pip install --no-cache-dir "torch==2.13.0+${TORCH_INDEX}" \
+            --index-url "https://download.pytorch.org/whl/${TORCH_INDEX}" \
+            --extra-index-url https://pypi.org/simple; \
+    fi
+
 COPY src/deepmarkpy/plugins/attacks/speech_enhancement_2/app.py .
 COPY src/deepmarkpy/plugins/attacks/speech_enhancement_2/inference.py .
 COPY src/deepmarkpy/plugins/attacks/speech_enhancement_2/config.json .

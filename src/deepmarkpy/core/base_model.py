@@ -118,13 +118,13 @@ class BaseModel(abc.ABC):
     def is_watermarked(self, detect_output) -> bool:
         """Whether the raw ``detect()`` output means a watermark is present.
 
-        Override to support detection_reliability mode and the no-attacks
-        detection count. The default raises; callers check
-        ``implements_is_watermarked()`` first.
+        Override, and set ``returns_is_watermarked`` in config.json, for
+        benchmark mode to count true and false positives. The default raises;
+        callers check ``implements_is_watermarked()`` first.
         """
         raise NotImplementedError(
-            f"{self.name} does not implement is_watermarked(). "
-            f"Cannot use detection_reliability mode with this model."
+            f"{self.name} does not implement is_watermarked(), so it cannot "
+            f"be scored on true and false positives."
         )
 
     def generate_watermark(self) -> np.ndarray:
@@ -164,8 +164,8 @@ def implements_is_watermarked(model) -> bool:
     """Whether a model instance or class overrides ``is_watermarked()``.
 
     Inheriting the base implementation is not support: it raises. Config
-    validation asks it of the registered class; the detection_reliability
-    mode and the no-attacks report ask it of the instance.
+    validation asks it of the registered class; a benchmark run asks it of
+    the instance.
     """
     if not hasattr(model, "is_watermarked"):
         return False
@@ -175,3 +175,30 @@ def implements_is_watermarked(model) -> bool:
     if not isinstance(model, BaseModel):
         return True
     return type(model).is_watermarked is not BaseModel.is_watermarked
+
+
+def returns_is_watermarked(model_config) -> bool:
+    """Whether a model's config.json declares ``returns_is_watermarked``.
+
+    A declaring model is scored on its own watermarked/not decision, read
+    through ``is_watermarked()``: benchmark mode counts true and false
+    positives and averages accuracy over the files it detected.
+    """
+    return bool((model_config or {}).get("returns_is_watermarked", False))
+
+
+def is_watermarked_problem(model, model_config):
+    """Why a model's declared detection capability is unusable, or None.
+
+    ``model`` is an instance or a class. ``returns_is_watermarked`` needs
+    ``is_watermarked()`` to answer it, and a zero-bit model, whose only
+    output is that decision, must declare it.
+    """
+    declared = returns_is_watermarked(model_config)
+    if declared and not implements_is_watermarked(model):
+        return ("its config.json sets returns_is_watermarked, but it does not "
+                "implement is_watermarked()")
+    if (model_config or {}).get("is_zero_bit", False) and not declared:
+        return ("it is zero-bit, so whether a watermark is present is its only "
+                "output, but its config.json does not set returns_is_watermarked")
+    return None

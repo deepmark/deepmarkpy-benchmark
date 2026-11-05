@@ -1,0 +1,56 @@
+# GPU override: builds and runs, on one GPU, the services verified to give the
+# same numbers as on the CPU. Everything not listed here stays on the CPU.
+#
+#   docker build -f Dockerfile.base --build-arg TORCH_VARIANT=cu126 -t ml-services-base:cu126 .
+#   DEEPMARK_GPU_DEVICE=0 docker compose -f docker-compose.yml -f docker-compose.gpu.yml build
+#   DEEPMARK_GPU_DEVICE=0 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# DEEPMARK_GPU_DEVICE is a GPU index (0) or a GPU-/MIG- UUID from nvidia-smi -L;
+# a MIG slice needs its UUID. Without this file, every service runs on the CPU.
+
+x-gpu: &gpu
+  environment:
+    - DEEPMARK_DEVICE=cuda
+    - NVIDIA_TF32_OVERRIDE=0
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ["${DEEPMARK_GPU_DEVICE:-0}"]
+            capabilities: [gpu]
+
+# These services take torch from the base image, so their GPU build uses the CUDA base.
+x-cuda-base: &cuda-base
+  args:
+    BASE_IMAGE: ml-services-base:cu126
+
+services:
+  audioseal:
+    <<: *gpu
+    image: deepmark-audioseal:gpu
+    build: *cuda-base
+  descript_audio_codec:
+    <<: *gpu
+    image: deepmark-descript_audio_codec:gpu
+    build: *cuda-base
+  neural_vocoder:
+    <<: *gpu
+    image: deepmark-neural_vocoder:gpu
+    build: *cuda-base
+    environment:
+      - DEEPMARK_DEVICE=cuda
+      - NVIDIA_TF32_OVERRIDE=0
+      # float32 on the GPU is measurably less accurate than on the CPU; float64 matches.
+      - DEEPMARK_PRECISION=float64
+  speech_enhancement1:
+    <<: *gpu
+    image: deepmark-speech_enhancement1:gpu
+    build: *cuda-base
+  speech_enhancement2:
+    <<: *gpu
+    image: deepmark-speech_enhancement2:gpu
+    # SE2 installs its own torch (2.13.0); the GPU build swaps in its CUDA 13.0 build.
+    build:
+      args:
+        TORCH_INDEX: cu130

@@ -34,9 +34,12 @@ NISQA_METRICS = (
 )
 
 # What the run cost in time and memory. They describe the machine, not the
-# watermarking method, and do not reproduce across runs.
+# watermarking method, and do not reproduce across runs. A ``*_rtf`` is the
+# real-time factor: the stage's time over the duration of the audio it
+# processed, so below 1 is faster than real time.
 EFFICIENCY_METRICS = (
-    "embed_latency", "detect_latency", "attack_latency", "container_footprint",
+    "embed_latency", "detect_latency", "attack_latency",
+    "embed_rtf", "detect_rtf", "attack_rtf", "container_footprint",
 )
 
 METRIC_BUCKETS = {
@@ -59,7 +62,7 @@ SIGNAL_METRICS = frozenset(
 )
 
 # Measured once per file, so the reports state it once rather than per attack.
-PER_FILE_EFFICIENCY_METRICS = frozenset({"embed_latency"})
+PER_FILE_EFFICIENCY_METRICS = frozenset({"embed_latency", "embed_rtf"})
 
 # Measured once per run, for the model's container; no statistic applies.
 PER_MODEL_EFFICIENCY_METRICS = frozenset({"container_footprint"})

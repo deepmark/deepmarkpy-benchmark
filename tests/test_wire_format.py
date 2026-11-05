@@ -67,6 +67,18 @@ class TestCodecIsLossless:
     def test_none_passes_through(self):
         assert decode_audio(None) is None
 
+    def test_decoded_audio_is_writable(self):
+        """Attacks receive a model's output as decoded here, and some (pywt) need it writable."""
+        out = decode_audio(encode_audio(np.array([1.0, 2.0, 3.0])))
+        assert out.flags.writeable
+        out[0] = 5.0  # must not raise
+
+    def test_decoded_arrays_do_not_share_memory(self):
+        payload = encode_audio(np.array([1.0, 2.0]))
+        a, b = decode_audio(payload), decode_audio(payload)
+        a[0] = 9.0
+        assert b[0] == 1.0
+
 
 class TestItIsActuallySmaller:
     def test_beats_the_json_encoding(self):

@@ -97,8 +97,16 @@ class PluginManager:
             return None
 
     def _register_members(self, module, base_class, storage_dict, config_data):
-        """Register every ``base_class`` subclass found in ``module``."""
+        """Register every ``base_class`` subclass defined in ``module``.
+
+        A class a plugin imports from another plugin (inverted_time_stretch
+        uses TimeStretchAttack, mixing uses EqualizerAttack and
+        HighpassFilterAttack) is skipped: it belongs to its own directory, and
+        registering it here would attach this directory's config.json to it.
+        """
         for name, obj in inspect.getmembers(module, inspect.isclass):
+            if obj.__module__ != module.__name__:
+                continue
             if issubclass(obj, base_class) and obj is not base_class:
                 # For registry consumers (get_available_args, kwargs filtering),
                 # expose the default version's params. Store the full raw config

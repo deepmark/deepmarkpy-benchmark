@@ -1,0 +1,180 @@
+{
+  "_file": "The default benchmark with strength sweeps: the default attack set, plus extra versions of Bandstop, GaussianNoise, Highpass, InvertedTimeStretch, Mp3Compression, ResamplingPoly and TimeStretch. Write it with: deepmark-benchmark --init default_sweep > my_default_sweep.json, set general.wav_files_dir, general.report_dir and models, then run: deepmark-benchmark --config my_default_sweep.json. Keys starting with _ are comments. Check without running: add --validate-only. Every setting, commented: --init benchmark.",
+  "mode": "benchmark",
+  "_general": "Paths and run options. report_dir is EMPTIED at the start of every run, so give each run its own. seed: an integer makes watermarks and attack noise repeatable; null draws fresh ones.",
+  "general": {
+    "wav_files_dir": "/path/to/wavs",
+    "report_dir": "reports/default_sweep",
+    "seed": null,
+    "save_audio": false
+  },
+  "_models": "One model, or several for a comparative report. A Docker model's service must be running.",
+  "models": [
+    "AudioSealModel"
+  ],
+  "_attacks": "The default attack set. NoAttack is the baseline. The Docker attacks in it (DescriptAudioCodec, Diffusion, Encodec, NetworkTransmission, NeuralVocoder, SpeechEnhancement1, SpeechTokenization, VAE) need their services running.",
+  "attacks": {
+    "groups": [],
+    "list": [
+      "NoAttack",
+      "AdditiveNoiseAttack",
+      "BandstopFilterAttack",
+      "ChorusAttack",
+      "CollusionAttack",
+      "CropBeginningAttack",
+      "CropRandomAttack",
+      "CrossModelAttack",
+      "CutSamplesAttack",
+      "DescriptAudioCodecAttack",
+      "DiffusionAttack",
+      "EchoAttack",
+      "EncodecAttack",
+      "EqualizerAttack",
+      "FlangerAttack",
+      "FlipSamplesAttack",
+      "GaussianNoiseAttack",
+      "HighpassFilterAttack",
+      "InvertedTimeStretchAttack",
+      "LPCAttack",
+      "LowpassFilterAttack",
+      "Mp3CompressionAttack",
+      "NetworkTransmissionAttack",
+      "NeuralVocoderAttack",
+      "PCMQuantizationAttack",
+      "PinkNoiseAttack",
+      "PitchShiftAttack",
+      "QuantizationAttack",
+      "ResamplingPolyAttack",
+      "STFTQuantizationAttack",
+      "SameModelAttack",
+      "SignInversionAttack",
+      "SmoothingAttack",
+      "SpeechEnhancement1Attack",
+      "SpeechTokenizationAttack",
+      "TimeStretchAttack",
+      "VAEAttack",
+      "WaveletAttack",
+      "ZeroBitCollusionAttack",
+      "ZeroCrossInsertsAttack"
+    ]
+  },
+  "_attack_parameters": "Each AttackName:version is one more strength, run and reported next to the attack's default (Bandstop 1000-1200 Hz, GaussianNoise 25 dB, Highpass 100 Hz, InvertedTimeStretch 1.4, Mp3Compression q9, ResamplingPoly 8 kHz, TimeStretch 1.25). A version must set all of its attack's parameters.",
+  "attack_parameters": {
+    "BandstopFilterAttack:300-500Hz": {
+      "freq_range_bandstop": [
+        300,
+        500
+      ],
+      "order_bandstop": 5
+    },
+    "BandstopFilterAttack:2000-2400Hz": {
+      "freq_range_bandstop": [
+        2000,
+        2400
+      ],
+      "order_bandstop": 5
+    },
+    "BandstopFilterAttack:2000-3000Hz": {
+      "freq_range_bandstop": [
+        2000,
+        3000
+      ],
+      "order_bandstop": 5
+    },
+    "BandstopFilterAttack:3000-3600Hz": {
+      "freq_range_bandstop": [
+        3000,
+        3600
+      ],
+      "order_bandstop": 5
+    },
+    "BandstopFilterAttack:4000-6000Hz": {
+      "freq_range_bandstop": [
+        4000,
+        6000
+      ],
+      "order_bandstop": 5
+    },
+    "GaussianNoiseAttack:15dB": {
+      "snr_db_gaussian_noise": 15
+    },
+    "GaussianNoiseAttack:20dB": {
+      "snr_db_gaussian_noise": 20
+    },
+    "GaussianNoiseAttack:30dB": {
+      "snr_db_gaussian_noise": 30
+    },
+    "GaussianNoiseAttack:40dB": {
+      "snr_db_gaussian_noise": 40
+    },
+    "HighpassFilterAttack:200Hz": {
+      "cutoff_freq_highpass": 200,
+      "order_highpass": 4
+    },
+    "HighpassFilterAttack:300Hz": {
+      "cutoff_freq_highpass": 300,
+      "order_highpass": 4
+    },
+    "HighpassFilterAttack:500Hz": {
+      "cutoff_freq_highpass": 500,
+      "order_highpass": 4
+    },
+    "HighpassFilterAttack:1000Hz": {
+      "cutoff_freq_highpass": 1000,
+      "order_highpass": 4
+    },
+    "InvertedTimeStretchAttack:1.2": {
+      "rate_inverted_time_stretch": 1.2
+    },
+    "InvertedTimeStretchAttack:1.3": {
+      "rate_inverted_time_stretch": 1.3
+    },
+    "InvertedTimeStretchAttack:1.5": {
+      "rate_inverted_time_stretch": 1.5
+    },
+    "Mp3CompressionAttack:q0": {
+      "quality_mp3": 0
+    },
+    "Mp3CompressionAttack:q2": {
+      "quality_mp3": 2
+    },
+    "Mp3CompressionAttack:q5": {
+      "quality_mp3": 5
+    },
+    "Mp3CompressionAttack:q7": {
+      "quality_mp3": 7
+    },
+    "ResamplingPolyAttack:16kHz": {
+      "target_sr_resampling_poly": 16000
+    },
+    "ResamplingPolyAttack:24kHz": {
+      "target_sr_resampling_poly": 24000
+    },
+    "ResamplingPolyAttack:32kHz": {
+      "target_sr_resampling_poly": 32000
+    },
+    "ResamplingPolyAttack:44.1kHz": {
+      "target_sr_resampling_poly": 44100
+    },
+    "ResamplingPolyAttack:48kHz": {
+      "target_sr_resampling_poly": 48000
+    },
+    "TimeStretchAttack:0.75": {
+      "stretch_rate_time_stretch": 0.75
+    },
+    "TimeStretchAttack:0.8": {
+      "stretch_rate_time_stretch": 0.8
+    },
+    "TimeStretchAttack:0.9": {
+      "stretch_rate_time_stretch": 0.9
+    },
+    "TimeStretchAttack:1.1": {
+      "stretch_rate_time_stretch": 1.1
+    },
+    "TimeStretchAttack:1.2": {
+      "stretch_rate_time_stretch": 1.2
+    }
+  },
+  "_calculate_quality_metrics": "false: accuracy (with BER and EMR) plus PESQ, ViSQOL and STOI. true: every metric each attack group enables (slower).",
+  "calculate_quality_metrics": false
+}

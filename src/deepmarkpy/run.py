@@ -14,22 +14,23 @@ import sys
 import os
 import random
 import shutil
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 import logging
 
 from deepmarkpy import __version__
-from deepmarkpy.benchmark import Benchmark, expand_attacks
+from deepmarkpy.benchmark import EXECUTORS, Benchmark, Parallelism, expand_attacks
 from deepmarkpy.config import (
     ConfigError,
+    INIT_PRESETS,
     MODE_KEYS,
-    VALID_MODES,
     init_template,
     load_config_data,
     load_configs,
 )
 from deepmarkpy.utils.attack_groups import GROUP_ORDER
+from deepmarkpy.utils.latex_helpers import files_measured
 from deepmarkpy.utils.report_generator import generate_benchmark_report
 from deepmarkpy.utils.metric_resolver import NISQA_METRICS
 from deepmarkpy.utils.metrics import nisqa_status
@@ -104,6 +105,9 @@ class RunSettings:
     save_audio: bool
     # Whether this invocation runs more than one mode.
     several_modes: bool = False
+    # How benchmark mode executes; the other modes run sequentially.
+    executor: str = "sequential"
+    parallelism: Parallelism = field(default_factory=Parallelism)
 
 
 def _resolve_settings(args, config) -> RunSettings:
@@ -122,7 +126,51 @@ def _resolve_settings(args, config) -> RunSettings:
         seed=pick(args.seed, "seed"),
         verbose=bool(pick(args.verbose, "verbose", False)),
         save_audio=bool(pick(args.save_audio, "save_audio", False)),
+        # getattr: a caller may resolve settings from its own namespace.
+        executor=getattr(args, "executor", None) or "sequential",
+        parallelism=Parallelism(
+            workers=getattr(args, "workers", None) or Parallelism.workers,
+            files_in_flight=(getattr(args, "files_in_flight", None)
+                             or Parallelism.files_in_flight),
+            service_lanes=(tuple(getattr(args, "service_lanes", None) or ())
+                           or Parallelism.service_lanes),
+            service_concurrency=dict(getattr(args, "service_concurrency", None) or {}),
+        ),
     )
+
+
+def _service_lane(value):
+    """``ATTACK[+ATTACK...]`` for --service_lanes."""
+    group = tuple(name for name in value.split("+"))
+    if not all(group):
+        raise argparse.ArgumentTypeError(
+            f"expected attack names joined by '+', e.g. DiffusionAttack+VAEAttack; got {value!r}"
+        )
+    return group
+
+
+def _service_concurrency(value):
+    """``ATTACK=N`` for --service_concurrency."""
+    name, sep, count = value.partition("=")
+    try:
+        slots = int(count)
+    except ValueError:
+        slots = 0
+    if not sep or not name or slots < 1:
+        raise argparse.ArgumentTypeError(
+            f"expected ATTACK=N with N at least 1, e.g. DiffusionAttack=2; got {value!r}"
+        )
+    return name, slots
+
+
+def _positive_int(value):
+    try:
+        number = int(value)
+    except ValueError:
+        number = 0
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"expected an integer of at least 1; got {value!r}")
+    return number
 
 
 def _build_parser():
@@ -157,13 +205,14 @@ def _build_parser():
     parser.add_argument(
         "--init",
         type=str,
-        choices=list(VALID_MODES),
+        choices=list(INIT_PRESETS),
         default=None,
-        metavar="MODE",
+        metavar="PRESET",
         help=(
-            "Print a fresh, fully-commented config file for MODE to stdout "
-            "and exit. Redirect it to a file to start from it. Modes: "
-            + ", ".join(VALID_MODES)
+            "Print a config file to stdout and exit: a mode's fully-commented "
+            "template (benchmark), the default attack set (default), or the "
+            "same set with strength sweeps (default_sweep). Redirect it to a "
+            "file to start from it. Presets: " + ", ".join(INIT_PRESETS)
         ),
     )
     parser.add_argument(
@@ -236,6 +285,64 @@ def _build_parser():
         ),
     )
     parser.add_argument(
+        "--executor",
+        choices=list(EXECUTORS),
+        default="sequential",
+        help=(
+            "How benchmark mode runs. 'sequential' (default) runs one file "
+            "and one attack at a time. 'pipelined' gives the same results: "
+            "it overlaps the dockerized attacks, detection and metrics with "
+            "the attacks that run in this process, which still run in the "
+            "sequential order. The other modes always run sequentially."
+        ),
+    )
+    defaults = Parallelism()
+    parser.add_argument(
+        "--workers",
+        type=_positive_int,
+        default=defaults.workers,
+        help=f"Processes computing quality metrics under --executor pipelined (default: {defaults.workers}).",
+    )
+    parser.add_argument(
+        "--files_in_flight",
+        type=_positive_int,
+        default=defaults.files_in_flight,
+        help=(
+            "Files under way at once under --executor pipelined "
+            f"(default: {defaults.files_in_flight})."
+        ),
+    )
+    parser.add_argument(
+        "--service_lanes",
+        type=_service_lane,
+        nargs="+",
+        default=None,
+        metavar="ATTACK[+ATTACK...]",
+        help=(
+            "Under --executor pipelined, dockerized attacks share one lane, "
+            "so their services run one at a time as they do sequentially: a "
+            "service on the CPU uses every core. Each GROUP named here gets a "
+            "lane of its own instead; name the services that do not compete "
+            "for the CPU, such as those on a GPU. Default: "
+            + " ".join("+".join(g) for g in Parallelism.service_lanes) + "."
+        ),
+    )
+    parser.add_argument(
+        "--service_concurrency",
+        type=_service_concurrency,
+        nargs="+",
+        default=None,
+        metavar="ATTACK=N",
+        help=(
+            "Requests in flight to a dockerized attack with a lane to itself "
+            "(see --service_lanes) under --executor pipelined, e.g. "
+            "DiffusionAttack=2 (default 1). Above 1 the requests no longer "
+            "reach the service in the sequential order, and only a service "
+            "that answers several at once gains: use it for stochastic "
+            "services with replicas."
+        ),
+    )
+    parser.add_argument(
         "--version", action="version", version=f"deepmarkpy {__version__}",
     )
 
@@ -249,7 +356,7 @@ def _build_parser():
 # corresponds to produce the same reports.
 _LEGACY_FLAGS = (
     "wm_model", "wm_models", "attack_types", "attack_groups",
-    "no_attacks", "detection_reliability", "calculate_quality_metrics",
+    "calculate_quality_metrics",
     "crop_before_attack",
 )
 
@@ -284,14 +391,6 @@ def _add_legacy_arguments(parser):
     group.add_argument(
         "--attack_groups", type=str, nargs="+", default=None, metavar="GROUP",
         help=f"Attack families to apply: {', '.join(GROUP_ORDER)}.",
-    )
-    group.add_argument(
-        "--no_attacks", action="store_true", default=False,
-        help="Skip all attacks; embed and detect only.",
-    )
-    group.add_argument(
-        "--detection_reliability", action="store_true", default=False,
-        help="Measure false positive and false negative rates.",
     )
     group.add_argument(
         "--calculate_quality_metrics", action="store_true", default=False,
@@ -433,10 +532,8 @@ def _coerce_like(raw, default, key, parser):
 def _configs_from_flags(args, leftovers, benchmark, parser):
     """Validate the measurement flags as though they were a config file.
 
-    Returns one ``ModeConfig`` per mode asked for -- two when
-    ``--no_attacks`` and ``--detection_reliability`` are combined.
-    Detection reliability takes one model, so with several models the
-    combination raises ``ConfigError`` with E012, as that flag alone does.
+    Returns a list holding the one benchmark-mode ``ModeConfig`` the flags
+    describe.
     """
     models = list(args.wm_models or ([args.wm_model] if args.wm_model else []))
     parameters = _legacy_attack_parameters(leftovers, benchmark, parser)
@@ -454,13 +551,7 @@ def _configs_from_flags(args, leftovers, benchmark, parser):
     if args.wav_files_dir:
         general["wav_files_dir"] = args.wav_files_dir
 
-    modes = []
-    if args.no_attacks:
-        modes.append("no_attacks")
-    if args.detection_reliability:
-        modes.append("detection_reliability")
-    if not modes:
-        modes.append("benchmark")
+    modes = ["benchmark"]
 
     built = []
     for mode in modes:
@@ -642,13 +733,8 @@ def main(argv=None):
 
 def _describe_attack_selection(config):
     """One-line summary of what a config's attack selection resolves to."""
-    if config.mode == "no_attacks":
-        return "none (this mode applies no attacks)"
     specs = config.selected_attack_specs()
     if specs is None:
-        # Only benchmark mode expands an empty selection to every attack.
-        if config.mode == "detection_reliability":
-            return "none (no-attack baseline only)"
         return "all discovered attacks"
     return f"{len(specs)}: {', '.join(specs[:6])}" + (
         ", ..." if len(specs) > 6 else ""
@@ -656,10 +742,10 @@ def _describe_attack_selection(config):
 
 
 def _attacks_to_run(benchmark, config):
-    """Specs to run; no selection is every attack in benchmark mode, else none."""
+    """Specs to run; no selection is every attack."""
     specs = config.selected_attack_specs()
     if specs is None:
-        return sorted(benchmark.attacks) if config.mode == "benchmark" else []
+        return sorted(benchmark.attacks)
     return specs
 
 
@@ -942,137 +1028,6 @@ def _saved_audio_dir(directory, config, settings):
 
 
 # ---------------------------------------------------------------------------
-# Mode: no_attacks
-# ---------------------------------------------------------------------------
-
-def run_no_attacks_mode(benchmark, filepaths, config, settings):
-    """Run embed+detect without attacks for one or more models."""
-    report_dir = settings.report_dir
-    os.makedirs(report_dir, exist_ok=True)
-
-    from deepmarkpy.utils.no_attacks_report_generator import generate_no_attacks_report
-
-    model_names = config.models
-    # Audio goes in a dedicated subfolder; use a per-model subfolder when
-    # several models run so their watermarked files don't collide.
-    multi_model = len(model_names) > 1
-    dur_partitions = _duration_partitions(config, filepaths)
-
-    all_results = {}
-    for model_name in model_names:
-        logger.info(f"Running no-attacks baseline for: {model_name}")
-        audio_dir = _saved_audio_dir(
-            os.path.join(report_dir, model_name) if multi_model else report_dir,
-            config, settings,
-        )
-        try:
-            results = benchmark.run_no_attacks(
-                filepaths=filepaths,
-                wm_model=model_name,
-                sampling_rate=None,
-                verbose=settings.verbose,
-                calculate_quality_metrics=config.calculate_quality_metrics,
-                save_audio=settings.save_audio,
-                output_dir=audio_dir,
-                metric_resolver=config.resolver,
-            )
-            all_results[model_name] = results
-        except (MemoryError, ConnectionError, OSError) as e:
-            logger.error(f"Model {model_name} failed: {type(e).__name__}: {e}. Skipping.")
-            continue
-
-        # Save each model's results to a separate JSON file
-        model_results_path = os.path.join(report_dir, f"no_attacks_{model_name}.json")
-        with open(model_results_path, "w") as fp:
-            json.dump(to_json_safe(results), fp, indent=4)
-        logger.info(f"Results for {model_name} saved to {model_results_path}")
-
-        # Regenerate report after each successful model so a partial
-        # report is available even if later models fail.
-        try:
-            latex_path = generate_no_attacks_report(
-                all_results, report_dir=report_dir,
-                duration_partitions=dur_partitions,
-                resolver=config.resolver,
-                containers=_container_rows(benchmark, config, model_names),
-            )
-            logger.info(f"No-attacks report updated: {latex_path}")
-        except Exception as e:
-            logger.error(f"Failed to generate no-attacks report: {e}")
-
-    if not all_results:
-        logger.error("No models completed successfully.")
-        return EXIT_RUNTIME_ERROR
-    return EXIT_OK
-
-
-# ---------------------------------------------------------------------------
-# Mode: detection_reliability
-# ---------------------------------------------------------------------------
-
-def run_detection_reliability_mode(benchmark, filepaths, config, settings):
-    """Run detection-reliability for a single zero-bit or confidence-based model.
-
-    Computes FP / FN both without attacks and (when attacks are
-    requested) with each attack applied, then writes a dedicated PDF
-    report.
-    """
-    from deepmarkpy.utils.detection_reliability import run_detection_reliability
-    from deepmarkpy.utils.detection_reliability_report_generator import (
-        generate_detection_reliability_report,
-    )
-
-    report_dir = settings.report_dir
-    os.makedirs(report_dir, exist_ok=True)
-
-    model_name = config.models[0]
-    attack_types = _attacks_to_run(benchmark, config)
-
-    audio_dir = _saved_audio_dir(report_dir, config, settings)
-
-    logger.info(
-        f"Running detection-reliability for {model_name} on "
-        f"{len(filepaths)} files; attacks={attack_types or 'none'}"
-    )
-    try:
-        result = run_detection_reliability(
-            benchmark,
-            filepaths,
-            wm_model=model_name,
-            attack_types=attack_types,
-            sampling_rate=None,
-            verbose=settings.verbose,
-            calculate_quality_metrics=config.calculate_quality_metrics,
-            save_audio=settings.save_audio,
-            output_dir=audio_dir,
-            metric_resolver=config.resolver,
-            attack_parameters=config.parameters_for,
-            extra_attack_versions=config.synthetic_versions,
-        )
-    except ValueError as e:
-        logger.error(f"Detection reliability run failed: {e}")
-        return EXIT_RUNTIME_ERROR
-
-    # Persist raw result so later runs can inspect/regenerate the PDF.
-    result_path = os.path.join(report_dir, "detection_reliability.json")
-    with open(result_path, "w") as fp:
-        json.dump(to_json_safe(dict(result)), fp, indent=4)
-    logger.info(f"Detection reliability data saved to {result_path}")
-
-    try:
-        tex_path = generate_detection_reliability_report(
-            dict(result), report_dir=report_dir,
-            resolver=config.resolver,
-            duration_partitions=_duration_partitions(config, filepaths),
-            containers=_container_rows(benchmark, config, config.models),
-        )
-        logger.info(f"Detection reliability report generated: {tex_path}")
-    except Exception as e:
-        logger.error(f"Failed to generate detection reliability report: {e}")
-    return EXIT_OK
-
-
-# ---------------------------------------------------------------------------
 # Mode: benchmark
 # ---------------------------------------------------------------------------
 
@@ -1179,7 +1134,9 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
         )
 
     results = benchmark.run(
-        filepaths=filepaths, on_file_complete=_persist, **run_kwargs
+        filepaths=filepaths, on_file_complete=_persist,
+        executor=settings.executor, parallelism=settings.parallelism,
+        **run_kwargs
     )
 
     with open(results_path, "w") as fp:
@@ -1234,6 +1191,9 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
             "attack_parameters_resolved": resolved_attack_parameters(
                 benchmark, config,
             ),
+            "executor": settings.executor,
+            **({"parallelism": asdict(settings.parallelism)}
+               if settings.executor == "pipelined" else {}),
         },
     )
 
@@ -1320,8 +1280,10 @@ def run_multiple_models(benchmark, filepaths, model_names, config, settings):
             "is_zero_bit": bool(model_config.get("is_zero_bit", False)),
             "watermark_size": model_config.get("watermark_size"),
             "sampling_rate": model_config.get("sampling_rate"),
+            # Accuracy may cover only the detected files; files_measured
+            # reads the TP count's denominator, every file, first.
             "n_files": max(
-                (m.get("accuracy_n", 0) for m in model_stats.values()), default=0
+                (files_measured(m) or 0 for m in model_stats.values()), default=0
             ),
         }
 
@@ -1366,8 +1328,6 @@ def run_multiple_models(benchmark, filepaths, model_names, config, settings):
 
 _MODE_RUNNERS = {
     "benchmark": run_benchmark_mode,
-    "no_attacks": run_no_attacks_mode,
-    "detection_reliability": run_detection_reliability_mode,
 }
 
 

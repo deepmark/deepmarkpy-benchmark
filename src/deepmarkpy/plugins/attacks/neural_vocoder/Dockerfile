@@ -1,4 +1,7 @@
-FROM ml-services-base:latest AS builder
+# ml-services-base:latest is the CPU build; docker-compose.gpu.yml passes the
+# CUDA build of the same base (ml-services-base:cu126) for the GPU variant.
+ARG BASE_IMAGE=ml-services-base:latest
+FROM ${BASE_IMAGE} AS builder
 
 # Default port; overridden at runtime by docker-compose (APP_PORT from .env)
 ENV APP_PORT=10004
@@ -12,7 +15,13 @@ COPY /src/deepmarkpy/plugins/attacks/neural_vocoder/big_vgan_requirements.txt Bi
 COPY /src/deepmarkpy/plugins/attacks/neural_vocoder/constraints.builder.txt .
 RUN pip install --no-cache-dir -r BigVGAN/requirements.txt -c constraints.builder.txt
 
-FROM ml-services-base:latest
+FROM ${BASE_IMAGE}
+
+# ENV does not cross stages: without these, EXPOSE below expands to nothing
+# (buildah, and so Podman, refuses to build) and uvicorn gets an empty --host.
+ENV APP_PORT=10004
+ARG HOST="0.0.0.0"
+ENV HOST=${HOST}
 
 # Copy BigVGAN from builder
 COPY --from=builder /app/BigVGAN /app/BigVGAN

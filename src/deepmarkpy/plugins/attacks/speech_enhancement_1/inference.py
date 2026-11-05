@@ -28,14 +28,14 @@ from deepmarkpy.core.inference import BaseAttackEngine
 class SpeechEnhancement1Engine(BaseAttackEngine):
     """SpeechBrain enhancement at 16 kHz with request-rate round-trips.
 
-    The enhancement model loads once at construction. ``device`` is
-    accepted for interface uniformity and unused — no device placement
-    happens here.
+    The enhancement model loads once at construction, onto ``device``
+    (default CPU; app.py passes the service's device).
     """
 
     def __init__(self, config: dict, device: str | None = None):
         """Load the SpeechBrain model selected by ``config['type_se1']``."""
         self.config = config
+        self.device = str(device or "cpu")
         type = config["type_se1"]
         assert type=="waveform" or type=="spectral_mask", "type must be either 'waveform' or 'spectral_mask'."
 
@@ -43,11 +43,13 @@ class SpeechEnhancement1Engine(BaseAttackEngine):
             self.model = WaveformEnhancement.from_hparams(
                 source="speechbrain/mtl-mimic-voicebank",
                 fetch_config=FetchConfig(revision=WAVEFORM_REVISION),
+                run_opts={"device": self.device},
             )
         else:
             self.model = SpectralMaskEnhancement.from_hparams(
                 source="speechbrain/metricgan-plus-voicebank",
                 fetch_config=FetchConfig(revision=SPECTRAL_MASK_REVISION),
+                run_opts={"device": self.device},
             )
 
         self.model.eval()
@@ -64,7 +66,7 @@ class SpeechEnhancement1Engine(BaseAttackEngine):
         lengths = torch.FloatTensor([1.0])
         with torch.no_grad():
             enhanced = self.model.enhance_batch(noisy, lengths=lengths)
-            enhanced = enhanced.squeeze().detach().numpy()
+            enhanced = enhanced.squeeze().detach().cpu().numpy()
 
         enhanced = resample_audio(enhanced, input_sr=16000, target_sr=sampling_rate)
         return enhanced

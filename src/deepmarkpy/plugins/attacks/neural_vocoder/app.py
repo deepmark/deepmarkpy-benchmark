@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from deepmarkpy.core.inference import MAX_AUDIO_B64_CHARS
 from deepmarkpy.core.wire import decode_audio, encode_audio
+from deepmarkpy.serving.device import service_device, service_precision
 from deepmarkpy.utils.utils import load_config
 
 # The upstream BigVGAN clone ships its own inference.py, and the service's
@@ -34,7 +35,7 @@ except (FileNotFoundError, ValueError, IOError) as e:
     logger.critical(f"Failed to load configuration: {e}. Application cannot start.")
     sys.exit(1)
 
-engine = NeuralVocoderEngine(config)
+engine = NeuralVocoderEngine(config, device=service_device(), precision=service_precision())
 
 
 class AttackRequest(BaseModel):

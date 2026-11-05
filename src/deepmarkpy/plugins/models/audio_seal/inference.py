@@ -5,6 +5,7 @@ list — a preserved inconsistency. ``detect`` yields the empty result
 ``([], 0.0)`` for too-short audio and on detector failure.
 """
 
+import contextlib
 import logging
 
 import numpy as np
@@ -14,6 +15,7 @@ from audioseal import AudioSeal
 from deepmarkpy.utils.utils import resample_audio
 
 from deepmarkpy.core.inference import BaseModelEngine
+from deepmarkpy.serving.device import with_cudnn_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -21,18 +23,25 @@ logger = logging.getLogger(__name__)
 class AudioSealEngine(BaseModelEngine):
     """AudioSeal embed/detect at the config sampling rate.
 
-    Generator and detector load once at construction. ``device`` is
-    accepted for interface uniformity and unused — no device placement
-    happens here.
+    Generator and detector load once at construction, onto ``device``
+    (default CPU; app.py passes the service's device).
     """
 
     def __init__(self, config: dict, device: str | None = None):
-        """Load the AudioSeal generator and detector checkpoints."""
+        """Load the AudioSeal generator and detector checkpoints onto ``device``."""
         self.config = config
+        self.device = torch.device(device or "cpu")
         self.model = {
             "generator": AudioSeal.load_generator("audioseal_wm_16bits"),
             "detector": AudioSeal.load_detector("audioseal_detector_16bits"),
         }
+        for module in self.model.values():
+            module.to(self.device)
+
+    def _grad_mode(self):
+        """inference_mode on the GPU only: on the CPU it changes the LSTM's code
+        path, and with it the output (~6e-8)."""
+        return torch.inference_mode() if self.device.type == "cuda" else contextlib.nullcontext()
 
     def embed(self, audio: list, watermark_data: list, sampling_rate: int) -> np.ndarray:
         """Additively embed ``watermark_data``; returns the watermarked signal."""
@@ -43,15 +52,15 @@ class AudioSealEngine(BaseModelEngine):
 
         generator = self.model["generator"]
         wav = torch.tensor(audio_arr, dtype=torch.float32)
-        wav = wav.unsqueeze(0).unsqueeze(0)
-        msg = torch.from_numpy(watermark_arr).unsqueeze(0)
+        wav = wav.unsqueeze(0).unsqueeze(0).to(self.device)
+        msg = torch.from_numpy(watermark_arr).unsqueeze(0).to(self.device)
 
-        watermark = generator.get_watermark(
-            wav, message=msg, sample_rate=self.config["sampling_rate"]
-        )
-
-        watermarked_audio = wav + watermark
-        watermarked_audio = watermarked_audio.detach().numpy()
+        with self._grad_mode():
+            watermark = with_cudnn_fallback(lambda: generator.get_watermark(
+                wav, message=msg, sample_rate=self.config["sampling_rate"]
+            ))
+            watermarked_audio = wav + watermark
+        watermarked_audio = watermarked_audio.detach().cpu().numpy()
         watermarked_audio = np.squeeze(watermarked_audio)
 
         if sampling_rate != self.config["sampling_rate"]:
@@ -77,10 +86,14 @@ class AudioSealEngine(BaseModelEngine):
 
         detector = self.model["detector"]
         watermarked_audio = np.expand_dims(audio_arr, axis=[0, 1])
-        watermarked_audio = torch.tensor(watermarked_audio, dtype=torch.float32)
+        watermarked_audio = torch.tensor(watermarked_audio, dtype=torch.float32).to(self.device)
 
         try:
-            confidence, message = detector.detect_watermark(watermarked_audio, sampling_rate)
+            # Inside the try: the except below would turn the MIG assert into an empty result.
+            with self._grad_mode():
+                confidence, message = with_cudnn_fallback(
+                    lambda: detector.detect_watermark(watermarked_audio, sampling_rate)
+                )
         except RuntimeError as e:
             logger.error(f"Detection failed: {e}")
             return [], 0.0
