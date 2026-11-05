@@ -88,6 +88,9 @@ updates:
     # transformers 4.57 crashes, and transformers 5 cannot load the model.
     directories:
       - "/src/deepmarkpy/plugins/attacks/speech_tokenization"
+    # No version updates: these pins are a frozen set that builds; any change needs the image
+    # rebuilt and checked. Security updates are not affected by this limit.
+    open-pull-requests-limit: 0
     schedule:
       interval: "weekly"
       day: "monday"
