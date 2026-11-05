@@ -31,7 +31,10 @@ clean install and the exact-set assertion binds unconditionally. (``wavelet``
 needs ``PyWavelets``; ``time_stretch``, ``pitch_shift`` and
 ``inverted_time_stretch`` need ``pyrubberband``.) Note ``pyrubberband``
 additionally needs the ``rubberband`` CLI on PATH to take its primary code
-path; without it those attacks fall back to librosa.
+path; without it those attacks fall back to librosa. ``aac_compression``
+needs the ``ffmpeg`` CLI on PATH, same as ``mp3_compression`` — both raise
+``RuntimeError`` at call time (not import time) if it is missing, so its
+absence does not affect discovery.
 
 The asserted sets below are load-bearing: change them only as a deliberate,
 reviewed decision.
@@ -60,6 +63,7 @@ CANONICAL_MODELS = frozenset(CANONICAL_MODEL_DIRS)
 # The exact attack class-name set registered in the canonical environment,
 # mapped to the plugin directory whose attack.py defines each class.
 CANONICAL_ATTACK_DIRS = {
+    "AacCompressionAttack": "aac_compression",
     "AdditiveNoiseAttack": "additive_noise",
     "BandstopFilterAttack": "bandstop_filter",
     "ChorusAttack": "chorus",

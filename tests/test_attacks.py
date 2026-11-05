@@ -3,6 +3,8 @@
 Only tests attacks that run locally without Docker containers.
 """
 
+import shutil
+
 import numpy as np
 import pytest
 
@@ -225,3 +227,78 @@ class TestLPCAttack:
         audio, sr = sample_audio
         result = atk.apply(audio, sampling_rate=sr, order_lpc=12)
         assert not np.array_equal(result, audio)
+
+
+# ---------------------------------------------------------------------------
+# AacCompressionAttack
+# ---------------------------------------------------------------------------
+pytestmark_aac = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None, reason="ffmpeg not on PATH"
+)
+
+
+def _tone_plus_noise(sr=16000, dur=1.0, seed=0):
+    """A signal with real spectral content (unlike a pure sine, which AAC's
+    psychoacoustic model can code near-losslessly at almost any bitrate,
+    masking the bitrate/distortion relationship being tested)."""
+    rng = np.random.default_rng(seed)
+    t = np.linspace(0, dur, int(sr * dur), endpoint=False)
+    sig = (
+        0.3 * np.sin(2 * np.pi * 300 * t)
+        + 0.2 * np.sin(2 * np.pi * 1200 * t)
+        + 0.05 * rng.standard_normal(t.size)
+    )
+    return sig.astype(np.float32), sr
+
+
+@pytestmark_aac
+class TestAacCompressionAttack:
+    def test_preserves_shape(self, attacks, sample_audio):
+        atk = _make_attack(attacks, "AacCompressionAttack")
+        audio, sr = sample_audio
+        result = atk.apply(audio, sampling_rate=sr)
+        assert result.shape == audio.shape
+        assert result.dtype == np.float32
+
+    def test_modifies_signal(self, attacks, sample_audio):
+        atk = _make_attack(attacks, "AacCompressionAttack")
+        audio, sr = sample_audio
+        result = atk.apply(audio, sampling_rate=sr, bitrate_aac=16)
+        assert not np.array_equal(result, audio)
+
+    def test_uses_config_default(self, attacks, sample_audio):
+        atk = _make_attack(attacks, "AacCompressionAttack")
+        audio, sr = sample_audio
+        # Should not raise -- uses config default bitrate_aac
+        result = atk.apply(audio, sampling_rate=sr)
+        assert result.shape == audio.shape
+
+    def test_requires_sampling_rate(self, attacks, sample_audio):
+        atk = _make_attack(attacks, "AacCompressionAttack")
+        audio, _ = sample_audio
+        with pytest.raises(ValueError, match="sampling_rate"):
+            atk.apply(audio)
+
+    def test_lower_bitrate_more_distortion(self, attacks):
+        atk = _make_attack(attacks, "AacCompressionAttack")
+        audio, sr = _tone_plus_noise()
+        high = atk.apply(audio, sampling_rate=sr, bitrate_aac=128)
+        low = atk.apply(audio, sampling_rate=sr, bitrate_aac=16)
+        err_high = np.mean((audio - high) ** 2)
+        err_low = np.mean((audio - low) ** 2)
+        assert err_low > err_high
+
+    def test_round_trip_is_sample_aligned(self, attacks):
+        """The .m4a container's edit list must keep AAC's ~1024-sample
+        encoder priming delay from leaking out as a desync artifact --
+        the reason this attack transcodes through .m4a rather than raw
+        ADTS (see the class docstring)."""
+        atk = _make_attack(attacks, "AacCompressionAttack")
+        audio, sr = _tone_plus_noise(seed=1)
+        result = atk.apply(audio, sampling_rate=sr)
+        window = 8000
+        ref = audio[:window] - audio[:window].mean()
+        out = result[:window] - result[:window].mean()
+        corr = np.correlate(out, ref, mode="full")
+        lag = corr.argmax() - (window - 1)
+        assert lag == 0

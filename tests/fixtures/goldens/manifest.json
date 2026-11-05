@@ -40,6 +40,9 @@
     ],
     "not goldenable: pycodec2 carries C encoder state across in-process instantiations, so output is invocation-history-dependent": [
       "Codec2VocoderAttack"
+    ],
+    "not recorded yet: deterministic and ffmpeg-backed like mp3_compression, so goldenable in principle, but added on a non-canonical machine; move into GOLDEN_ATTACKS and rerun scripts/generate_native_goldens.py on the canonical machine to record it": [
+      "AacCompressionAttack"
     ]
   },
   "attacks": {
