@@ -32,7 +32,7 @@ from deepmarkpy.config import (
 from deepmarkpy.utils.attack_groups import GROUP_ORDER
 from deepmarkpy.utils.latex_helpers import files_measured
 from deepmarkpy.utils.report_generator import generate_benchmark_report
-from deepmarkpy.utils.metric_resolver import NISQA_METRICS
+from deepmarkpy.utils.metric_resolver import ANNI_METRICS, NISQA_METRICS
 from deepmarkpy.utils.metrics import nisqa_status
 from deepmarkpy.utils.utils import load_env_file
 
@@ -878,6 +878,16 @@ def _warn_about_metric_services(configs):
     wanted = set()
     for config in configs:
         wanted.update(config.resolver.all_signal_metrics())
+
+    if wanted & set(ANNI_METRICS):
+        try:
+            from anni import ANNI  # noqa: F401
+        except ImportError:
+            logger.warning(
+                "[W008] ANNI is enabled but its optional package is unavailable. "
+                "ANNI scores will be skipped. Install deepmarkpy[anni] with "
+                "CPU PyTorch as described in README."
+            )
 
     if wanted & set(NISQA_METRICS):
         status = nisqa_status()

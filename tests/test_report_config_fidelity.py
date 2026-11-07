@@ -23,7 +23,7 @@ ATTACKS = {
 }
 
 ALL_SIGNAL_METRICS = [
-    "pesq", "psnr", "si_sdr", "mcd", "visqol", "stoi", "sii", "ncm",
+    "pesq", "psnr", "si_sdr", "mcd", "visqol", "anni_peak", "anni_med", "stoi", "sii", "ncm",
     "nisqa_mos", "nisqa_noi", "nisqa_dis", "nisqa_col", "nisqa_loud",
 ]
 
@@ -123,6 +123,19 @@ class TestAccuracyColumnsMatchTheConfig:
 
 
 class TestMetricTablesMatchTheConfig:
+    def test_anni_aggregation_and_report_columns(self, tmp_path):
+        config = write_config(tmp_path, statistics=["mean"], metrics={
+            "defaults": {
+                "anni_peak": {"enabled": True},
+                "anni_med": {"enabled": True},
+            },
+        })
+        tex, _ = build_benchmark_tex(tmp_path, config)
+        table = table_for(tex, "tab:benchmark_metrics_audio_distortion")
+        assert metric_label("anni_peak") in table
+        assert metric_label("anni_med") in table
+        assert metric_label("pesq") not in table
+
     def test_only_the_enabled_metrics_get_tables(self, tmp_path):
         config = write_config(tmp_path, statistics=["mean", "p95"], metrics={
             "defaults": {

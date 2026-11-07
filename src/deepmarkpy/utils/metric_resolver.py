@@ -27,7 +27,8 @@ ALL_STATISTICS = (
 ROBUSTNESS_METRICS = ("accuracy", "ber", "emr")
 
 # Signal metrics, by the table the reports put them in.
-QUALITY_METRICS = ("pesq", "psnr", "si_sdr", "mcd", "visqol")
+ANNI_METRICS = ("anni_peak", "anni_med")
+QUALITY_METRICS = ("pesq", "psnr", "si_sdr", "mcd", "visqol") + ANNI_METRICS
 INTELLIGIBILITY_METRICS = ("stoi", "sii", "ncm")
 NISQA_METRICS = (
     "nisqa_mos", "nisqa_noi", "nisqa_dis", "nisqa_col", "nisqa_loud",
@@ -68,7 +69,7 @@ PER_FILE_EFFICIENCY_METRICS = frozenset({"embed_latency", "embed_rtf"})
 PER_MODEL_EFFICIENCY_METRICS = frozenset({"container_footprint"})
 
 # Metrics that are better low; ``worst_case_of`` reads them at their maximum.
-LOWER_IS_BETTER_METRICS = frozenset({"mcd", "ber"}) | frozenset(EFFICIENCY_METRICS)
+LOWER_IS_BETTER_METRICS = frozenset({"mcd", "ber", *ANNI_METRICS}) | frozenset(EFFICIENCY_METRICS)
 
 # Enabled regardless of the per-group matrix when quality metrics are off.
 ALWAYS_ON_METRICS = ("pesq", "visqol", "stoi")
@@ -169,9 +170,9 @@ class MetricResolver:
         config has no ``metrics`` block and when a generator gets no resolver.
         """
         defaults = {m: {"enabled": True} for m in ROBUSTNESS_METRICS}
-        # Everything on by default; the per-group sections carry the exclusions.
+        # ANNI is opt-in: expensive and intended for small, aligned differences.
         for metric in SIGNAL_METRICS:
-            defaults[metric] = {"enabled": True}
+            defaults[metric] = {"enabled": metric not in ANNI_METRICS}
 
         per_group = {}
         for key in list(ATTACK_GROUPS) + list(ATTACK_SUBGROUPS):
@@ -182,9 +183,9 @@ class MetricResolver:
                 metric: {"enabled": metric in enabled}
                 for metric in SIGNAL_METRICS
             }
-        # Attacks outside every declared group get every signal metric.
+        # Attacks outside every declared group get all non-opt-in metrics.
         per_group[OTHER_GROUP_KEY] = {
-            metric: {"enabled": True} for metric in SIGNAL_METRICS
+            metric: {"enabled": metric not in ANNI_METRICS} for metric in SIGNAL_METRICS
         }
 
         return cls(

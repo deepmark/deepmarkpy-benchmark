@@ -37,6 +37,8 @@ dependencies = [
 # ViSQOL is imported lazily and skipped when absent. NISQA needs no extra:
 # it runs as the nisqa Docker service.
 metrics = ["visqol-python"]
+# Install CPU PyTorch first (README); ANNI is opt-in and loaded lazily.
+anni = ["deepmark-anni==0.1.0"]
 native-attacks = ["pycodec2>=4.0.0", "audiocomplib"]
 all = ["deepmarkpy[metrics,native-attacks]"]
 
