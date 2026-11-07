@@ -35,10 +35,12 @@
   "_statistics": "Default statistics per metric, and the report column order. Any of: mean, std, median, p5, p10, p95, p99, worst_case. Delete this key to get all eight.",
   "statistics": ["mean", "std", "median", "p5", "p95", "worst_case"],
 
-  "_metrics": "Per metric: enabled (true/false) and statistics (a subset of the list above). Metrics - accuracy (always on, cannot be disabled), ber, emr (a count, takes NO statistics), pesq, psnr, si_sdr, mcd, visqol, stoi, sii, ncm, nisqa_mos, nisqa_noi, nisqa_dis, nisqa_col, nisqa_loud. A metric named nowhere is off.",
+  "_metrics": "Per metric: enabled (true/false) and statistics (a subset of the list above). Metrics - accuracy (always on, cannot be disabled), ber, emr (a count, takes NO statistics), pesq, psnr, si_sdr, mcd, visqol, anni_peak, anni_med, stoi, sii, ncm, nisqa_mos, nisqa_noi, nisqa_dis, nisqa_col, nisqa_loud. A metric named nowhere is off.",
   "metrics": {
     "_defaults": "Baseline for every group. The signal metrics are OFF here and each group below switches on the ones that are meaningful for it, so a group section reads as a positive list of what it reports. accuracy/ber/emr are free (all three come from the accuracy array) and apply everywhere.",
+    "_anni": "ANNI is opt-in; install deepmarkpy[anni]. Lower is better.",
     "defaults": {
+      "anni_peak": { "enabled": false }, "anni_med": { "enabled": false },
       "accuracy": { "enabled": true, "statistics": ["mean", "std", "median", "p5", "p10", "p95", "p99", "worst_case"] },
       "ber": { "enabled": true },
       "emr": { "enabled": true },

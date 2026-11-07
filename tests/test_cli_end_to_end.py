@@ -221,6 +221,33 @@ def saved_audio(report_dir):
     return saved
 
 
+def test_anni_reaches_reports(
+    tmp_path, plugins_dir, audio_dir, monkeypatch,
+):
+    calls = []
+    def score(reference, degraded, sr):
+        calls.append(sr)
+        return {"anni_peak": 1.25, "anni_med": 0.5}
+    monkeypatch.setattr(metrics, "compute_anni", score)
+    config = write_config(
+        tmp_path, "anni.json",
+        attacks={"list": ["NoAttack", ATTACK_SPEC]},
+        metrics={"defaults": {
+            "anni_peak": {"enabled": True},
+            "anni_med": {"enabled": True},
+        }},
+    )
+    report_dir = tmp_path / "report"
+    assert run_cli(
+        "--config", config, "--wav_files_dir", audio_dir,
+        "--report_dir", str(report_dir), "--plugins_dir", plugins_dir,
+    ) == run_module.EXIT_OK
+    assert calls and set(calls) == {16000}
+    tex = (report_dir / "benchmark_report.tex").read_text()
+    assert "ANNI peak" in tex and "ANNI median" in tex
+    assert "1.25" in tex and "0.50" in tex
+
+
 class TestBenchmarkMode:
     @pytest.mark.parametrize("grouped", [False, True])
     def test_zero_bit_stats_do_not_contain_ber(

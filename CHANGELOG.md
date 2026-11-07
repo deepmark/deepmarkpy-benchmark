@@ -9,6 +9,9 @@ on every attack, are not comparable with earlier runs.
 
 ### Added
 
+- Optional ANNI peak and median noticeability metrics (`anni_peak`,
+  `anni_med`), with configuration, statistics and report support.
+
 - Real-time factor metrics `embed_rtf`, `detect_rtf` and `attack_rtf` in the
   `efficiency` section: each stage's time over the duration of the audio it
   processed, so below 1 is faster than real time. They are timed with the
