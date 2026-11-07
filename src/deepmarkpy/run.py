@@ -33,7 +33,7 @@ from deepmarkpy.utils.attack_groups import GROUP_ORDER
 from deepmarkpy.utils.latex_helpers import files_measured
 from deepmarkpy.utils.report_generator import generate_benchmark_report
 from deepmarkpy.utils.metric_resolver import ANNI_METRICS, NISQA_METRICS
-from deepmarkpy.utils.metrics import nisqa_status
+from deepmarkpy.utils.metrics import anni_status, nisqa_status
 from deepmarkpy.utils.utils import load_env_file
 
 logging.basicConfig(
@@ -880,13 +880,12 @@ def _warn_about_metric_services(configs):
         wanted.update(config.resolver.all_signal_metrics())
 
     if wanted & set(ANNI_METRICS):
-        try:
-            from anni import ANNI  # noqa: F401
-        except ImportError:
+        status = anni_status()
+        if not status["available"]:
             logger.warning(
-                "[W008] ANNI is enabled but its optional package is unavailable. "
+                "[W008] ANNI is enabled but its optional package is unavailable (%s). "
                 "ANNI scores will be skipped. Install deepmarkpy[anni] with "
-                "CPU PyTorch as described in README."
+                "CPU PyTorch as described in README.", status["reason"],
             )
 
     if wanted & set(NISQA_METRICS):
@@ -1054,7 +1053,7 @@ def run_benchmark_mode(benchmark, filepaths, config, settings):
     return EXIT_OK
 
 
-def write_run_metadata(report_dir, args, benchmark, model_names, extra=None):
+def write_run_metadata(report_dir, args, benchmark, model_names, extra=None, resolver=None):
     """Write run_metadata.json beside the results so a run can be situated later.
 
     Deliberately a sibling file rather than a wrapper around the existing
@@ -1080,6 +1079,8 @@ def write_run_metadata(report_dir, args, benchmark, model_names, extra=None):
         # a metric that ran and had nothing to say.
         "metrics": {"nisqa": nisqa_status()},
     }
+    if resolver and set(ANNI_METRICS) & set(resolver.all_signal_metrics()):
+        metadata["metrics"]["anni"] = anni_status()
     if extra:
         metadata.update(extra)
 
@@ -1186,6 +1187,7 @@ def run_single_model(benchmark, filepaths, model_name, config, settings,
 
     write_run_metadata(
         report_dir, settings, benchmark, [model_name],
+        resolver=config.resolver,
         extra={
             # The rate actually used, resolved from the model's config.
             "sampling_rate": (benchmark.models.get(model_name, {}).get("config") or {}).get(

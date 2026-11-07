@@ -548,6 +548,15 @@ def ncm(reference: np.ndarray, degraded: np.ndarray,
 ANNI_METRICS = ("anni_peak", "anni_med")
 
 
+def anni_status():
+    """Whether the optional ANNI package can be imported."""
+    try:
+        from anni import ANNI  # noqa: F401
+    except ImportError as exc:
+        return {"available": False, "reason": str(exc)}
+    return {"available": True, "reason": None}
+
+
 @functools.lru_cache(maxsize=1)
 def _get_anni():
     """Load the optional CPU model once, only when ANNI is requested."""
