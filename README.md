@@ -395,8 +395,21 @@ The config file sets which of these run for each attack group; see
 | SI-SDR | Scale-Invariant Signal-to-Distortion Ratio | dB (higher = better) |
 | MCD | Mel Cepstral Distortion | dB (lower = better) |
 | ViSQOL* | Virtual Speech Quality Objective Listener | 1.0 - 5.0 (MOS) |
+| ANNI peak | Peak noticeability over 200 ms windows | d-prime (lower = better) |
+| ANNI median | Median noticeability over 200 ms windows | d-prime (lower = better) |
 
 *ViSQOL is **optional**. It comes from the prebuilt `visqol-python` wrapper, which `requirements.txt` pins and the `metrics` extra installs (`pip install 'deepmarkpy[metrics]'`, included in `.[all]`). Without it, `W007` warns before the run, the reports name ViSQOL in a footnote instead of a column, and all other metrics are still computed.
+
+[ANNI](https://github.com/deepmark/anni) is optional and off by default. Install
+CPU PyTorch and `deepmarkpy[anni]`, then enable `anni_peak` and/or `anni_med`
+in `metrics.defaults` with `calculate_quality_metrics: true`. Use mono clips
+of at least 0.5 s; see the ANNI repository for input requirements and limitations.
+
+```bash
+# Linux / Windows (omit --index-url on macOS):
+python -m pip install 'torch>=2.4.1' --index-url https://download.pytorch.org/whl/cpu
+python -m pip install 'deepmarkpy[anni]'
+```
 
 **Non-Intrusive Quality (NISQA):**
 

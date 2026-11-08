@@ -545,10 +545,67 @@ def ncm(reference: np.ndarray, degraded: np.ndarray,
     return float(np.clip(ncm_val, 0.0, 1.0))
 
 
+ANNI_METRICS = ("anni_peak", "anni_med")
+
+
+def anni_status():
+    """Whether the optional ANNI package can be imported."""
+    try:
+        from anni import ANNI  # noqa: F401
+    except ImportError as exc:
+        return {"available": False, "reason": str(exc)}
+    return {"available": True, "reason": None}
+
+
+@functools.lru_cache(maxsize=1)
+def _get_anni():
+    """Load the optional CPU model once, only when ANNI is requested."""
+    try:
+        from anni import ANNI
+    except ImportError:
+        logger.warning(
+            "ANNI is unavailable; scores will be skipped. Install the "
+            "optional deepmarkpy[anni] extra with CPU PyTorch (see README)."
+        )
+        return None
+    return ANNI(level=65.0, device="cpu")
+
+
+def compute_anni(reference, degraded, sr):
+    """Both noticeability scores in d-prime units; lower is better.
+
+    Pass original inputs to ANNI: it owns resampling, length matching,
+    delay alignment and their warnings. Do not normalize either signal
+    independently, since their relative level is part of the measurement.
+    """
+    missing = dict.fromkeys(ANNI_METRICS)
+    try:
+        model = _get_anni()
+        if model is None:
+            return missing
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", UserWarning)
+            try:
+                scores = model(reference, degraded, sr=sr)
+            finally:
+                for warning in caught:
+                    logger.warning("ANNI: %s", warning.message)
+        result = {
+            "anni_peak": float(scores["D_peak"]),
+            "anni_med": float(scores["D_med"]),
+        }
+        if not all(np.isfinite(value) and value >= 0 for value in result.values()):
+            raise ValueError("scores must be finite and non-negative")
+        return result
+    except (RuntimeError, ValueError, IndexError) as exc:
+        logger.warning("ANNI calculation failed: %s", exc)
+        return missing
+
+
 NISQA_METRICS = [
     "nisqa_mos", "nisqa_noi", "nisqa_dis", "nisqa_col", "nisqa_loud",
 ]
-QUALITY_METRICS = ["pesq", "psnr", "si_sdr", "mcd", "visqol"] + NISQA_METRICS
+QUALITY_METRICS = ["pesq", "psnr", "si_sdr", "mcd", "visqol", *ANNI_METRICS] + NISQA_METRICS
 INTELLIGIBILITY_METRICS = ["stoi", "sii", "ncm"]
 ALL_METRICS = QUALITY_METRICS + INTELLIGIBILITY_METRICS
 
@@ -559,6 +616,8 @@ METRIC_LABELS = {
     "si_sdr": "SI-SDR (dB)",
     "mcd": "MCD (dB)",
     "visqol": "ViSQOL (1--5)",
+    "anni_peak": "ANNI peak (d-prime)",
+    "anni_med": "ANNI median (d-prime)",
     "stoi": "STOI (0--1)",
     "sii": "SII (0--1)",
     "ncm": "NCM (0--1)",
@@ -600,7 +659,7 @@ def compute_metrics(
         degraded: Degraded audio signal
         sr: Sampling rate of both signals
         metrics: Optional iterable of metric names to compute. Defaults
-            to all metrics in ``ALL_METRICS``. Only listed metrics are
+            to all metrics except opt-in ANNI. Only listed metrics are
             computed; any metric not requested is omitted from the
             result dict (avoids needless compute for grouped reports).
 
@@ -609,14 +668,15 @@ def compute_metrics(
         not be computed are ``None``.
 
     Available metrics:
-        Quality: pesq, psnr, si_sdr, mcd, visqol
+        Quality: pesq, psnr, si_sdr, mcd, visqol, anni_peak, anni_med
             (ViSQOL returns ``None`` when the optional ``visqol`` package
             is not installed; see README.)
+            ANNI is opt-in and returns ``None`` when unavailable.
         Intelligibility: stoi, sii, ncm
     """
     ref_trimmed, deg_trimmed = trim_audio_to_match(reference, degraded)
 
-    requested = set(metrics) if metrics is not None else set(ALL_METRICS)
+    requested = set(metrics) if metrics is not None else set(ALL_METRICS) - set(ANNI_METRICS)
 
     # Only pay the resample cost when a metric that needs it is requested
     need_narrowband = bool(requested & _NARROWBAND_METRICS)
@@ -641,6 +701,12 @@ def compute_metrics(
             nisqa_cache.update(compute_nisqa(deg_trimmed, sr))
         return nisqa_cache[key]
 
+    anni_cache = {}
+    def _anni(key):
+        if not anni_cache:
+            anni_cache.update(compute_anni(reference, degraded, sr))
+        return anni_cache[key]
+
     # ViSQOL: audio mode at 48 kHz when input is already 48k, otherwise
     # speech mode at 16 kHz reusing the narrowband-resampled buffers above
     # so we don't resample the same signal twice.
@@ -655,6 +721,8 @@ def compute_metrics(
         "si_sdr": lambda: si_sdr(ref_trimmed, deg_trimmed),
         "mcd": lambda: mcd(ref_trimmed, deg_trimmed, sr),
         "visqol": lambda: visqol_wrapper(visqol_ref, visqol_deg, visqol_sr),
+        "anni_peak": lambda: _anni("anni_peak"),
+        "anni_med": lambda: _anni("anni_med"),
         "stoi": lambda: stoi_wrapper(ref_nb, deg_nb, nb_sr),
         "sii": lambda: sii(ref_trimmed, deg_trimmed, sr),
         "ncm": lambda: ncm(ref_trimmed, deg_trimmed, sr),
