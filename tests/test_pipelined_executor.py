@@ -290,6 +290,76 @@ class TestSameResultsWithPresenceDecisions:
 
 
 class TestLanes:
+    @pytest.mark.parametrize("selected", [
+        ["psnr", "anni_peak", "anni_med", "stoi"],
+        ["anni_med"],
+        ["psnr"],
+    ])
+    def test_anni_has_one_worker_across_files_and_attacks(
+        self, benchmark, filepaths, monkeypatch, selected,
+    ):
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+
+        pools = []
+        active = peak = calls = 0
+        lock = threading.Lock()
+
+        class TrackedPool(ThreadPoolExecutor):
+            def __init__(self, max_workers, **kwargs):
+                super().__init__(max_workers)
+                self.metrics = []
+                self.stopped = False
+                pools.append(self)
+
+            def submit(self, fn, reference, degraded, sr, requested):
+                self.metrics.append(set(requested))
+                return super().submit(fn, reference, degraded, sr, requested)
+
+            def shutdown(self, **kwargs):
+                self.stopped = True
+                super().shutdown(**kwargs)
+
+        def timed(reference, degraded, sr, requested):
+            nonlocal active, peak, calls
+            has_anni = bool(set(requested) & set(metrics.ANNI_METRICS))
+            if has_anni:
+                with lock:
+                    active += 1
+                    peak = max(peak, active)
+                    calls += 1
+            try:
+                time.sleep(0.01)
+                return {name: 0.5 for name in metrics.ALL_METRICS if name in requested}, 0.01
+            finally:
+                if has_anni:
+                    with lock:
+                        active -= 1
+
+        monkeypatch.setattr(pipelined, "ProcessPoolExecutor", TrackedPool)
+        monkeypatch.setattr(pipelined, "_timed_metrics", timed)
+        resolver = MetricResolver(defaults={name: {"enabled": True} for name in selected})
+        result = benchmark.run(
+            filepaths=filepaths, wm_model="ServiceStandInModel",
+            attack_types=["NoAttack", "ServiceStandInAttack"],
+            metric_resolver=resolver, executor="pipelined",
+            parallelism=Parallelism(workers=8, files_in_flight=3),
+        )
+        has_anni = bool(set(selected) & set(metrics.ANNI_METRICS))
+        assert [pool._max_workers for pool in pools] == ([8, 1] if has_anni else [8])
+        assert all(not names & set(metrics.ANNI_METRICS) for names in pools[0].metrics)
+        if has_anni:
+            assert peak == 1 and calls == len(filepaths) * 3
+            assert all(names == set(selected) & set(metrics.ANNI_METRICS)
+                       for names in pools[1].metrics)
+        assert all(pool.stopped for pool in pools)
+        expected = {name: 0.5 for name in metrics.ALL_METRICS if name in selected}
+        for file_result in result.values():
+            assert file_result["watermarked_audio_quality"] == expected
+            for row in file_result["attacks"].values():
+                assert row["attacked_audio_quality_wm"] == expected
+
     def test_dockerized_plugins_are_recognised(self, benchmark):
         assert pipelined.runs_in_service(benchmark.attacks["ServiceStandInAttack"]["class"])
         assert pipelined.runs_in_service(benchmark.attacks["DiffusionAttack"]["class"])

@@ -62,14 +62,14 @@ class TestEveryAttackIsGrouped:
         assert get_group_for_attack(attack) == group
 
     def test_grouped_attack_gets_fewer_metrics_than_the_fallback(self):
-        """The fallback hands out every metric; a real group narrows it."""
+        """The fallback includes non-opt-in metrics; a real group narrows it."""
         from deepmarkpy.utils.metric_resolver import (
-            MetricResolver, SIGNAL_METRICS,
+            ANNI_METRICS, MetricResolver, SIGNAL_METRICS,
         )
 
         resolver = MetricResolver.from_attack_groups()
         assert len(resolver.metrics_for_attack("ZeroCrossInsertsAttack")) < len(SIGNAL_METRICS)
-        assert set(resolver.metrics_for_attack("UnknownAttack")) == set(SIGNAL_METRICS)
+        assert set(resolver.metrics_for_attack("UnknownAttack")) == set(SIGNAL_METRICS) - set(ANNI_METRICS)
 
 
 class TestMetricCaveats:

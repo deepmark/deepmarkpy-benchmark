@@ -17,7 +17,7 @@ returns, entry for entry and in the same order.
   the same lane, and both detections go to the detection lane. Attacks that
   embed with the model itself (``_NO_CLEAN_PASS``) are not.
 - **Metrics** in ``workers`` processes with this process's BLAS thread counts,
-  which MCD and SI-SDR depend on.
+  which MCD and SI-SDR depend on. ANNI uses one separate worker to bound memory.
 
 At most ``files_in_flight`` files are under way. ``on_file_complete`` sees
 them in order, and an error is raised from the file and attack the
@@ -50,13 +50,14 @@ from deepmarkpy.benchmark import (
 )
 from deepmarkpy.core.base_model import returns_is_watermarked
 from deepmarkpy.utils import efficiency
-from deepmarkpy.utils.metrics import compute_metrics
+from deepmarkpy.utils.metrics import ANNI_METRICS, ALL_METRICS, compute_metrics
 
 logger = logging.getLogger(__name__)
 
 ORDERED_LANE = "ordered"
 DETECT_LANE = "detect"
 METRICS_LANE = "metrics"
+ANNI_LANE = "anni"
 # Every dockerized attack that service_lanes does not name.
 SHARED_SERVICE_LANE = "services"
 
@@ -282,6 +283,12 @@ class PipelinedRun:
             p.workers, mp_context=multiprocessing.get_context("spawn"),
             initializer=_init_worker, initargs=(_blas_limits(),),
         )
+        self._anni = None
+        if set(self.resolver.all_signal_metrics()) & set(ANNI_METRICS):
+            self._anni = ProcessPoolExecutor(
+                1, mp_context=multiprocessing.get_context("spawn"),
+                initializer=_init_worker, initargs=(_blas_limits(),),
+            )
         logger.info(
             "Pipelined executor: %d file(s); %d attack(s) on the ordered lane, "
             "%d on service lanes (%s); %d metrics worker(s), %d file(s) in flight.",
@@ -318,7 +325,10 @@ class PipelinedRun:
         return results
 
     def _shutdown(self, wait):
-        for executor in (self._ordered, *self._services.values(), self._detect, self._metrics):
+        executors = [self._ordered, *self._services.values(), self._detect, self._metrics]
+        if self._anni is not None:
+            executors.append(self._anni)
+        for executor in executors:
             executor.shutdown(wait=wait, cancel_futures=True)
 
     def _start(self, filepath, in_flight, results, on_file_complete):
@@ -383,14 +393,30 @@ class PipelinedRun:
         if on_file_complete is not None:
             on_file_complete(job.filepath, file_results)
 
-    def _quality(self, future):
-        if future is None:
+    def _submit_metrics(self, reference, degraded, sr, requested):
+        requested = set(requested)
+        futures = []
+        for lane, pool, selected in (
+            (METRICS_LANE, self._metrics, requested - set(ANNI_METRICS)),
+            (ANNI_LANE, self._anni, requested & set(ANNI_METRICS)),
+        ):
+            if selected:
+                futures.append((lane, pool.submit(
+                    _timed_metrics, reference, degraded, sr, selected,
+                )))
+        return futures
+
+    def _quality(self, futures):
+        if futures is None:
             return None
-        quality, seconds = future.result()
-        with self._busy_lock:
-            self._busy[METRICS_LANE] += seconds
-            self._jobs[METRICS_LANE] += 1
-        return quality
+        quality = {}
+        for lane, future in futures:
+            scores, seconds = future.result()
+            quality.update(scores)
+            with self._busy_lock:
+                self._busy[lane] += seconds
+                self._jobs[lane] += 1
+        return {name: quality[name] for name in ALL_METRICS if name in quality}
 
     # -- lane jobs --------------------------------------------------------
 
@@ -429,8 +455,8 @@ class PipelinedRun:
         }
         sr = job.sampling_rate
         job.sr_scalar = int(sr) if isinstance(sr, (np.ndarray, list)) else sr
-        job.wm_quality = self._metrics.submit(
-            _timed_metrics, job.audio, job.watermarked_audio, job.sr_scalar,
+        job.wm_quality = self._submit_metrics(
+            job.audio, job.watermarked_audio, job.sr_scalar,
             set(self.resolver.all_signal_metrics()),
         )
 
@@ -492,8 +518,8 @@ class PipelinedRun:
             )
         relevant = set(self.resolver.metrics_for_attack(task.display_name))
         if relevant:
-            task.quality = self._metrics.submit(
-                _timed_metrics, job.audio, task.attacked_audio, job.sr_scalar, relevant,
+            task.quality = self._submit_metrics(
+                job.audio, task.attacked_audio, job.sr_scalar, relevant,
             )
 
     def _run_detect(self, attacked_audio, sampling_rate):
@@ -542,7 +568,7 @@ class PipelinedRun:
         per_file = wall / n_files if n_files else 0.0
         lines = [f"Pipelined executor: {n_files} file(s) in {wall:.1f} s ({per_file:.1f} s per file). Busy time per lane:"]
         capacity = {ORDERED_LANE: 1, DETECT_LANE: self.parallelism.detect_concurrency,
-                    METRICS_LANE: self.parallelism.workers}
+                    METRICS_LANE: self.parallelism.workers, ANNI_LANE: 1}
         capacity.update(self._service_slots)
         for lane, busy in sorted(self._busy.items(), key=lambda item: -item[1]):
             share = busy / (wall * capacity.get(lane, 1)) if wall else 0.0
