@@ -258,6 +258,11 @@ def get_metric_caveat(attack_name, metric):
     the sample-aligned metrics register as damage. Expanded and version
     names (``SignInversionAttack (mild)``) carry their attack's caveats.
     """
+    if metric in ("anni_peak", "anni_med"):
+        return (
+            "measures small, aligned differences; timing or pitch changes and "
+            "speech codecs can make the score unreliable. Lower is better"
+        )
     for candidate in _name_candidates(attack_name):
         attack_caveats = _ATTACK_METRIC_CAVEATS.get(candidate, {})
         if metric in attack_caveats:
