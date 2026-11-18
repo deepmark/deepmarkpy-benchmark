@@ -735,6 +735,7 @@ deepmark-benchmark --config my_config.json --wav_files_dir /path/to/audio
 
 To run AI-based plugins inside Docker:
 ```Shell
+docker build -f Dockerfile.base -t ml-services-base:latest .
 docker-compose up --build -d
 ```
 To stop:
