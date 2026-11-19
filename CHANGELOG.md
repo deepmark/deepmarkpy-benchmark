@@ -1,13 +1,49 @@
 # Changelog
 
-## v4.0.0 — unreleased
+## Unreleased
+
+## v4.0.0 — 2026-11-19
 
 **A model that decides whether a watermark is present is scored on that
 decision in benchmark mode, now the only mode, and eight attack defaults
 change.** Results for the changed attacks, and for AudioSeal, AWARE and Perth
 on every attack, are not comparable with earlier runs.
 
+### Upgrading from 3.x
+
+- The `no_attacks` and `detection_reliability` modes are gone, with
+  `--no_attacks`, `--detection_reliability`, their `--init` options, their
+  reports and `E012`, `E025`, `E028` and `E044`. Select the `NoAttack` attack
+  in benchmark mode instead.
+- Renamed attack parameters: `cutoff_freq_per_sr_lowpass` →
+  `cutoff_freq_lowpass`, `down_factor_resampling_poly` →
+  `target_sr_resampling_poly`. 3.x configs using the old names fail
+  validation (`E018`).
+- `src/deepmarkpy/config_templates/` is now `src/deepmarkpy/presets/`, and
+  `--init` takes a preset name (`benchmark`, `default`, `default_sweep`).
+- Eight attack defaults change, so results are not comparable with 3.x:
+  `GaussianNoiseAttack` 35 → 25 dB, `PinkNoiseAttack` 25 → 35 dB,
+  `BandstopFilterAttack` 350–500 → 1000–1200 Hz, `Mp3CompressionAttack`
+  quality 3 → 9, `SpeechEnhancement1Attack` noise 0.01 → 0,
+  `TimeStretchAttack` 1.4 → 1.25, `InvertedTimeStretchAttack` 0.8 → 1.4,
+  `LowpassFilterAttack` → 3400 Hz at every sampling rate.
+- Models declaring `returns_is_watermarked` (AudioSeal, AWARE, Perth) are
+  scored on true and false positives, with accuracy and BER over the detected
+  files only; Perth, a zero-bit model, on TP and FP alone.
+
 ### Added
+
+- GPU opt-in for `AudioSealModel`, `DescriptAudioCodecAttack` (DAC),
+  `NeuralVocoderAttack` (BigVGAN, in float64), `SpeechEnhancement1Attack` and
+  `SpeechEnhancement2Attack`, through the `docker-compose.gpu.yml` override
+  and `src/deepmarkpy/serving/device.py`. A service runs on the GPU only when
+  its container sets `DEEPMARK_DEVICE=cuda`; a requested GPU that is not
+  visible is an error, never a silent CPU run. These five were checked against
+  their CPU output before being listed. Without the override everything runs
+  on the CPU and the CPU output is unchanged.
+- `--executor pipelined`: overlaps dockerized attacks, detection and metrics
+  with the in-process work, which keeps the sequential order, so it gives the
+  same results as the default `--executor sequential`.
 
 - Optional ANNI peak and median noticeability metrics (`anni_peak`,
   `anni_med`), with configuration, statistics and report support.
@@ -72,6 +108,13 @@ on every attack, are not comparable with earlier runs.
   was the other way round.
 - A zero-bit model has no accuracy, BER or EMR: TP and FP are its whole
   measurement.
+- Dependabot no longer proposes version updates for `speech_tokenization`'s
+  pins, a frozen set that xcodec2 0.1.3 needs (#52), nor for the Python base
+  image's minor version or torch, torchaudio and torchvision, which move by
+  hand in every file at once. Security updates are unaffected.
+- The root `requirements.txt` drops 26 pins nothing it installs uses (the
+  FastAPI and transformers stack of an old freeze) and moves `urllib3` to
+  2.8.0 (#55).
 
 ### Fixed
 
@@ -83,6 +126,22 @@ on every attack, are not comparable with earlier runs.
   `attack_parameters` (`E018`) and `run_metadata.json` recorded the wrong
   ones. The attacks themselves ran at their own defaults. Discovery now
   registers only the classes a module defines.
+- The Docker images build again. Dependabot had moved the base image, Opus and
+  NetworkTransmission to `python:3.14`, which torch 2.7.1 has no wheels for,
+  and pinned torch 2.14.1 beside torchaudio 2.7.1. The base is back on
+  `python:3.11` and torch 2.7.1, Opus and NetworkTransmission on
+  `python:3.10`.
+- `speech_tokenization` installs and runs again, on xcodec2 0.1.3's own
+  stack (torch and torchaudio 2.4.1, transformers 4.44.2) with security fixes
+  on top; its output is identical to v2.0.0 (#48).
+- Decoded audio arrays are writable: `WaveletAttack` aborted on read-only
+  model output.
+- `ReplayAttack` convolves its room response by FFT, about 120 times faster;
+  its output moves by at most 1.1e-15.
+- XCodec2 loads its weights at a pinned revision and checks them on load.
+- A failing attack is named in the log, with the file it failed on.
+- The `neural_vocoder` image sets `APP_PORT` and `HOST` in its final stage,
+  so it builds under Podman/buildah.
 
 ### Removed
 
