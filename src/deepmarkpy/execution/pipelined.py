@@ -15,7 +15,7 @@ returns, entry for entry and in the same order.
 - **False positives**, for a model declaring ``returns_is_watermarked``: each
   attack is applied to the clean audio right after the watermarked audio, on
   the same lane, and both detections go to the detection lane. Attacks that
-  embed with the model itself (``_NO_CLEAN_PASS``) are not.
+  cannot run a clean pass (``_NO_CLEAN_PASS``) are not.
 - **Metrics** in ``workers`` processes with this process's BLAS thread counts,
   which MCD and SI-SDR depend on. ANNI uses one separate worker to bound memory.
 

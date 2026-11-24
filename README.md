@@ -456,9 +456,10 @@ every benchmark run, with no extra setting:
   `NoAttack` row gives the rates with no attack at all.
 
 Every attack therefore runs twice per file for these models, except
-`SameModelAttack`, `CollusionAttack` and `Collusion2Attack`: they embed with
-the model itself, so a clean file put through them carries a real watermark,
-and their FP is not measured (`--` in the reports). An attack after which no
+`SameModelAttack`, `CollusionAttack`, `Collusion2Attack` and `ZeroBitCollusionAttack`:
+they embed with the model itself or splice with the clean reference, so a clean
+file put through them carries a real watermark or is an identical copy, and
+their FP is not measured (`--` in the reports). An attack after which no
 file is detected has no accuracy; the summary names it rather than leaving it
 out of the mean silently, and lists it first among the most damaging. The
 `NoAttack` row is the baseline: the summary states it on its own line and
