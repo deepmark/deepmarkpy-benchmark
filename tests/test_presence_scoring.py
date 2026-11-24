@@ -170,20 +170,20 @@ class TestAModelThatDecidesPresence:
     @pytest.mark.parametrize("executor", ["sequential", "pipelined"])
     def test_attacks_embedding_with_the_model_get_no_clean_pass(
             self, benchmark, filepaths, executor):
-        """Their clean file would carry a real watermark, so FP is not measured."""
-        own_embedders = ["SameModelAttack", "CollusionAttack", "Collusion2Attack"]
+        """Their clean file carries a watermark or splices onto itself, so FP is not measured."""
+        no_clean_attacks = ["SameModelAttack", "CollusionAttack", "Collusion2Attack", "ZeroBitCollusionAttack"]
         results = benchmark.run(
             filepaths=filepaths, wm_model="DecidingModel",
-            attack_types=own_embedders + ["NoAttack"], executor=executor,
+            attack_types=no_clean_attacks + ["NoAttack"], executor=executor,
             metric_resolver=MetricResolver.from_attack_groups(calculate_quality_metrics=False),
         )
         for file_results in results.values():
-            for attack in own_embedders:
+            for attack in no_clean_attacks:
                 row = file_results["attacks"][attack]
                 assert "detected" in row and "detected_clean" not in row
             assert "detected_clean" in file_results["attacks"]["NoAttack"]
         stats = benchmark.compute_mean_accuracy(results)
-        for attack in own_embedders:
+        for attack in no_clean_attacks:
             assert "tp_n" in stats[attack] and "fp_n" not in stats[attack]
 
 
